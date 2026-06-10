@@ -155,14 +155,30 @@ export async function callErickCOO(
     }))
   ];
 
+  // 檢查金鑰有效性（OpenAI 必須是 sk- 開頭，Gemini 必須是 AIzaSy- 開頭）
+  const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
+  const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
+    (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+
   let erickOutput = "";
   try {
-    // 呼叫 OpenAI 進行任務拆解
-    erickOutput = await callOpenAI(formattedMessages, config);
+    // 智慧容錯調度：如果使用者選 OpenAI 但金鑰無效 (JWT 或貼錯)，且 Gemini 金鑰有效，自動切換為 Gemini 確保能正常執行
+    if (provider === "openai" && !isOpenAIKeyValid && isGeminiKeyValid) {
+      console.log("[Smart Routing] OpenAI API key is invalid (JWT or placeholder), automatically switching Erick COO to Google Gemini");
+      erickOutput = await callGemini(formattedMessages, config);
+    } else if (provider === "gemini" && !isGeminiKeyValid && isOpenAIKeyValid) {
+      console.log("[Smart Routing] Gemini API key is invalid, automatically switching Erick COO to OpenAI");
+      erickOutput = await callOpenAI(formattedMessages, config);
+    } else {
+      // 正常流程
+      erickOutput = provider === "gemini" 
+        ? await callGemini(formattedMessages, config)
+        : await callOpenAI(formattedMessages, config);
+    }
   } catch (error: any) {
-    console.error("OpenAI call for Erick COO failed:", error);
+    console.error("Erick COO call failed:", error);
     if (provider !== "mock") {
-      throw new Error(`Erick COO (OpenAI) 呼叫失敗: ${error.message || error}`);
+      throw new Error(`Erick COO 呼叫失敗: ${error.message || error}`);
     }
     return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
   }
@@ -247,16 +263,29 @@ ${jackPrompt}
   let openaiResult: any = {};
 
   try {
-    const hasGeminiKey = !!(config.geminiApiKey || process.env.GEMINI_API_KEY);
-    
-    // 同時發起異步請求
-    const geminiTask = hasGeminiKey
-      ? callGemini([{ role: "user", content: geminiPrompt }], config)
-      : callOpenAI([{ role: "user", content: geminiPrompt }], config);
+    let geminiTask;
+    let openaiTask;
+
+    // 依據可用金鑰智慧容錯調度
+    if (isGeminiKeyValid) {
+      geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config);
+    } else if (isOpenAIKeyValid) {
+      geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config);
+    } else {
+      throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    }
+
+    if (isOpenAIKeyValid) {
+      openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config);
+    } else if (isGeminiKeyValid) {
+      openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config);
+    } else {
+      throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    }
 
     const [geminiResponse, openaiResponse] = await Promise.all([
       geminiTask,
-      callOpenAI([{ role: "user", content: openaiPrompt }], config)
+      openaiTask
     ]);
 
     // 解析 Gemini 成果 (Maya & Iris)
@@ -742,13 +771,21 @@ JSON 格式要求如下：
 }
 請確保 JSON 語法完全正確。`;
 
+  const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
+  const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
+    (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+
   try {
-    const hasGeminiKey = !!(config.geminiApiKey || process.env.GEMINI_API_KEY);
+    let responseText = "";
     
-    // 首選 Gemini 以獲取更好的 AEO/SEO 與 JSON 格式輸出，若無 Key 則降級 OpenAI
-    const responseText = hasGeminiKey
-      ? await callGemini([{ role: "user", content: prompt }], config)
-      : await callOpenAI([{ role: "user", content: prompt }], config);
+    // 依據可用金鑰智慧容錯調度
+    if (isGeminiKeyValid) {
+      responseText = await callGemini([{ role: "user", content: prompt }], config);
+    } else if (isOpenAIKeyValid) {
+      responseText = await callOpenAI([{ role: "user", content: prompt }], config);
+    } else {
+      throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    }
 
     const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
     const match = responseText.match(jsonRegex);
