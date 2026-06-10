@@ -61,7 +61,14 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       });
 
       if (!response.ok) {
-        throw new Error("系統總指揮連線中斷，請重試");
+        let errMsg = "系統總指揮連線中斷，請重試";
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
 
       const result = await response.json();

@@ -66,7 +66,7 @@ export interface WorkspaceData {
 // Constant templates for initial data setup
 export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
   brand_a_i8: {
-    social_copy: `# I8 核心主張 (Maya 產出)
+    social_copy: `# I8 核心主張
 
 【企業卡住，不一定是努力不夠... 🚀】
 你是否也常覺得「很多事都要自己扛，業績卡住卻找不出原因」？
@@ -98,7 +98,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   brand_b_nas: {
-    social_copy: `# 你不是想太多，你只是對感受比較敏銳 (Maya 產出)
+    social_copy: `# 你不是想太多，你只是對感受比較敏銳
 
 在人際關係或工作裡，你是否也常因為別人的一個眼神，就在心裡糾結半天？
 身邊的人常對你說：「你就是太敏感、想太多了啦。」
@@ -133,7 +133,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   brand_c_abl: {
-    social_copy: `# 你不是不夠努力，而是你的狀態需要被重新支持與調和 (Maya 產出)
+    social_copy: `# 你不是不夠努力，而是你的狀態需要被重新支持與調和
 
 為什麼明明看了那麼多書、學了那麼多道理，生活還是會反覆卡在相同的模式？
 你常常感到緊繃、失眠，或是明明想要往前，卻總覺得有一股隱形的阻力拉住自己？
@@ -168,7 +168,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   personal_brand: {
-    social_copy: `# 很多問題不是你不夠努力，而是你還沒看見關鍵因素 (Maya 產出)
+    social_copy: `# 很多問題不是你不夠努力，而是你還沒看見關鍵因素
 
 為什麼我們越努力，有時候反而覺得被困得越深？
 在人生下半場、創業或面臨企業決策時，我們常陷入一種「外在不斷尋找方法、內在卻反覆內耗」的死胡同。
