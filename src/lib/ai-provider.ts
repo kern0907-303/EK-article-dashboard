@@ -52,7 +52,7 @@ export function getAIConfig(): AIProviderConfig {
     provider: process.env.AI_PROVIDER || "mock",
     apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || "",
     geminiApiKey: process.env.GEMINI_API_KEY || "",
-    model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     webhookUrl: process.env.N8N_WEBHOOK_URL || "",
   };
 }
