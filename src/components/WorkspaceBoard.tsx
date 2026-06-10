@@ -96,6 +96,8 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
               <SocialTabContent 
                 brandId={activeBrandId} 
                 socialCopy={data.social_copy} 
+                aeoSchema={data.aeo_schema}
+                aeoFaq={data.aeo_faq}
               />
             )}
             {activeTab === "architecture" && (
@@ -127,13 +129,56 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
 }
 
 // ==================== 1. 社群文案分頁 (Maya) ====================
-function SocialTabContent({ brandId, socialCopy }: { brandId: string; socialCopy: string }) {
+function SocialTabContent({ 
+  brandId, 
+  socialCopy, 
+  aeoSchema, 
+  aeoFaq 
+}: { 
+  brandId: string; 
+  socialCopy: string; 
+  aeoSchema?: string; 
+  aeoFaq?: string; 
+}) {
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [val, setVal] = useState(socialCopy);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isPublishingWebsite, setIsPublishingWebsite] = useState(false);
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
+
+  const handlePublishWebsite = async () => {
+    if (isPublishingWebsite || !val) return;
+    setIsPublishingWebsite(true);
+    try {
+      const activeBrand = BRANDS.find((b) => b.id === brandId) || BRANDS[0];
+      
+      const response = await fetch("/api/publish-website", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          brandName: activeBrand.name,
+          content: val,
+          aeoSchema: aeoSchema || null,
+          aeoFaq: aeoFaq || null
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || "發布至官網失敗");
+      }
+
+      alert("🎉 文章已成功同步至官網 Supabase 資料庫！");
+    } catch (error: any) {
+      console.error("Publish website error:", error);
+      alert(`❌ 同步至官網失敗：${error.message}`);
+    } finally {
+      setIsPublishingWebsite(false);
+    }
+  };
 
   useEffect(() => {
     setVal(socialCopy);
@@ -254,7 +299,21 @@ function SocialTabContent({ brandId, socialCopy }: { brandId: string; socialCopy
               ) : (
                 <>
                   <button
-                    disabled={isPublishing}
+                    type="button"
+                    disabled={isPublishingWebsite || isPublishing}
+                    onClick={handlePublishWebsite}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-slate-850 text-slate-100 border border-blue-500/25 transition-all duration-300 cursor-pointer hover:shadow-lg hover:shadow-blue-500/15"
+                  >
+                    {isPublishingWebsite ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Network className="w-3.5 h-3.5 text-slate-150" />
+                    )}
+                    {isPublishingWebsite ? "正在同步..." : "🚀 發布至官網"}
+                  </button>
+
+                  <button
+                    disabled={isPublishingWebsite || isPublishing}
                     onClick={() => handlePublish("now")}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-300 border ${
                       pubStatus === "success"
@@ -275,7 +334,7 @@ function SocialTabContent({ brandId, socialCopy }: { brandId: string; socialCopy
                   </button>
 
                   <button
-                    disabled={isPublishing}
+                    disabled={isPublishingWebsite || isPublishing}
                     onClick={() => setShowDatePicker(true)}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 hover:bg-slate-850 text-slate-350 border border-slate-800 transition-all duration-300 cursor-pointer"
                   >
