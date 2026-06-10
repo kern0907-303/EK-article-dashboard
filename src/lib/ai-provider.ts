@@ -333,6 +333,9 @@ ${jackPrompt}
 async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<string> {
   if (!config.apiKey) throw new Error("Missing OPENAI_API_KEY");
 
+  const keyPrefix = config.apiKey.substring(0, 10);
+  console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -359,6 +362,9 @@ async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<st
 async function callGemini(messages: any[], config: AIProviderConfig): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+
+  const keyPrefix = apiKey.substring(0, 10);
+  console.log(`[Gemini Call] Using key prefix: ${keyPrefix}... (length: ${apiKey.length})`);
 
   // Gemini API 格式轉換
   const contents = messages
