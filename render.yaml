@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ek-article-dashboard
+    env: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://wbbnjasjyfuatkvnoogi.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
