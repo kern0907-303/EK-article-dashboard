@@ -217,6 +217,14 @@ export async function callErickCOO(
     return parseCOOOutput(erickOutput);
   }
 
+  // 如果只是 COO 階段，在此直接回傳，並將子提示詞裝在 dispatchData 中帶回
+  if (stage === "coo") {
+    return {
+      content: cleanErickContent,
+      dispatchData: { subPrompts }
+    };
+  }
+
   // 2. 雙大腦併發調度 (Parallel API Calls)
   const mayaPrompt = subPrompts.maya || "請寫作一份社群行銷貼文";
   const irisPrompt = subPrompts.iris || "請規劃適當的 SEO 關鍵字與大綱";
