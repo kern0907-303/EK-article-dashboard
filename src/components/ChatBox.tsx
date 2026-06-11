@@ -88,6 +88,18 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         if (subPrompts.mockData) {
           await saveWorkspace(activeBrandId, subPrompts.mockData);
         } else {
+          // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
+          await saveWorkspace(activeBrandId, {
+            social_copy: "⏳ 專家助理 Maya 正在為您撰寫爆款社群行銷長文與文章，這大約需要 15-30 秒，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
+            web_architecture: "⏳ 系統架構師 Leon 正在設計網頁功能路由架構，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
+            seo_keywords: [
+              { keyword: "⏳ 專家助理 Iris 正在分析關鍵字與規劃文章大綱...", volume: "計算中", competition: "計算中", outline: "大腦計算中" }
+            ],
+            ad_data: [
+              { label: "⏳ 廣告數據專家 Jack 正在計算廣告漏斗數據與預估成效指標...", value: "計算中", change: "計算中", isPositive: true }
+            ]
+          });
+
           // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
           const runMayaIris = async () => {
             try {
@@ -106,10 +118,20 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 const data = await res.json();
                 if (data.dispatchData) {
                   await saveWorkspace(activeBrandId, data.dispatchData);
+                } else {
+                  throw new Error("專家回傳資料格式不正確");
                 }
+              } else {
+                throw new Error(`HTTP 狀態碼: ${res.status}`);
               }
-            } catch (e) {
+            } catch (e: any) {
               console.error("Background Maya & Iris generation failed:", e);
+              await saveWorkspace(activeBrandId, {
+                social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
+                seo_keywords: [
+                  { keyword: "❌ 專家助理 Iris 產出失敗", volume: "失敗", competition: "失敗", outline: e.message || "金鑰或 API 連線異常" }
+                ]
+              });
             }
           };
 
@@ -130,10 +152,20 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 const data = await res.json();
                 if (data.dispatchData) {
                   await saveWorkspace(activeBrandId, data.dispatchData);
+                } else {
+                  throw new Error("專家回傳資料格式不正確");
                 }
+              } else {
+                throw new Error(`HTTP 狀態碼: ${res.status}`);
               }
-            } catch (e) {
+            } catch (e: any) {
               console.error("Background Leon & Jack generation failed:", e);
+              await saveWorkspace(activeBrandId, {
+                web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
+                ad_data: [
+                  { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: e.message || "金鑰或 API 連線異常", isPositive: false }
+                ]
+              });
             }
           };
 
