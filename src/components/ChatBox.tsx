@@ -49,11 +49,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       // 我們載入資料庫的最新對話（包含剛剛寫入的這條）
       const updatedHistory = [...messages, { id: "temp-user-id", role: "user", content: userText, timestamp: Date.now() } as ChatMessage];
 
-      // 3. 呼叫後端 API
+      // 3. 呼叫後端 API 取得 Erick COO 的任務拆解 (COO 階段，限時 3 秒內)
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          stage: "coo",
           history: updatedHistory,
           brandName: activeBrandName,
           aiProvider: aiProvider
@@ -73,15 +74,72 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
       const result = await response.json();
 
-      // 4. 將 Erick 的文字回覆存入對話歷史
+      // 4. 將 Erick 的文字回覆存入對話歷史 (讓使用者先看到 Erick 的拆解對話，避免等待超時)
       await saveChatMessage(activeBrandId, {
         role: "assistant",
         content: result.content
       });
 
-      // 5. 若有 JSON 任務拆解派發資料，同步更新到右側看板中
-      if (result.dispatchData) {
-        await saveWorkspace(activeBrandId, result.dispatchData);
+      // 5. 若有子任務 subPrompts 或是 mockData，啟動非同步專家生成，避免 Netlify 10秒超時限制
+      if (result.dispatchData && result.dispatchData.subPrompts) {
+        const subPrompts = result.dispatchData.subPrompts;
+
+        // 如果是 mockData 模式，直接一次性更新，省去後續請求
+        if (subPrompts.mockData) {
+          await saveWorkspace(activeBrandId, subPrompts.mockData);
+        } else {
+          // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
+          const runMayaIris = async () => {
+            try {
+              const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  stage: "expert",
+                  expertType: "maya_iris",
+                  subPrompts,
+                  brandName: activeBrandName,
+                  aiProvider
+                })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.dispatchData) {
+                  await saveWorkspace(activeBrandId, data.dispatchData);
+                }
+              }
+            } catch (e) {
+              console.error("Background Maya & Iris generation failed:", e);
+            }
+          };
+
+          const runLeonJack = async () => {
+            try {
+              const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  stage: "expert",
+                  expertType: "leon_jack",
+                  subPrompts,
+                  brandName: activeBrandName,
+                  aiProvider
+                })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.dispatchData) {
+                  await saveWorkspace(activeBrandId, data.dispatchData);
+                }
+              }
+            } catch (e) {
+              console.error("Background Leon & Jack generation failed:", e);
+            }
+          };
+
+          // 並行背景發起，不阻塞 ChatBox 的載入動畫/輸入狀態
+          Promise.all([runMayaIris(), runLeonJack()]);
+        }
       }
     } catch (error: any) {
       console.error("Chat error:", error);

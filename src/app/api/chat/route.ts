@@ -3,9 +3,9 @@ import { callErickCOO } from "@/lib/ai-provider";
 
 export async function POST(req: NextRequest) {
   try {
-    const { history, brandName, aiProvider } = await req.json();
+    const { history, brandName, aiProvider, stage, expertType, subPrompts } = await req.json();
 
-    if (!history || !Array.isArray(history)) {
+    if (stage !== "expert" && (!history || !Array.isArray(history))) {
       return NextResponse.json(
         { error: "Invalid or missing history payload" },
         { status: 400 }
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 呼叫模組化 AI 服務（Erick 營運長）
-    const result = await callErickCOO(history, brandName, aiProvider);
+    const result = await callErickCOO(history || [], brandName, aiProvider, stage, expertType, subPrompts);
 
     return NextResponse.json({
       content: result.content,

@@ -63,13 +63,26 @@ export function getAIConfig(): AIProviderConfig {
 export async function callErickCOO(
   history: ChatMessage[],
   brandName: string,
-  overrideProvider?: string
+  overrideProvider?: string,
+  stage?: string,
+  expertType?: string,
+  subPromptsInput?: any
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
   
   if (provider === "mock") {
-    return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
+    const mockResult = await callMockCOO(history[history.length - 1]?.content || "", brandName);
+    const parsed = parseCOOOutput(mockResult);
+    if (stage === "coo") {
+      return {
+        content: parsed.content,
+        dispatchData: {
+          subPrompts: { mockData: parsed.dispatchData }
+        }
+      };
+    }
+    return parsed;
   }
 
   let brandContext = `當前切換的品牌/領域是：【${brandName}】。請確保所有對話與產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
@@ -263,24 +276,32 @@ ${jackPrompt}
   let openaiResult: any = {};
 
   try {
-    let geminiTask;
-    let openaiTask;
+    let geminiTask = Promise.resolve("");
+    let openaiTask = Promise.resolve("");
+
+    // 依據 stage 與 expertType 智慧決定要執行哪一個專家任務，或者全跑
+    const runGemini = !stage || (stage === "expert" && expertType === "maya_iris");
+    const runOpenai = !stage || (stage === "expert" && expertType === "leon_jack");
 
     // 依據可用金鑰智慧容錯調度
-    if (isGeminiKeyValid) {
-      geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config);
-    } else if (isOpenAIKeyValid) {
-      geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config);
-    } else {
-      throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    if (runGemini) {
+      if (isGeminiKeyValid) {
+        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config);
+      } else if (isOpenAIKeyValid) {
+        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config);
+      } else {
+        throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+      }
     }
 
-    if (isOpenAIKeyValid) {
-      openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config);
-    } else if (isGeminiKeyValid) {
-      openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config);
-    } else {
-      throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    if (runOpenai) {
+      if (isOpenAIKeyValid) {
+        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config);
+      } else if (isGeminiKeyValid) {
+        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config);
+      } else {
+        throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+      }
     }
 
     const [geminiResponse, openaiResponse] = await Promise.all([
@@ -288,34 +309,36 @@ ${jackPrompt}
       openaiTask
     ]);
 
-    // 解析 Gemini 成果 (Maya & Iris)
-    const geminiMatch = geminiResponse.match(jsonRegex);
-    if (geminiMatch && geminiMatch[1]) {
-      try {
-        geminiResult = JSON.parse(geminiMatch[1].trim());
-      } catch (e) {
-        console.error("Failed to parse Gemini parallel response:", e);
+    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+
+    if (runGemini && geminiResponse) {
+      const geminiMatch = geminiResponse.match(jsonRegex);
+      if (geminiMatch && geminiMatch[1]) {
+        try {
+          geminiResult = JSON.parse(geminiMatch[1].trim());
+        } catch (e) {
+          console.error("Failed to parse Gemini parallel response:", e);
+        }
+      } else {
+        try {
+          geminiResult = JSON.parse(geminiResponse.trim());
+        } catch {}
       }
-    } else {
-      // 嘗試直接 parse 整體文字
-      try {
-        geminiResult = JSON.parse(geminiResponse.trim());
-      } catch {}
     }
 
-    // 解析 OpenAI 成果 (Leon & Jack)
-    const openaiMatch = openaiResponse.match(jsonRegex);
-    if (openaiMatch && openaiMatch[1]) {
-      try {
-        openaiResult = JSON.parse(openaiMatch[1].trim());
-      } catch (e) {
-        console.error("Failed to parse OpenAI parallel response:", e);
+    if (runOpenai && openaiResponse) {
+      const openaiMatch = openaiResponse.match(jsonRegex);
+      if (openaiMatch && openaiMatch[1]) {
+        try {
+          openaiResult = JSON.parse(openaiMatch[1].trim());
+        } catch (e) {
+          console.error("Failed to parse OpenAI parallel response:", e);
+        }
+      } else {
+        try {
+          openaiResult = JSON.parse(openaiResponse.trim());
+        } catch {}
       }
-    } else {
-      // 嘗試直接 parse 整體文字
-      try {
-        openaiResult = JSON.parse(openaiResponse.trim());
-      } catch {}
     }
   } catch (error: any) {
     console.error("Parallel AI calls failed:", error);
@@ -323,6 +346,28 @@ ${jackPrompt}
       throw new Error(`AI 大腦平行呼叫失敗: ${error.message || error}`);
     }
     return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
+  }
+
+  // 如果是在 expert 階段，只返回對應專家的資料即可
+  if (stage === "expert") {
+    if (expertType === "maya_iris") {
+      return {
+        content: "",
+        dispatchData: {
+          social_copy: geminiResult.social_copy || "",
+          seo_keywords: geminiResult.seo_keywords || []
+        }
+      };
+    }
+    if (expertType === "leon_jack") {
+      return {
+        content: "",
+        dispatchData: {
+          web_architecture: openaiResult.web_architecture || "",
+          ad_data: openaiResult.ad_data || []
+        }
+      };
+    }
   }
 
   // 3. 完成四看板聯動：重新組裝成最終的 JSON
