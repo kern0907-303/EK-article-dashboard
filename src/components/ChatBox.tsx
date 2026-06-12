@@ -169,8 +169,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             }
           };
 
-          // 並行背景發起，不阻塞 ChatBox 的載入動畫/輸入狀態
-          Promise.all([runMayaIris(), runLeonJack()]);
+          // 順序背景發起，避免 Render 免費版同時處理兩個大腦 API 導致記憶體超載 (OOM) 與 502 崩潰
+          const runSequentially = async () => {
+            await runMayaIris();
+            await runLeonJack();
+          };
+          runSequentially();
         }
       }
     } catch (error: any) {
