@@ -57,66 +57,6 @@ export function getAIConfig(): AIProviderConfig {
   };
 }
 
-function extractJsonObject(text: string): string | null {
-  const start = text.indexOf('{');
-  if (start === -1) return null;
-  
-  let balance = 0;
-  let inString = false;
-  let escape = false;
-  
-  for (let i = start; i < text.length; i++) {
-    const char = text[i];
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (char === '\\') {
-      escape = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (!inString) {
-      if (char === '{') {
-        balance++;
-      } else if (char === '}') {
-        balance--;
-        if (balance === 0) {
-          return text.substring(start, i + 1);
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function robustJSONParse(text: string): any {
-  const clean = text.trim();
-  const extracted = extractJsonObject(clean);
-  if (extracted) {
-    try {
-      return JSON.parse(extracted);
-    } catch (e) {
-      // fallback
-    }
-  }
-
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-  const match = clean.match(jsonRegex);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1].trim());
-    } catch (e) {
-      // fallback
-    }
-  }
-
-  return JSON.parse(clean);
-}
-
 /**
  * 核心 AI 雙模型協作調度路由
  */
@@ -296,7 +236,7 @@ export async function callErickCOO(
 
 ### 核心限制 (非常重要)：
 1. **完全使用繁體中文(台灣)**：所有產出（特別是 Maya 的社群文案與文章）必須完全使用繁體中文，不可使用簡體字。
-2. **結構完整且精緻的長文**：Maya 產出的文章/社群文案必須是結構完整的精緻長文（字數約 600 至 800 字左右），絕對不能只有簡短的幾段或摘要。必須包含：
+2. **極致長文且結構完整**：Maya 產出的文章/社群文案必須是「深度長篇大作」（字數至少 800 至 1500 字以上），絕對不能只有簡短的幾段或摘要。必須包含：
    - 吸引人的爆款標題
    - 引人入勝且引起共鳴的情境導言（痛點描寫）
    - 深入剖析的 3 大核心論點/卡點分析（每個論點都必須展開詳細論述、舉例說明與提供具體建議）
@@ -364,13 +304,12 @@ ${jackPrompt}
     const runGemini = !stage || (stage === "expert" && expertType === "maya_iris");
     const runOpenai = !stage || (stage === "expert" && expertType === "leon_jack");
 
-    // 依據可用金鑰智慧容錯調度 (專家大腦強制採用速度更快的 gpt-4o-mini 避免 502 Gateway Timeout)
-    const expertConfig = { ...config, model: "gpt-4o-mini" };
+    // 依據可用金鑰智慧容錯調度
     if (runGemini) {
       if (isGeminiKeyValid) {
-        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], expertConfig, true);
+        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config);
       } else if (isOpenAIKeyValid) {
-        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], expertConfig, true);
+        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
@@ -378,9 +317,9 @@ ${jackPrompt}
 
     if (runOpenai) {
       if (isOpenAIKeyValid) {
-        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], expertConfig, true);
+        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config);
       } else if (isGeminiKeyValid) {
-        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], expertConfig, true);
+        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
@@ -391,19 +330,35 @@ ${jackPrompt}
       openaiTask
     ]);
 
+    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+
     if (runGemini && geminiResponse) {
-      try {
-        geminiResult = robustJSONParse(geminiResponse);
-      } catch (e: any) {
-        console.error("Failed to parse Gemini parallel response:", e);
+      const geminiMatch = geminiResponse.match(jsonRegex);
+      if (geminiMatch && geminiMatch[1]) {
+        try {
+          geminiResult = JSON.parse(geminiMatch[1].trim());
+        } catch (e) {
+          console.error("Failed to parse Gemini parallel response:", e);
+        }
+      } else {
+        try {
+          geminiResult = JSON.parse(geminiResponse.trim());
+        } catch {}
       }
     }
 
     if (runOpenai && openaiResponse) {
-      try {
-        openaiResult = robustJSONParse(openaiResponse);
-      } catch (e: any) {
-        console.error("Failed to parse OpenAI parallel response:", e);
+      const openaiMatch = openaiResponse.match(jsonRegex);
+      if (openaiMatch && openaiMatch[1]) {
+        try {
+          openaiResult = JSON.parse(openaiMatch[1].trim());
+        } catch (e) {
+          console.error("Failed to parse OpenAI parallel response:", e);
+        }
+      } else {
+        try {
+          openaiResult = JSON.parse(openaiResponse.trim());
+        } catch {}
       }
     }
   } catch (error: any) {
@@ -470,21 +425,11 @@ ${jackPrompt}
 }
 
 // 1. OpenAI 實作
-async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<string> {
   if (!config.apiKey) throw new Error("Missing OPENAI_API_KEY");
 
   const keyPrefix = config.apiKey.substring(0, 10);
   console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
-
-  const requestBody: any = {
-    model: config.model || "gpt-5.4-mini",
-    messages: messages,
-    temperature: 0.7
-  };
-
-  if (jsonMode) {
-    requestBody.response_format = { type: "json_object" };
-  }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -492,7 +437,11 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
       "Content-Type": "application/json",
       "Authorization": `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify({
+      model: config.model || "gpt-5.4-mini",
+      messages: messages,
+      temperature: 0.7
+    })
   });
 
   if (!response.ok) {
@@ -505,7 +454,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
 }
 
 // 2. Gemini 實作
-async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+async function callGemini(messages: any[], config: AIProviderConfig): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
 
@@ -523,14 +472,6 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
   const systemInstruction = messages.find(m => m.role === "system")?.content;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-  
-  const generationConfig: any = {
-    temperature: 0.7
-  };
-  if (jsonMode) {
-    generationConfig.responseMimeType = "application/json";
-  }
-
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -539,7 +480,9 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
     body: JSON.stringify({
       contents,
       systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-      generationConfig
+      generationConfig: {
+        temperature: 0.7
+      }
     })
   });
 
