@@ -14,7 +14,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // 訂閱當前品牌的聊天歷史
   useEffect(() => {
@@ -28,15 +30,45 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   // 自動滾動到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isGenerating]);
+
+  // 元件卸載時自動中止請求
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const handleCancelGeneration = async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsGenerating(false);
+    setIsLoading(false);
+    
+    // 將預覽狀態重設
+    await saveWorkspace(activeBrandId, {
+      social_copy: "⚠️ 已取消生成。您可以重新輸入指令以開始新任務。",
+      web_architecture: "⚠️ 已取消生成。",
+      seo_keywords: [],
+      ad_data: []
+    });
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
+    if (!inputValue.trim() || isLoading || isGenerating) return;
 
     const userText = inputValue.trim();
     setInputValue("");
     setIsLoading(true);
+    setIsGenerating(false);
+
+    // 初始化 AbortController
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     try {
       // 1. 先把使用者的訊息存入資料庫
@@ -53,6 +85,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: signal,
         body: JSON.stringify({
           stage: "coo",
           history: updatedHistory,
@@ -106,6 +139,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                signal: signal,
                 body: JSON.stringify({
                   stage: "expert",
                   expertType: "maya_iris",
@@ -125,6 +159,10 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 throw new Error(`HTTP 狀態碼: ${res.status}`);
               }
             } catch (e: any) {
+              if (e.name === 'AbortError') {
+                console.log("Background Maya & Iris generation aborted.");
+                return;
+              }
               console.error("Background Maya & Iris generation failed:", e);
               await saveWorkspace(activeBrandId, {
                 social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
@@ -140,6 +178,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                signal: signal,
                 body: JSON.stringify({
                   stage: "expert",
                   expertType: "leon_jack",
@@ -159,6 +198,10 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 throw new Error(`HTTP 狀態碼: ${res.status}`);
               }
             } catch (e: any) {
+              if (e.name === 'AbortError') {
+                console.log("Background Leon & Jack generation aborted.");
+                return;
+              }
               console.error("Background Leon & Jack generation failed:", e);
               await saveWorkspace(activeBrandId, {
                 web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
@@ -171,13 +214,25 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
           // 順序背景發起，避免 Render 免費版同時處理兩個大腦 API 導致記憶體超載 (OOM) 與 502 崩潰
           const runSequentially = async () => {
-            await runMayaIris();
-            await runLeonJack();
+            setIsGenerating(true);
+            try {
+              await runMayaIris();
+              if (signal.aborted) return;
+              await runLeonJack();
+            } finally {
+              if (!signal.aborted) {
+                setIsGenerating(false);
+              }
+            }
           };
           runSequentially();
         }
       }
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log("Erick COO generation aborted.");
+        return;
+      }
       console.error("Chat error:", error);
       await saveChatMessage(activeBrandId, {
         role: "assistant",
@@ -293,6 +348,23 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Cancel Panel */}
+      {(isLoading || isGenerating) && (
+        <div className="mx-4 mb-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-center gap-2 text-xs text-amber-400 font-bold">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            {isLoading ? "營運長 Erick 正在指派中..." : "專家團隊正在並行分析與生成中..."}
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelGeneration}
+            className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold rounded-lg cursor-pointer transition-colors"
+          >
+            取消生成
+          </button>
+        </div>
+      )}
+
       {/* Input Form */}
       <form
         onSubmit={handleSend}
@@ -303,12 +375,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={`對 Erick 營運長下達【${activeBrandName}】指令...`}
-          disabled={isLoading}
+          disabled={isLoading || isGenerating}
           className="flex-1 px-4 py-3 rounded-xl bg-slate-900/60 border border-slate-850 focus:border-amber-500/60 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 placeholder-slate-500 disabled:opacity-50 transition-all duration-300"
         />
         <button
           type="submit"
-          disabled={!inputValue.trim() || isLoading}
+          disabled={!inputValue.trim() || isLoading || isGenerating}
           className="p-3 bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all duration-300 cursor-pointer shadow-lg shadow-amber-500/5 disabled:shadow-none shrink-0"
         >
           <Send className="w-4 h-4" />
