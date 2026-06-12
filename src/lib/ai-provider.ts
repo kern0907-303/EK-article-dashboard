@@ -57,6 +57,34 @@ export function getAIConfig(): AIProviderConfig {
   };
 }
 
+function robustJSONParse(text: string): any {
+  const clean = text.trim();
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+  const match = clean.match(jsonRegex);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  try {
+    return JSON.parse(clean);
+  } catch (e) {
+    const start = clean.indexOf('{');
+    const end = clean.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        return JSON.parse(clean.substring(start, end + 1));
+      } catch (e2) {
+        // fallback
+      }
+    }
+    throw e;
+  }
+}
+
 /**
  * 核心 AI 雙模型協作調度路由
  */
@@ -307,9 +335,9 @@ ${jackPrompt}
     // 依據可用金鑰智慧容錯調度
     if (runGemini) {
       if (isGeminiKeyValid) {
-        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config);
+        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config, true);
       } else if (isOpenAIKeyValid) {
-        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config);
+        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config, true);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
@@ -317,9 +345,9 @@ ${jackPrompt}
 
     if (runOpenai) {
       if (isOpenAIKeyValid) {
-        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config);
+        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config, true);
       } else if (isGeminiKeyValid) {
-        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config);
+        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config, true);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
@@ -330,35 +358,19 @@ ${jackPrompt}
       openaiTask
     ]);
 
-    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-
     if (runGemini && geminiResponse) {
-      const geminiMatch = geminiResponse.match(jsonRegex);
-      if (geminiMatch && geminiMatch[1]) {
-        try {
-          geminiResult = JSON.parse(geminiMatch[1].trim());
-        } catch (e) {
-          console.error("Failed to parse Gemini parallel response:", e);
-        }
-      } else {
-        try {
-          geminiResult = JSON.parse(geminiResponse.trim());
-        } catch {}
+      try {
+        geminiResult = robustJSONParse(geminiResponse);
+      } catch (e: any) {
+        console.error("Failed to parse Gemini parallel response:", e);
       }
     }
 
     if (runOpenai && openaiResponse) {
-      const openaiMatch = openaiResponse.match(jsonRegex);
-      if (openaiMatch && openaiMatch[1]) {
-        try {
-          openaiResult = JSON.parse(openaiMatch[1].trim());
-        } catch (e) {
-          console.error("Failed to parse OpenAI parallel response:", e);
-        }
-      } else {
-        try {
-          openaiResult = JSON.parse(openaiResponse.trim());
-        } catch {}
+      try {
+        openaiResult = robustJSONParse(openaiResponse);
+      } catch (e: any) {
+        console.error("Failed to parse OpenAI parallel response:", e);
       }
     }
   } catch (error: any) {
@@ -425,11 +437,21 @@ ${jackPrompt}
 }
 
 // 1. OpenAI 實作
-async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<string> {
+async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
   if (!config.apiKey) throw new Error("Missing OPENAI_API_KEY");
 
   const keyPrefix = config.apiKey.substring(0, 10);
   console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
+
+  const requestBody: any = {
+    model: config.model || "gpt-5.4-mini",
+    messages: messages,
+    temperature: 0.7
+  };
+
+  if (jsonMode) {
+    requestBody.response_format = { type: "json_object" };
+  }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -437,11 +459,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<st
       "Content-Type": "application/json",
       "Authorization": `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({
-      model: config.model || "gpt-5.4-mini",
-      messages: messages,
-      temperature: 0.7
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -454,7 +472,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig): Promise<st
 }
 
 // 2. Gemini 實作
-async function callGemini(messages: any[], config: AIProviderConfig): Promise<string> {
+async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
 
@@ -472,6 +490,14 @@ async function callGemini(messages: any[], config: AIProviderConfig): Promise<st
   const systemInstruction = messages.find(m => m.role === "system")?.content;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+  
+  const generationConfig: any = {
+    temperature: 0.7
+  };
+  if (jsonMode) {
+    generationConfig.responseMimeType = "application/json";
+  }
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -480,9 +506,7 @@ async function callGemini(messages: any[], config: AIProviderConfig): Promise<st
     body: JSON.stringify({
       contents,
       systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-      generationConfig: {
-        temperature: 0.7
-      }
+      generationConfig
     })
   });
 
