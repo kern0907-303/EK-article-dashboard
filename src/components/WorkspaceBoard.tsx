@@ -221,41 +221,109 @@ function SocialTabContent({
     }
   };
 
-  // 簡易 Markdown 解析器，防範依賴性問題
+  // 升級版 Markdown 解析器，支援流程圖動態渲染與過濾
   const renderMarkdown = (text: string) => {
     if (!text) return <p className="text-slate-500 italic">尚無社群文案，請對左側 Erick 下達任務...</p>;
     
-    return text.split("\n").map((line, idx) => {
-      if (line.startsWith("# ")) {
-        return <h1 key={idx} className="text-xl font-bold text-slate-100 mt-4 mb-2">{line.replace("# ", "")}</h1>;
-      }
-      if (line.startsWith("## ")) {
-        return <h2 key={idx} className="text-lg font-bold text-slate-200 mt-3 mb-2">{line.replace("## ", "")}</h2>;
-      }
-      if (line.startsWith("### ")) {
-        return <h3 key={idx} className="text-md font-bold text-slate-300 mt-2 mb-1">{line.replace("### ", "")}</h3>;
-      }
-      if (line.startsWith("* ") || line.startsWith("- ")) {
-        const content = line.substring(2);
-        // 解析粗體 **
-        const parts = content.split("**");
-        return (
-          <li key={idx} className="ml-5 list-disc text-slate-300 text-sm leading-relaxed my-0.5">
-            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-400 font-semibold">{part}</strong> : part)}
-          </li>
-        );
-      }
-      if (line.trim() === "") {
-        return <div key={idx} className="h-2" />;
+    const lines = text.split("\n");
+    const elements: React.JSX.Element[] = [];
+    let inCodeBlock = false;
+    let codeContent: string[] = [];
+    let codeLanguage = "";
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      if (trimmed.startsWith("```")) {
+        if (inCodeBlock) {
+          inCodeBlock = false;
+          const codeText = codeContent.join("\n");
+          if (codeLanguage === "mermaid") {
+            const base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(codeText))) : Buffer.from(codeText).toString("base64");
+            const imageUrl = `https://mermaid.ink/img/${base64}`;
+            
+            elements.push(
+              <div key={`mermaid-${i}`} className="my-5 flex flex-col items-center select-none bg-slate-900/30 p-4 rounded-xl border border-slate-850">
+                <img 
+                  src={imageUrl} 
+                  alt="概念模型架構圖" 
+                  className="rounded-lg border border-slate-800 max-h-[350px] shadow-lg shadow-black/30 hover:scale-[1.01] transition-transform duration-300"
+                />
+                <span className="text-[10px] text-slate-500 mt-2.5 italic">動態架構流程圖 (自動即時渲染)</span>
+              </div>
+            );
+          } else {
+            elements.push(
+              <pre key={`code-${i}`} className="p-4 bg-slate-950 rounded-xl border border-slate-850 text-xs font-mono text-slate-350 overflow-x-auto my-3">
+                {codeText}
+              </pre>
+            );
+          }
+          codeContent = [];
+          codeLanguage = "";
+        } else {
+          inCodeBlock = true;
+          codeLanguage = trimmed.slice(3).trim().toLowerCase();
+        }
+        continue;
       }
       
-      const parts = line.split("**");
-      return (
-        <p key={idx} className="text-slate-350 text-sm leading-relaxed my-1.5">
-          {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-400 font-semibold">{part}</strong> : part)}
-        </p>
-      );
-    });
+      if (inCodeBlock) {
+        codeContent.push(line);
+        continue;
+      }
+      
+      if (trimmed === "") {
+        elements.push(<div key={`space-${i}`} className="h-3" />);
+        continue;
+      }
+      
+      // 圖片 Markdown
+      if (/^!\[(.*?)\]\((.*?)\)$/.test(trimmed)) {
+        const match = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+        const alt = match?.[1] || "";
+        const url = match?.[2] || "";
+        
+        // 隱藏未配置的 pCloud 佔位破圖
+        if (url.includes("your-id")) {
+          continue;
+        }
+        
+        elements.push(
+          <div key={`img-${i}`} className="my-5 flex flex-col items-center">
+            <img src={url} alt={alt} className="rounded-xl border border-slate-800 shadow-md max-w-full" />
+            {alt && <span className="text-xs text-slate-400 mt-2.5 italic">{alt}</span>}
+          </div>
+        );
+        continue;
+      }
+      
+      if (line.startsWith("# ")) {
+        elements.push(<h1 key={i} className="text-lg font-bold text-slate-100 mt-4 mb-2">{line.replace("# ", "")}</h1>);
+      } else if (line.startsWith("## ")) {
+        elements.push(<h2 key={i} className="text-base font-bold text-slate-200 mt-3.5 mb-2">{line.replace("## ", "")}</h2>);
+      } else if (line.startsWith("### ")) {
+        elements.push(<h3 key={i} className="text-sm font-bold text-slate-300 mt-3 mb-1.5">{line.replace("### ", "")}</h3>);
+      } else if (line.startsWith("* ") || line.startsWith("- ")) {
+        const content = line.substring(2);
+        const parts = content.split("**");
+        elements.push(
+          <li key={i} className="ml-5 list-disc text-slate-350 text-xs leading-relaxed my-1">
+            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-450 font-semibold">{part}</strong> : part)}
+          </li>
+        );
+      } else {
+        const parts = line.split("**");
+        elements.push(
+          <p key={i} className="text-slate-350 text-xs leading-relaxed my-1.5">
+            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-450 font-semibold">{part}</strong> : part)}
+          </p>
+        );
+      }
+    }
+    
+    return elements;
   };
 
   return (
@@ -347,6 +415,16 @@ function SocialTabContent({
           )}
 
           <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
+            {val && (
+              <button
+                type="button"
+                onClick={handleCopyCleanText}
+                className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
+                title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
+              >
+                <Copy className="w-3.5 h-3.5 text-amber-500" /> 複製貼文
+              </button>
+            )}
             <button
               onClick={() => setMode("preview")}
               className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
