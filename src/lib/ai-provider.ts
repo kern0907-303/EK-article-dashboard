@@ -296,7 +296,7 @@ export async function callErickCOO(
 
 ### 核心限制 (非常重要)：
 1. **完全使用繁體中文(台灣)**：所有產出（特別是 Maya 的社群文案與文章）必須完全使用繁體中文，不可使用簡體字。
-2. **極致長文且結構完整**：Maya 產出的文章/社群文案必須是「深度長篇大作」（字數至少 800 至 1500 字以上），絕對不能只有簡短的幾段或摘要。必須包含：
+2. **結構完整且精緻的長文**：Maya 產出的文章/社群文案必須是結構完整的精緻長文（字數約 600 至 800 字左右），絕對不能只有簡短的幾段或摘要。必須包含：
    - 吸引人的爆款標題
    - 引人入勝且引起共鳴的情境導言（痛點描寫）
    - 深入剖析的 3 大核心論點/卡點分析（每個論點都必須展開詳細論述、舉例說明與提供具體建議）
@@ -364,12 +364,13 @@ ${jackPrompt}
     const runGemini = !stage || (stage === "expert" && expertType === "maya_iris");
     const runOpenai = !stage || (stage === "expert" && expertType === "leon_jack");
 
-    // 依據可用金鑰智慧容錯調度
+    // 依據可用金鑰智慧容錯調度 (專家大腦強制採用速度更快的 gpt-4o-mini 避免 502 Gateway Timeout)
+    const expertConfig = { ...config, model: "gpt-4o-mini" };
     if (runGemini) {
       if (isGeminiKeyValid) {
-        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config, true);
+        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], expertConfig, true);
       } else if (isOpenAIKeyValid) {
-        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config, true);
+        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], expertConfig, true);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
@@ -377,9 +378,9 @@ ${jackPrompt}
 
     if (runOpenai) {
       if (isOpenAIKeyValid) {
-        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config, true);
+        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], expertConfig, true);
       } else if (isGeminiKeyValid) {
-        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config, true);
+        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], expertConfig, true);
       } else {
         throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
       }
