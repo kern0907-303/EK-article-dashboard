@@ -282,12 +282,30 @@ ${brandContext}
    每一篇產出的文章中，都必須在最合適的核心論點段落後，插入一個 Markdown 圖片標籤與對應的 Mermaid 圖表代碼：
    - 圖片標籤格式：\`![<流程或架構圖描述，如：35歲內部系統更新框架>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`（請將 slug 替換為與該文章主題相關的英文短命名，如 erick-midlife-system）。
    - 在該圖片標籤的下方，必須緊接著附帶一個完整的 Mermaid.js 圖表代碼區塊（使用 \`\`\`mermaid 與 \`\`\` 包覆），以便使用者複製至 mermaid.live 下載並儲存到 pCloud 中。
+   - **高質感配色與樣式規範 (極重要)**：為了契合麥肯錫/BCG 等高端管理顧問公司的專業調性，你生成的 Mermaid 代碼頂端必須附帶初始化樣式參數 `%%{init: { ... }}%%`，且圖表必須使用多樣化的節點形狀（如膠囊 \`([文字])\`、決策 \`{文字}\`、資料庫 \`[(文字)]\` 等）以及附帶箭頭說明的連線。
    - 範例格式：
      \`![35歲內部系統更新框架](https://filedn.com/your-id/website-assets/erick-midlife-system-framework.png)\`
      \`\`\`mermaid
+     %%{init: {
+       'theme': 'base',
+       'themeVariables': {
+         'fontFamily': 'Arial, sans-serif',
+         'primaryColor': '#002A54',
+         'primaryTextColor': '#FFFFFF',
+         'primaryBorderColor': '#00C2C2',
+         'lineColor': '#00509D',
+         'secondaryColor': '#00C2C2',
+         'secondaryTextColor': '#FFFFFF',
+         'tertiaryColor': '#F4F9FA',
+         'tertiaryTextColor': '#1A202C'
+       }
+     }}%%
      graph TD
-       A[舊系統] --> B[卡點]
-       B --> C[更新系統]
+       A([起點: 使用者痛點]) --> B[卡點因素診斷]
+       B --> C{決策路徑篩選}
+       C -->|方案A| D[企業決策校準]
+       C -->|方案B| E[生命數字解析]
+       D & E --> F[(心靈與事業避風港)]
      \`\`\`
 
 
