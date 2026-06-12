@@ -240,7 +240,8 @@ function SocialTabContent({
           inCodeBlock = false;
           const codeText = codeContent.join("\n");
           if (codeLanguage === "mermaid") {
-            const base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(codeText))) : Buffer.from(codeText).toString("base64");
+            let base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(codeText))) : Buffer.from(codeText).toString("base64");
+            base64 = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
             const imageUrl = `https://mermaid.ink/img/${base64}`;
             
             elements.push(
