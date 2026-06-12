@@ -148,6 +148,26 @@ function SocialTabContent({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
 
+  const handleCopyCleanText = async () => {
+    try {
+      // 1. 移除所有的 Mermaid 代碼區塊 (包括 ```mermaid ... ```)
+      let cleanText = val.replace(/```mermaid[\s\S]*?```/g, "");
+      
+      // 2. 移除所有的 Markdown 圖片標籤 ![alt](url)
+      cleanText = cleanText.replace(/!\[.*?\]\(.*?\)/g, "");
+      
+      // 3. 移除多餘的空行 (連續兩個以上的換行縮減為一個，且去除前後空白)
+      cleanText = cleanText.replace(/\n{3,}/g, "\n\n").trim();
+      
+      // 4. 複製到剪貼簿
+      await navigator.clipboard.writeText(cleanText);
+      alert("📋 已複製乾淨的貼文內容至剪貼簿（已自動排除圖表程式碼與圖片網址）");
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+      alert("❌ 複製失敗，請手動複製");
+    }
+  };
+
   const handlePublishWebsite = async () => {
     if (isPublishingWebsite || !val) return;
     setIsPublishingWebsite(true);
@@ -224,6 +244,38 @@ function SocialTabContent({
   // 升級版 Markdown 解析器，支援流程圖動態渲染與過濾
   const renderMarkdown = (text: string) => {
     if (!text) return <p className="text-slate-500 italic">尚無社群文案，請對左側 Erick 下達任務...</p>;
+
+    const formatMermaidCode = (rawCode: string) => {
+      let code = rawCode.trim();
+      // 1. 移除任何既有的 %%{init: ... }%% 區塊，以防格式衝突
+      code = code.replace(/%%\{init:[\s\S]*?\}%%\s*/g, "");
+      
+      // 2. 將標準 A[text] 節點升級為膠囊形狀 A([text])，避免破壞特殊節點形狀如決策 A{text} 或資料庫 A[(text)]
+      code = code.replace(/([a-zA-Z0-9_-]+)\s*\[(.*?)\]/g, (match, nodeId, label) => {
+        if (label.startsWith("(") || label.startsWith("[") || label.endsWith(")") || label.endsWith("]")) {
+          return match;
+        }
+        return `${nodeId}([${label}])`;
+      });
+      
+      // 3. 注入麥肯錫/BCG 高階企管顧問風格之專業配色主題 (海軍藍、蒂芙尼綠、極簡白)
+      const themeConfig = `%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': 'Arial, sans-serif',
+    'primaryColor': '#002A54',
+    'primaryTextColor': '#FFFFFF',
+    'primaryBorderColor': '#00C2C2',
+    'lineColor': '#00509D',
+    'secondaryColor': '#00C2C2',
+    'secondaryTextColor': '#FFFFFF',
+    'tertiaryColor': '#F4F9FA',
+    'tertiaryTextColor': '#1A202C'
+  }
+}}%%`;
+
+      return themeConfig + "\n" + code;
+    };
     
     const lines = text.split("\n");
     const elements: React.JSX.Element[] = [];
@@ -240,7 +292,8 @@ function SocialTabContent({
           inCodeBlock = false;
           const codeText = codeContent.join("\n");
           if (codeLanguage === "mermaid") {
-            let base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(codeText))) : Buffer.from(codeText).toString("base64");
+            const formattedCode = formatMermaidCode(codeText);
+            let base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(formattedCode))) : Buffer.from(formattedCode).toString("base64");
             base64 = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
             const imageUrl = `https://mermaid.ink/img/${base64}`;
             
