@@ -368,12 +368,25 @@ ${brandContext}
 ${irisPrompt}
 
 ### 輸出 JSON 格式要求：
-你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
+你必須且僅能輸出如下 JSON 格式內容：
 {
   "seo_keywords": [
     { "keyword": "關鍵字1", "volume": "月搜尋量", "competition": "高|中|低", "outline": "此關鍵字的文章大綱說明" }
   ],
-  "aeo_schema": "JSON-LD 格式的 FAQ Schema 結構化資料，直接輸出完整 JSON 字串（雙引號需進行正確的 JSON 轉義）",
+  "aeo_schema": {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "問題？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "回答"
+        }
+      }
+    ]
+  },
   "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
 }`;
 
@@ -435,12 +448,21 @@ ${mayaPrompt}
     const mayaResponse = await runQueryWithFallback(mayaStepPrompt, config, true);
     const mayaResult = robustJSONParse(mayaResponse);
 
+    let formattedSchema = "";
+    if (irisResult.aeo_schema) {
+      if (typeof irisResult.aeo_schema === "object") {
+        formattedSchema = `<script type="application/ld+json">\n${JSON.stringify(irisResult.aeo_schema, null, 2)}\n</script>`;
+      } else {
+        formattedSchema = String(irisResult.aeo_schema);
+      }
+    }
+
     return {
       content: "",
       dispatchData: {
         social_copy: mayaResult.social_copy || "",
         seo_keywords: irisResult.seo_keywords || [],
-        aeo_schema: irisResult.aeo_schema || "",
+        aeo_schema: formattedSchema,
         aeo_faq: irisResult.aeo_faq || ""
       }
     };
