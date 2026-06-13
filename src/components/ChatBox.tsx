@@ -130,7 +130,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             ],
             ad_data: [
               { label: "⏳ 廣告數據專家 Jack 正在計算廣告漏斗數據與預估成效指標...", value: "計算中", change: "計算中", isPositive: true }
-            ]
+            ],
+            aeo_schema: "",
+            aeo_faq: ""
           });
 
           // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成

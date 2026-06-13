@@ -282,7 +282,12 @@ ${brandContext}
    - 深入剖析的 3 大核心論點/卡點分析（每個論點都必須展開詳細論述、舉例說明與提供具體建議）
    - 具體可行、步驟化且細緻的實操行動指南/改善方案
    - 溫暖且有餘韻的結尾。**注意：目前處於「養粉/培育受眾」階段，文章重點在於提供有質感、有深度、能引起讀者靈魂共鳴的內容，藉以建立信任感。請絕對不要每次都強行置入廣告或強烈的 Call to Action (CTA) 行動呼籲！** 結尾應以溫和的文字自然結束，只在極為自然合適的語境下，才可以放入非常輕量柔和的引導，避免過度商業化。
-   - 精選 5-8 個社群標籤（Hashtags）
+   - 標籤分類管理與歸納規範 (極重要)：
+     你產出的文章結尾所使用的 Hashtags 標籤，必須且僅能從以下「已核准的標準標籤庫」中，根據文章所屬品牌，選擇 3-5 個最合適的標籤。**絕對禁止隨意自我創造、發明或疊加新的 Hashtags。** 相似的概念、改念或議題必須強制歸納與合併至以下標準標籤中：
+     * 個人品牌 (Erick 專欄) 專屬標準標籤：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
+     * 品牌 A I8 (企業醫生) 專屬標準標籤：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
+     * 品牌 B NAS (生命數字) 專屬標準標籤：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
+     * 品牌 C ABL (量子調頻) 專屬標準標籤：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
    請確保內容豐滿、邏輯嚴密，提供給讀者極高的閱讀價值與洞察力，嚴禁簡短或敷衍的摘要。
 3. **禁止使用任何 Markdown 格式符號**：Maya 的文案輸出必須是純文字格式，**嚴禁包含任何 **（粗體符號）、# 或 ## 或 ###（標題符號）**！標題或重點請直接以換行、空行區隔，或者以「」或【】符號加強，以便使用者能直接複製貼上至不支援 Markdown 的社群平台 (Facebook/Meta 等)。
 4. **預設嵌入流程圖或架構示意圖（核心限制）**：
@@ -333,7 +338,9 @@ ${irisPrompt}
   "social_copy": "Maya 產出的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)",
   "seo_keywords": [
     { "keyword": "關鍵字1", "volume": "月搜尋量", "competition": "高|中|低", "outline": "此關鍵字的文章大綱說明" }
-  ]
+  ],
+  "aeo_schema": "JSON-LD 格式的 FAQ Schema 結構化資料，其中包含根據文章核心問題設計的 FAQPage 標記，直接輸出完整 JSON 字串（且屬性與字串內的雙引號需進行正確的 JSON 轉義，避免 JSON 解析失敗）",
+  "aeo_faq": "針對 Answer Engine Optimization (AEO) 設計的 FAQ 問答集。請針對文章中的核心議題與剛才規劃的關鍵字，寫出 2-3 個最適合 AI 搜尋引擎檢索的問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
 }
 請確保 JSON 格式完全正確，沒有任何額外的解釋文字。`;
 
@@ -431,7 +438,9 @@ ${jackPrompt}
         content: "",
         dispatchData: {
           social_copy: geminiResult.social_copy || "",
-          seo_keywords: geminiResult.seo_keywords || []
+          seo_keywords: geminiResult.seo_keywords || [],
+          aeo_schema: geminiResult.aeo_schema || "",
+          aeo_faq: geminiResult.aeo_faq || ""
         }
       };
     }
@@ -451,7 +460,9 @@ ${jackPrompt}
     social_copy: geminiResult.social_copy || "",
     web_architecture: openaiResult.web_architecture || "",
     seo_keywords: geminiResult.seo_keywords || [],
-    ad_data: openaiResult.ad_data || []
+    ad_data: openaiResult.ad_data || [],
+    aeo_schema: geminiResult.aeo_schema || "",
+    aeo_faq: geminiResult.aeo_faq || ""
   };
 
   // 確保欄位齊全
