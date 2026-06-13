@@ -11,13 +11,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+    let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
     if (!n8nWebhookUrl) {
-      console.warn("N8N_WEBHOOK_URL is not configured in .env.local. Simulating success in mock mode.");
+      n8nWebhookUrl = "https://erick303.app.n8n.cloud/webhook/insights-publish";
+    }
+
+    if (n8nWebhookUrl === "mock") {
+      console.warn("N8N_WEBHOOK_URL is set to 'mock'. Simulating success in mock mode.");
       return NextResponse.json({
         success: true,
-        message: "N8N_WEBHOOK_URL is missing. Simulating success in mock mode.",
+        message: "N8N_WEBHOOK_URL is configured as 'mock'. Simulating success.",
         simulated: true,
         data: {
           brandId,
