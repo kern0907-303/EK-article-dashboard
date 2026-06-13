@@ -21,15 +21,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. 從 Markdown 內文中解析出文章標題
+    // 1. 從 Markdown / 純文字內文中解析出完整且聳動的文章標題
     let title = "未命名文章";
-    const titleMatch = content.match(/^#\s+(.+)$/m);
-    if (titleMatch && titleMatch[1]) {
-      title = titleMatch[1].trim();
-    } else {
-      // 兜底：取內文前 20 個字去除符號作為標題
-      title = content.substring(0, 25).replace(/[#*_\n\r]/g, "").trim();
-      if (content.length > 25) title += "...";
+    const lines = content.split(/\r?\n/).map((line: string) => line.trim()).filter((line: string) => line.length > 0);
+    if (lines.length > 0) {
+      const firstLine = lines[0];
+      if (firstLine.startsWith("# ")) {
+        title = firstLine.slice(2).trim();
+      } else {
+        // 如果沒有 # 標題標籤，將第一個非空行直接視為文章主標題
+        title = firstLine.replace(/[#*_]/g, "").trim();
+      }
     }
 
     // 對應的品牌 ID 欄位寫入對應的短名
