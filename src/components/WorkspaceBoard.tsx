@@ -161,6 +161,32 @@ function SocialTabContent({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
 
+  // 歷史文章狀態
+  const [historyArticles, setHistoryArticles] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  const fetchHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/articles?brandId=${brandId}`);
+      if (response.ok) {
+        const resData = await response.json();
+        if (resData.success && Array.isArray(resData.data)) {
+          setHistoryArticles(resData.data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch historical articles:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [brandId]);
+
   const handleCopyCleanText = async () => {
     try {
       // 1. 移除所有的 Mermaid 代碼區塊 (包括 ```mermaid ... ```)
@@ -205,11 +231,54 @@ function SocialTabContent({
       }
 
       alert("🎉 文章已成功同步至官網 Supabase 資料庫！");
+      fetchHistory(); // 成功上架後重新整理歷史文章庫
     } catch (error: any) {
       console.error("Publish website error:", error);
       alert(`❌ 同步至官網失敗：${error.message}`);
     } finally {
       setIsPublishingWebsite(false);
+    }
+  };
+
+  const handleLoadArticle = (articleContent: string) => {
+    if (confirm("載入此歷史文章將會覆蓋您目前的編輯區塊內容，確定要載入嗎？")) {
+      setVal(articleContent);
+      saveWorkspace(brandId, { social_copy: articleContent });
+    }
+  };
+
+  const handleSyndicateArticle = async (articleContent: string) => {
+    if (isPublishing) return;
+    if (!confirm("確定要將此篇歷史文章直接發布至社群（N8N 分流與第一則留言連結）嗎？")) {
+      return;
+    }
+    setIsPublishing(true);
+    setPubStatus("idle");
+    try {
+      const response = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          content: articleContent,
+          action: "now",
+          scheduleTime: null
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("發布失敗");
+      }
+
+      setPubStatus("success");
+      alert("🎉 歷史文章社群補發成功！");
+    } catch (error) {
+      console.error("Publish error:", error);
+      setPubStatus("error");
+      alert("❌ 發布失敗，請確認 n8n Webhook 設定");
+    } finally {
+      setIsPublishing(false);
+      setTimeout(() => setPubStatus("idle"), 4000);
     }
   };
 
@@ -533,6 +602,76 @@ function SocialTabContent({
           {renderMarkdown(val)}
         </div>
       )}
+
+      {/* 📚 歷史上架文章庫 (Supabase Archive) */}
+      <div className="bg-slate-900/10 border border-slate-800/80 rounded-xl overflow-hidden backdrop-blur-md transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/30 hover:bg-slate-900/50 transition-colors text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Folder className="w-4 h-4 text-amber-500" />
+            <span className="text-xs font-bold text-slate-200">📚 歷史上架文章庫 (Supabase Archive)</span>
+            <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">
+              {historyArticles.length} 篇
+            </span>
+          </div>
+          <span className="text-xs text-slate-500 font-bold">
+            {isHistoryExpanded ? "收起 ▲" : "展開 ▼"}
+          </span>
+        </button>
+
+        {isHistoryExpanded && (
+          <div className="p-4 border-t border-slate-800/60 max-h-[280px] overflow-y-auto space-y-2.5 scrollbar-thin scrollbar-thumb-slate-800">
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-6 gap-2 text-xs text-slate-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>讀取 Supabase 文章庫中...</span>
+              </div>
+            ) : historyArticles.length === 0 ? (
+              <p className="text-slate-500 italic text-xs text-center py-4">此品牌目前尚無已上架至 Supabase 的文章紀錄。</p>
+            ) : (
+              <div className="space-y-2">
+                {historyArticles.map((article: any) => (
+                  <div 
+                    key={article.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-950/30 border border-slate-850 rounded-xl hover:border-slate-800 transition-all duration-300 gap-3"
+                  >
+                    <div className="space-y-1">
+                      <h5 className="text-xs font-bold text-slate-200 line-clamp-1">{article.title}</h5>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-semibold">
+                        <span className="bg-blue-600/10 text-blue-400 px-1 py-0.5 rounded border border-blue-500/10">已上架網站</span>
+                        <span>{new Date(article.created_at).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleLoadArticle(article.content)}
+                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 text-slate-350 text-[10px] font-bold rounded-lg border border-slate-800 transition cursor-pointer flex items-center gap-1"
+                        title="載入文章內容至上方編輯區"
+                      >
+                        <Folder className="w-3 h-3 text-slate-400" />
+                        <span>載入</span>
+                      </button>
+                      <button
+                        onClick={() => handleSyndicateArticle(article.content)}
+                        disabled={isPublishing}
+                        className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[10px] font-bold rounded-lg hover:shadow-md hover:shadow-amber-500/5 transition cursor-pointer flex items-center gap-1"
+                        title="透過 N8N 自動化補發至社群與留言連結"
+                      >
+                        <Send className="w-3 h-3 text-slate-950" />
+                        <span>補發社群</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
