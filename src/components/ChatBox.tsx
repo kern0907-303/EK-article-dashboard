@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
-import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory } from "@/lib/firebase";
+import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/firebase";
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -15,6 +15,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [brandGuidelines, setBrandGuidelines] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -23,6 +24,17 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     setMessages([]); // 立即清空，防範切換品牌時對話紀錄殘留/閃爍
     const unsubscribe = subscribeToChat(activeBrandId, (msgs) => {
       setMessages(msgs);
+    });
+    return () => unsubscribe();
+  }, [activeBrandId]);
+
+  // 訂閱當前品牌的看板資料以獲取品牌說明
+  useEffect(() => {
+    setBrandGuidelines("");
+    const unsubscribe = subscribeToWorkspace(activeBrandId, (wData) => {
+      if (wData && wData.brand_guidelines) {
+        setBrandGuidelines(wData.brand_guidelines);
+      }
     });
     return () => unsubscribe();
   }, [activeBrandId]);
@@ -90,7 +102,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           stage: "coo",
           history: updatedHistory,
           brandName: activeBrandName,
-          aiProvider: aiProvider
+          aiProvider: aiProvider,
+          brandGuidelines
         })
       });
 
@@ -147,7 +160,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   expertType: "maya_iris",
                   subPrompts,
                   brandName: activeBrandName,
-                  aiProvider
+                  aiProvider,
+                  brandGuidelines
                 })
               });
               if (res.ok) {
@@ -186,7 +200,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   expertType: "leon_jack",
                   subPrompts,
                   brandName: activeBrandName,
-                  aiProvider
+                  aiProvider,
+                  brandGuidelines
                 })
               });
               if (res.ok) {

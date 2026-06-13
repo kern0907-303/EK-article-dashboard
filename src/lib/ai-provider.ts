@@ -101,7 +101,8 @@ export async function callErickCOO(
   overrideProvider?: string,
   stage?: string,
   expertType?: string,
-  subPromptsInput?: any
+  subPromptsInput?: any,
+  brandGuidelines?: string
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
@@ -122,14 +123,18 @@ export async function callErickCOO(
 
   let brandContext = `當前切換的品牌/領域是：【${brandName}】。請確保所有對話與產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
 
-  if (brandName.includes("I8")) {
-    brandContext += "\n\n" + I8_BRAND_CONTEXT;
-  } else if (brandName.includes("NAS")) {
-    brandContext += "\n\n" + NAS_BRAND_CONTEXT;
-  } else if (brandName.includes("ABL")) {
-    brandContext += "\n\n" + ABL_BRAND_CONTEXT;
-  } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
-    brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
+  if (brandGuidelines && brandGuidelines.trim().length > 0) {
+    brandContext += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
+  } else {
+    if (brandName.includes("I8")) {
+      brandContext += "\n\n" + I8_BRAND_CONTEXT;
+    } else if (brandName.includes("NAS")) {
+      brandContext += "\n\n" + NAS_BRAND_CONTEXT;
+    } else if (brandName.includes("ABL")) {
+      brandContext += "\n\n" + ABL_BRAND_CONTEXT;
+    } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
+      brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
+    }
   }
 
   // 1. Erick 總指揮 (OpenAI)

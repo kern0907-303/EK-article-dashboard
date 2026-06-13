@@ -1,5 +1,9 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, collection, addDoc, query, orderBy, getDocs, deleteDoc, writeBatch } from "firebase/firestore";
+import { I8_BRAND_CONTEXT } from "../data/brands/i8";
+import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
+import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
+import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -61,11 +65,13 @@ export interface WorkspaceData {
   ad_data: AdDataItem[];
   aeo_schema?: string;
   aeo_faq?: string;
+  brand_guidelines?: string;
 }
 
 // Constant templates for initial data setup
 export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
   brand_a_i8: {
+    brand_guidelines: I8_BRAND_CONTEXT,
     social_copy: `I8 核心主張
 
 【企業卡住，不一定是努力不夠... 🚀】
@@ -98,6 +104,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   brand_b_nas: {
+    brand_guidelines: NAS_BRAND_CONTEXT,
     social_copy: `你不是想太多，你只是對感受比較敏銳
 
 在人際關係或工作裡，你是否也常因為別人的一個眼神，就在心裡糾結半天？
@@ -133,6 +140,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   brand_c_abl: {
+    brand_guidelines: ABL_BRAND_CONTEXT,
     social_copy: `你不是不夠努力，而是你的狀態需要被重新支持與調和
 
 為什麼明明看了那麼多書、學了那麼多道理，生活還是會反覆卡在相同的模式？
@@ -168,6 +176,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
     ]
   },
   personal_brand: {
+    brand_guidelines: ERICK_BRAND_CONTEXT,
     social_copy: `很多問題不是你不夠努力，而是你還沒看見關鍵因素
 
 為什麼我們越努力，有時候反而覺得被困得越深？

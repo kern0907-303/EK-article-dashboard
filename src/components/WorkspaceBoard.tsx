@@ -5,7 +5,7 @@ import {
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
-  Copy, Loader2, Sparkles
+  Copy, Loader2, Sparkles, Brain, Shield
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -13,13 +13,17 @@ import {
   SEOKeyword, AdDataItem 
 } from "@/lib/firebase";
 import { BRANDS } from "./BrandSelector";
+import { I8_BRAND_CONTEXT } from "../data/brands/i8";
+import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
+import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
+import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 
 interface WorkspaceBoardProps {
   activeBrandId: string;
   aiProvider: string;
 }
 
-type TabType = "social" | "architecture" | "seo" | "ads";
+type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines";
 
 export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("social");
@@ -27,7 +31,8 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
     social_copy: "",
     web_architecture: "",
     seo_keywords: [],
-    ad_data: []
+    ad_data: [],
+    brand_guidelines: ""
   });
 
   // 訂閱當前品牌的看板資料
@@ -36,7 +41,8 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
       social_copy: "",
       web_architecture: "",
       seo_keywords: [],
-      ad_data: []
+      ad_data: [],
+      brand_guidelines: ""
     }); // 立即重設，防範切換品牌時舊有看板資料殘留/閃爍
     const unsubscribe = subscribeToWorkspace(activeBrandId, (workspaceData) => {
       if (workspaceData) {
@@ -52,6 +58,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
     { id: "architecture", label: "網頁架構", expert: "Leon", icon: Network, color: "from-sky-500 to-indigo-500", glow: "shadow-indigo-500/10" },
     { id: "seo", label: "SEO關鍵字", expert: "Iris", icon: Search, color: "from-emerald-500 to-teal-500", glow: "shadow-emerald-500/10" },
     { id: "ads", label: "廣告數據", expert: "Jack", icon: BarChart3, color: "from-purple-500 to-violet-500", glow: "shadow-violet-500/10" },
+    { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" }
   ];
 
   return (
@@ -119,6 +126,12 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
               <AdsTabContent 
                 brandId={activeBrandId} 
                 adData={data.ad_data} 
+              />
+            )}
+            {activeTab === "guidelines" && (
+              <GuidelinesTabContent 
+                brandId={activeBrandId} 
+                brandGuidelines={data.brand_guidelines || ""} 
               />
             )}
           </motion.div>
@@ -1063,6 +1076,173 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
             <p className="text-slate-500 italic text-xs">
               尚無廣告指標，請對左側 Erick 下達任務...
             </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==================== 5. 品牌大腦分頁 (Erick) ====================
+function GuidelinesTabContent({
+  brandId,
+  brandGuidelines
+}: {
+  brandId: string;
+  brandGuidelines: string;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [val, setVal] = useState(brandGuidelines);
+
+  useEffect(() => {
+    setVal(brandGuidelines);
+  }, [brandGuidelines]);
+
+  const handleSave = async () => {
+    await saveWorkspace(brandId, { brand_guidelines: val });
+    setIsEditing(false);
+  };
+
+  const handleReset = async () => {
+    if (!confirm("確定要將此品牌的說明大腦重設為系統預設值嗎？此操作將覆蓋您目前自訂的內容。")) {
+      return;
+    }
+
+    let defaultText = "";
+    if (brandId === "brand_a_i8") {
+      defaultText = I8_BRAND_CONTEXT;
+    } else if (brandId === "brand_b_nas") {
+      defaultText = NAS_BRAND_CONTEXT;
+    } else if (brandId === "brand_c_abl") {
+      defaultText = ABL_BRAND_CONTEXT;
+    } else {
+      defaultText = ERICK_BRAND_CONTEXT;
+    }
+
+    setVal(defaultText);
+    await saveWorkspace(brandId, { brand_guidelines: defaultText });
+    setIsEditing(false);
+    alert("📋 已成功重設品牌大腦為預設規範！");
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(val);
+      alert("📋 品牌規範已複製到剪貼簿");
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
+  };
+
+  // 格式化預覽品牌大腦內容，使其看起來精緻高質感
+  const renderFormattedPreview = (text: string) => {
+    if (!text) {
+      return <p className="text-slate-500 italic">品牌大腦說明為空，請點選編輯以新增內容。</p>;
+    }
+
+    const lines = text.split("\n");
+    return (
+      <div className="space-y-3 font-sans text-sm text-slate-300 leading-relaxed">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("【") && trimmed.endsWith("】")) {
+            return (
+              <h4 key={idx} className="text-base font-extrabold text-amber-400 mt-4 mb-2 flex items-center gap-2 border-b border-slate-800/85 pb-2">
+                <Shield className="w-4 h-4 text-amber-400 animate-pulse" />
+                {trimmed}
+              </h4>
+            );
+          }
+          if (trimmed.startsWith("- ")) {
+            return (
+              <div key={idx} className="pl-4 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-2 shrink-0" />
+                <span>{trimmed.substring(2)}</span>
+              </div>
+            );
+          }
+          return <p key={idx} className="pl-4">{line}</p>;
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full space-y-4">
+      {/* 品牌大腦頂部標題卡 */}
+      <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold text-slate-200">品牌大腦知識庫定位規範</h4>
+            <span className="px-2 py-0.5 text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" />
+              🟢 AI 生成已綁定作用中
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">營運長 Erick 控制的核心品牌說明，此規則將在生成文案與數據時強制約束 AI</p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleCopy}
+            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-xs font-semibold rounded-lg border border-slate-800 transition cursor-pointer flex items-center gap-1.5"
+            title="複製規範"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>複製</span>
+          </button>
+          {!isEditing ? (
+            <>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-450 text-slate-950 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-500/5"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>編輯大腦</span>
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs font-semibold rounded-lg border border-rose-500/20 transition cursor-pointer"
+                title="還原為預設品牌說明"
+              >
+                重設預設
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleSave}
+                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-500/5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>儲存大腦</span>
+              </button>
+              <button
+                onClick={() => {
+                  setVal(brandGuidelines);
+                  setIsEditing(false);
+                }}
+                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 text-xs font-semibold rounded-lg border border-slate-800 transition cursor-pointer"
+              >
+                取消
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 編輯器或展示區域 */}
+      <div className="flex-1 overflow-hidden flex flex-col bg-slate-950/40 border border-slate-850 p-5 rounded-2xl">
+        {isEditing ? (
+          <textarea
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            className="w-full flex-1 bg-slate-950 border border-slate-850 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 text-slate-200 text-sm font-mono p-4 rounded-xl focus:outline-none resize-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent leading-relaxed"
+            placeholder="請輸入品牌的核心定位、核心產品、目標受眾、語調與寫作限制..."
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            {renderFormattedPreview(val)}
           </div>
         )}
       </div>
