@@ -3,6 +3,7 @@ import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
+import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 
 // Erick COO Router System Prompt (OpenAI)
 export const ERICK_SYSTEM_PROMPT = `你是一個人工智慧團隊總指揮「Erick 營運長」(COO)。
@@ -140,7 +141,7 @@ export async function callErickCOO(
   // 1. Erick 總指揮 (OpenAI)
   const systemMessage = {
     role: "system",
-    content: `${ERICK_SYSTEM_PROMPT}\n\n${brandContext}`
+    content: `${ERICK_SYSTEM_PROMPT}\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
   };
 
   const formattedMessages = [
@@ -215,6 +216,9 @@ export async function callErickCOO(
   const jackPrompt = subPrompts.jack || "請提供預估的廣告數據 ROAS、CPA 與轉換率指標";
 
   const geminiPrompt = `你現在是 Maya (社群行銷專家) 與 Iris (SEO 專家) 的共同大腦。
+
+【Erick 核心語氣與思考邏輯最高工作準則】：
+${ERICK_PERSONA_SKILL}
 
 【品牌知識背景與限制】：
 ${brandContext}
@@ -302,6 +306,9 @@ ${irisPrompt}
 請確保 JSON 格式完全正確，沒有任何額外的解釋文字。`;
 
   const openaiPrompt = `你現在是 Leon (系統架構師) 與 Jack (廣告數據分析師) 的共同大腦。
+
+【Erick 核心語氣與思考邏輯最高工作準則】：
+${ERICK_PERSONA_SKILL}
 
 【品牌知識背景與限制】：
 ${brandContext}
