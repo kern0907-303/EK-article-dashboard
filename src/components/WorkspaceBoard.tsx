@@ -680,6 +680,7 @@ function SocialTabContent({
 function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
   const [val, setVal] = useState(architecture);
   const [isEditing, setIsEditing] = useState(false);
+  const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
 
   useEffect(() => {
     setVal(architecture);
@@ -690,9 +691,11 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
     setIsEditing(false);
   };
 
+  const isHtml = val.trim().startsWith("<") || val.includes("</div>") || val.includes("class=");
+
   // 解析縮排層級並渲染成視覺化網站樹狀結構 (Tree View)
   const renderTreeView = (treeText: string) => {
-    if (!treeText) return <p className="text-slate-500 italic">尚無網頁架構設計，請對左側 Erick 下達任務...</p>;
+    if (!treeText) return <p className="text-slate-550 italic">尚無網頁架構設計，請對左側 Erick 下達任務...</p>;
 
     const lines = treeText.split("\n");
     return (
@@ -734,6 +737,30 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
     );
   };
 
+  // 生成 Iframe 渲染的 srcDoc
+  const getIframeSrcDoc = () => {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            body {
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+              margin: 0;
+              padding: 0;
+            }
+          </style>
+        </head>
+        <body class="bg-slate-900 text-slate-100 min-h-screen">
+          ${val}
+        </body>
+      </html>
+    `;
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
@@ -742,19 +769,46 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
           <p className="text-[10px] text-slate-400">網頁與功能路由層次結構規劃</p>
         </div>
 
-        <button
-          onClick={() => {
-            if (isEditing) {
-              handleSave();
-            } else {
-              setIsEditing(true);
-            }
-          }}
-          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-slate-100 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
-        >
-          {isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
-          {isEditing ? "儲存" : "編輯結構"}
-        </button>
+        <div className="flex items-center gap-3">
+          {isHtml && !isEditing && (
+            <div className="flex p-0.5 bg-slate-950/60 border border-slate-850 rounded-lg">
+              <button
+                onClick={() => setViewMode("preview")}
+                className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                  viewMode === "preview" 
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/20" 
+                    : "text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                預覽頁面
+              </button>
+              <button
+                onClick={() => setViewMode("code")}
+                className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                  viewMode === "code" 
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/20" 
+                    : "text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                HTML 原始碼
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              if (isEditing) {
+                handleSave();
+              } else {
+                setIsEditing(true);
+              }
+            }}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-slate-100 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+          >
+            {isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
+            {isEditing ? "儲存" : "編輯結構"}
+          </button>
+        </div>
       </div>
 
       {isEditing ? (
@@ -762,13 +816,32 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
           <textarea
             value={val}
             onChange={(e) => setVal(e.target.value)}
-            placeholder={`使用層級大綱，例如：\n- 首頁\n  - 關於我們\n  - 服務項目\n    - 智慧系統`}
+            placeholder={`使用 HTML 或層級大綱，例如：\n- 首頁\n  - 關於我們\n  - 服務項目\n    - 智慧系統`}
             className="flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 focus:border-amber-500/60 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 font-mono resize-none"
           />
         </div>
       ) : (
-        <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto font-mono">
-          {renderTreeView(val)}
+        <div className="flex-1 min-h-[500px] flex flex-col">
+          {isHtml ? (
+            viewMode === "preview" ? (
+              <div className="flex-1 bg-slate-950/40 border border-slate-850/65 rounded-xl overflow-hidden p-1">
+                <iframe
+                  srcDoc={getIframeSrcDoc()}
+                  title="Landing Page Preview"
+                  className="w-full h-full border-0 rounded-lg"
+                  sandbox="allow-scripts"
+                />
+              </div>
+            ) : (
+              <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto font-mono text-xs text-slate-300 whitespace-pre-wrap">
+                {val}
+              </div>
+            )
+          ) : (
+            <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto font-mono">
+              {renderTreeView(val)}
+            </div>
+          )}
         </div>
       )}
     </div>

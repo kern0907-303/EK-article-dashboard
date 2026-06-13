@@ -93,6 +93,147 @@ function robustJSONParse(text: string): any {
   }
 }
 
+async function runQueryWithFallback(prompt: string, config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+  const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
+  const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
+    (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+    
+  if (isGeminiKeyValid) {
+    return callGemini([{ role: "user", content: prompt }], config, jsonMode);
+  } else if (isOpenAIKeyValid) {
+    return callOpenAI([{ role: "user", content: prompt }], config, jsonMode);
+  } else {
+    throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+  }
+}
+
+async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
+  const dseoLogin = process.env.DATAFORSEO_API_LOGIN;
+  const dseoPassword = process.env.DATAFORSEO_API_PASSWORD;
+
+  // 1. 優先嘗試對接 DataForSEO (Google Ads API 平替，極度省錢)
+  if (dseoLogin && dseoPassword && !dseoLogin.includes("YOUR_")) {
+    try {
+      const auth = Buffer.from(`${dseoLogin}:${dseoPassword}`).toString("base64");
+      const url = "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live";
+      
+      const payload = [{
+        keywords: keywords.slice(0, 10),
+        location_name: "Taiwan",
+        language_code: "zh"
+      }];
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${auth}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const taskResult = json.tasks?.[0]?.result;
+        if (Array.isArray(taskResult)) {
+          return taskResult.map((item: any) => {
+            const vol = item.search_volume !== undefined ? String(item.search_volume) : "0";
+            const compRaw = String(item.competition || "").toUpperCase();
+            const competition = compRaw === "HIGH" ? "高" : (compRaw === "MEDIUM" ? "中" : "低");
+            return {
+              keyword: item.keyword,
+              volume: vol,
+              competition,
+              outline: `已成功與 DataForSEO (Google Ads) 連線對齊。地區: 台灣`
+            };
+          });
+        }
+      }
+    } catch (e) {
+      console.error("DataForSEO fetch error:", e);
+    }
+  }
+
+  // 2. 次要嘗試對接 SEMrush
+  const apiKey = process.env.SEMRUSH_API_KEY;
+  if (apiKey && !apiKey.includes("YOUR_")) {
+    try {
+      const results = [];
+      for (const kw of keywords.slice(0, 5)) {
+        const url = `https://api.semrush.com/?type=phrase_this&key=${apiKey}&phrase=${encodeURIComponent(kw)}&database=tw&export_columns=Ph,Nq,Cp`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.trim().split("\n");
+          if (lines.length > 1) {
+            const parts = lines[1].split(";");
+            results.push({
+              keyword: kw,
+              volume: parts[1] || "300",
+              competition: parseFloat(parts[2]) > 0.7 ? "高" : (parseFloat(parts[2]) > 0.3 ? "中" : "低"),
+              outline: "已與 SEMrush 台灣關鍵字資料庫對齊..."
+            });
+            continue;
+          }
+        }
+        results.push({ keyword: kw, volume: "320", competition: "中", outline: "SEMrush 查無此字..." });
+      }
+      return results;
+    } catch (e) {
+      console.error("SEMrush fetch error:", e);
+    }
+  }
+
+  // 3. 無金鑰時自動降級模擬
+  return keywords.map(kw => ({
+    keyword: kw,
+    volume: String(Math.floor(Math.random() * 8000) + 500),
+    competition: Math.random() > 0.6 ? "高" : (Math.random() > 0.3 ? "中" : "低"),
+    outline: "免 Key 體驗模式，大綱計算中..."
+  }));
+}
+
+async function fetchMetaAdAccountInsights(adAccountId: string, accessToken: string): Promise<any[]> {
+  if (!adAccountId || !accessToken || adAccountId.includes("YOUR_")) {
+    return [];
+  }
+  
+  try {
+    const url = `https://graph.facebook.com/v19.0/${adAccountId}/insights?fields=spend,clicks,impressions,actions&date_preset=last_30d`;
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`
+      }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const insights = data.data?.[0];
+      if (insights) {
+        const spend = parseFloat(insights.spend || "0");
+        const impressions = parseInt(insights.impressions || "0");
+        
+        const actions = insights.actions || [];
+        const leads = actions.find((a: any) => a.action_type === 'lead')?.value || "0";
+        const conversions = parseInt(leads);
+        
+        const cpa = conversions > 0 ? `$${(spend / conversions).toFixed(2)}` : "$0.00";
+        const cvr = impressions > 0 ? `${((conversions / impressions) * 100).toFixed(2)}%` : "0.00%";
+        
+        return [
+          { label: "廣告總花費 (Spend)", value: `$${spend.toLocaleString()}`, change: "實體後台同步", isPositive: true },
+          { label: "單次取得名單成本 (CPA)", value: cpa, change: "實體後台同步", isPositive: true },
+          { label: "名單預約轉換率 (CVR)", value: cvr, change: "實體後台同步", isPositive: true },
+          { label: "廣告曝光次數 (Impressions)", value: impressions.toLocaleString(), change: "實體後台同步", isPositive: true }
+        ];
+      }
+    }
+    return [];
+  } catch (e) {
+    console.error("Meta Marketing API error:", e);
+    return [];
+  }
+}
+
 /**
  * 核心 AI 雙模型協作調度路由
  */
@@ -103,7 +244,8 @@ export async function callErickCOO(
   stage?: string,
   expertType?: string,
   subPromptsInput?: any,
-  brandGuidelines?: string
+  brandGuidelines?: string,
+  prevData?: any
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
@@ -152,22 +294,18 @@ export async function callErickCOO(
     }))
   ];
 
-  // 檢查金鑰有效性（OpenAI 必須是 sk- 開頭，Gemini 必須是 AIzaSy- 開頭）
+  // 檢查金鑰有效性
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
     (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
 
   let erickOutput = "";
   try {
-    // 智慧容錯調度：如果使用者選 OpenAI 但金鑰無效 (JWT 或貼錯)，且 Gemini 金鑰有效，自動切換為 Gemini 確保能正常執行
     if (provider === "openai" && !isOpenAIKeyValid && isGeminiKeyValid) {
-      console.log("[Smart Routing] OpenAI API key is invalid (JWT or placeholder), automatically switching Erick COO to Google Gemini");
       erickOutput = await callGemini(formattedMessages, config);
     } else if (provider === "gemini" && !isGeminiKeyValid && isOpenAIKeyValid) {
-      console.log("[Smart Routing] Gemini API key is invalid, automatically switching Erick COO to OpenAI");
       erickOutput = await callOpenAI(formattedMessages, config);
     } else {
-      // 正常流程
       erickOutput = provider === "gemini" 
         ? await callGemini(formattedMessages, config)
         : await callOpenAI(formattedMessages, config);
@@ -196,12 +334,10 @@ export async function callErickCOO(
     }
   }
 
-  // 如果未能成功獲取 sub_prompts，則直接解析 Erick 回覆中的 dispatch JSON (相容舊格式)
   if (!subPrompts) {
     return parseCOOOutput(erickOutput);
   }
 
-  // 如果只是 COO 階段，在此直接回傳，並將子提示詞裝在 dispatchData 中帶回
   if (stage === "coo") {
     return {
       content: cleanErickContent,
@@ -209,248 +345,222 @@ export async function callErickCOO(
     };
   }
 
-  // 2. 雙大腦併發調度 (Parallel API Calls)
+  // 2. 專家工作流調度 (Chained Multi-Agent Pipeline)
   const mayaPrompt = subPrompts.maya || "請寫作一份社群行銷貼文";
   const irisPrompt = subPrompts.iris || "請規劃適當的 SEO 關鍵字與大綱";
-  const leonPrompt = subPrompts.leon || "請規劃網頁的功能路由架構";
-  const jackPrompt = subPrompts.jack || "請提供預估的廣告數據 ROAS、CPA 與轉換率指標";
+  const leonPrompt = subPrompts.leon || "請設計 Landing Page 銷售頁網頁架構";
+  const jackPrompt = subPrompts.jack || "請提供預估的廣告數據指標";
 
-  const geminiPrompt = `你現在是 Maya (社群行銷專家) 與 Iris (SEO 專家) 的共同大腦。
-
+  // ========== 第一條鏈：Maya (社群) + Iris (SEO) ==========
+  if (stage === "expert" && expertType === "maya_iris") {
+    // 步驟 1：先呼叫 Iris 生成 SEO 關鍵字策略
+    const irisStepPrompt = `你現在是 SEO 專家 Iris。
+    
 【Erick 核心語氣與思考邏輯最高工作準則】：
 ${ERICK_PERSONA_SKILL}
 
 【品牌知識背景與限制】：
 ${brandContext}
 
-【重要寫作指導原則】：
-你生成的內容必須「百分之百圍繞在下方指派的具體任務（子提示詞）主題」上。
-品牌知識背景與限制僅提供寫作語氣、目標受眾特質與限制詞彙之規範，**絕對禁止**偏離具體任務指派而寫成通用的品牌宣傳模版！請確保文章核心主題與內容完全扣合子提示詞所指定的方向！
+請根據以下指派的子提示詞，規劃 3-5 個針對繁體中文(台灣)市場的高潛力關鍵字，並提供文章大綱、AEO 結構化 Schema 與 FAQ 問答集。
 
-請根據以下指派的子提示詞，同時生成她們的成果，並以一個 JSON 物件回傳。
-
-### 核心限制 (非常重要)：
-1. **完全使用繁體中文(台灣)**：所有產出（特別是 Maya 的社群文案與文章）必須完全使用繁體中文，不可使用簡體字。
-2. **極致長文且結構完整**：Maya 產出的文章/社群文案必須是「深度長篇大作」（字數至少 800 至 1500 字以上），絕對不能只有簡短的幾段或摘要。必須包含：
-   - 吸引人的爆款主標題：必須位於產出文案的最開頭（第一行），格式建議使用「【標題內容】」或以表情符號（如 💡, 🚀）開頭。此標題必須是一個「完整、聳動、有張力且表達完整意圖」的句子。**絕對禁止**包含「...」或任何截斷、未完結的字眼！如果輸入的子提示詞或使用者指令包含截斷的文章標題（如帶有「...」），你必須發揮創意將其補全為一個震撼人心且結構完整的主標題。標題之後請空一行再開始導言。
-   - 引人入勝且引起共鳴的情境導言（痛點描寫）
-   - 深入剖析的 3 大核心論點/卡點分析（每個論點都必須展開詳細論述、舉例說明與提供具體建議）
-   - 具體可行、步驟化且細緻的實操行動指南/改善方案
-   - 溫暖且有餘韻的結尾。**注意：目前處於「養粉/培育受眾」階段，文章重點在於提供有質感、有深度、能引起讀者靈魂共鳴的內容，藉以建立信任感。請絕對不要每次都強行置入廣告或強烈的 Call to Action (CTA) 行動呼籲！** 結尾應以溫和的文字自然結束，只在極為自然合適的語境下，才可以放入非常輕量柔和的引導，避免過度商業化。
-   - 標籤分類管理與歸納規範 (極重要)：
-     你產出的文章結尾所使用的 Hashtags 標籤，必須且僅能從以下「已核准的標準標籤庫」中，根據文章所屬品牌，選擇 3-5 個最合適的標籤。**絕對禁止隨意自我創造、發明或疊加新的 Hashtags。** 相似的概念、改念或議題必須強制歸納與合併至以下標準標籤中：
-     * 個人品牌 (Erick 專欄) 專屬標準標籤：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
-     * 品牌 A I8 (企業醫生) 專屬標準標籤：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
-     * 品牌 B NAS (生命數字) 專屬標準標籤：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
-     * 品牌 C ABL (量子調頻) 專屬標準標籤：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
-   請確保內容豐滿、邏輯嚴密，提供給讀者極高的閱讀價值與洞察力，嚴禁簡短或敷衍的摘要。
-3. **絕對禁止虛構/發明外部連結 (防範幻覺，極重要)**：
-   - 絕對禁止在文案與文章產出中發明任何不存在的外部網域或連結（例如：禁止生成 https://abl-tuning.com/status-quiz 或 https://nas-space.com 等虛擬網址）。
-   - 如果文案結尾或內文需要引導讀者進行「個人狀態檢測」、「預約諮詢」或「聯絡我們」，**一律且僅能**使用官網唯一合法連結：
-     * 預約診斷與諮詢專區：https://erickfirm.com/#contact
-     * 洞察專欄列表首頁：https://erickfirm.com/insights
-   - 如果無適合的官網連結，請直接引導讀者「填寫官網諮詢表單」或「私訊預約診斷」，**絕對不要輸出任何 URL 網址**！
-4. **禁止使用任何 Markdown 格式符號**：Maya 的文案輸出必須是純文字格式，**嚴禁包含任何 **（粗體符號）、# 或 ## 或 ###（標題符號）**！標題或重點請直接以換行、空行區隔，或者以「」或【】符號加強，以便使用者能直接複製貼上至不支援 Markdown 的社群平台 (Facebook/Meta 等)。
-5. **預設嵌入流程圖或架構示意圖（核心限制）**：
-   每一篇產出的文章中，都必須在最合適的核心論點段落後，根據內容特點與邏輯結構，挑選最適合的圖表呈現方式，並插入一個 Markdown 圖片標籤與對應的 Mermaid 圖表代碼。
-   - **圖表呈現樣式選擇指引**：
-     - **流程/路徑/架構圖 (Flowchart - \`graph TD\` 或 \`graph LR\`)**：適合用於闡述決策流程、系統校準步驟、原因推導或框架架構（最常推薦）。
-     - **心智圖 (Mindmap - \`mindmap\`)**：適合用於概念發散、性格/天賦特質拆解、多維度分析。
-     - **時間軸圖 (Timeline - \`timeline\`)**：適合用於人生蛻變階段、歷史演進、帶有時間排序的步驟。
-     - **圓餅圖 (Pie Chart - \`pie\`)**：適合用於各維度能量佔比分析、時間與精力分配等。
-   - 圖片標籤格式：\`![<圖表描述，如：35歲內部系統更新框架>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`（請將 slug 替換為與該文章主題相關的英文短命名，如 erick-midlife-system）。
-   - 在該圖片標籤的下方，必須緊接著附帶一個完整的 Mermaid.js 圖表代碼區塊（使用 \`\`\`mermaid 與 \`\`\` 包覆），以便使用者複製至 mermaid.live 下載並儲存到 pCloud 中。
-   - **高質感配色與樣式規範 (極重要)**：為了契合麥肯錫/BCG 等高端管理顧問公司的專業調性，你生成的 Mermaid 代碼頂端必須附帶初始化樣式參數 \`%%{init: { ... }}%%\`，且圖表必須使用多樣化的節點形狀（如膠囊 \`([文字])\`、決策 \`{文字}\`、資料庫 \`[(文字)]\` 等）以及附帶箭頭說明的連線。
-   - 範例格式：
-     \`![35歲內部系統更新框架](https://filedn.com/your-id/website-assets/erick-midlife-system-framework.png)\`
-     \`\`\`mermaid
-     %%{init: {
-       'theme': 'base',
-       'themeVariables': {
-         'fontFamily': 'Arial, sans-serif',
-         'primaryColor': '#002A54',
-         'primaryTextColor': '#FFFFFF',
-         'primaryBorderColor': '#00C2C2',
-         'lineColor': '#00509D',
-         'secondaryColor': '#00C2C2',
-         'secondaryTextColor': '#FFFFFF',
-         'tertiaryColor': '#F4F9FA',
-         'tertiaryTextColor': '#1A202C'
-       }
-     }}%%
-     graph TD
-       A([起點: 使用者痛點]) --> B[卡點因素診斷]
-       B --> C{決策路徑篩選}
-       C -->|方案A| D[企業決策校準]
-       C -->|方案B| E[生命數字解析]
-       D & E --> F[(心靈與事業避風港)]
-     \`\`\`
-
-
-### Maya 的任務指派 (社群文案)：
-${mayaPrompt}
-
-### Iris 的任務指派 (SEO關鍵字與大綱)：
+### 任務指派 (子提示詞)：
 ${irisPrompt}
 
 ### 輸出 JSON 格式要求：
 你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
 {
-  "social_copy": "Maya 產出的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)",
   "seo_keywords": [
     { "keyword": "關鍵字1", "volume": "月搜尋量", "competition": "高|中|低", "outline": "此關鍵字的文章大綱說明" }
   ],
-  "aeo_schema": "JSON-LD 格式的 FAQ Schema 結構化資料，其中包含根據文章核心問題設計的 FAQPage 標記，直接輸出完整 JSON 字串（且屬性與字串內的雙引號需進行正確的 JSON 轉義，避免 JSON 解析失敗）",
-  "aeo_faq": "針對 Answer Engine Optimization (AEO) 設計的 FAQ 問答集。請針對文章中的核心議題與剛才規劃的關鍵字，寫出 2-3 個最適合 AI 搜尋引擎檢索的問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
-}
-請確保 JSON 格式完全正確，沒有任何額外的解釋文字。`;
+  "aeo_schema": "JSON-LD 格式的 FAQ Schema 結構化資料，直接輸出完整 JSON 字串（雙引號需進行正確的 JSON 轉義）",
+  "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
+}`;
 
-  const openaiPrompt = `你現在是 Leon (系統架構師) 與 Jack (廣告數據分析師) 的共同大腦。
+    const irisResponse = await runQueryWithFallback(irisStepPrompt, config, true);
+    const irisResult = robustJSONParse(irisResponse);
+    
+    // 如果有找到關鍵字，主動抓取實體 API (如 SEMrush) 的搜尋量與競爭度
+    if (irisResult.seo_keywords && Array.isArray(irisResult.seo_keywords)) {
+      const kws = irisResult.seo_keywords.map((k: any) => k.keyword).filter(Boolean);
+      if (kws.length > 0) {
+        const liveMetrics = await fetchLiveKeywordMetrics(kws);
+        irisResult.seo_keywords = irisResult.seo_keywords.map((kwObj: any, index: number) => {
+          const live = liveMetrics.find((l: any) => l.keyword === kwObj.keyword) || liveMetrics[index];
+          return {
+            keyword: kwObj.keyword,
+            volume: live ? live.volume : kwObj.volume,
+            competition: live ? live.competition : kwObj.competition,
+            outline: kwObj.outline
+          };
+        });
+      }
+    }
 
+    // 步驟 2：將 Iris 生成的關鍵字，鏈式傳遞給 Maya 用於社群寫作
+    const keywordsStr = JSON.stringify(irisResult.seo_keywords || []);
+    const mayaStepPrompt = `你現在是社群行銷專家 Maya。
+    
 【Erick 核心語氣與思考邏輯最高工作準則】：
 ${ERICK_PERSONA_SKILL}
 
 【品牌知識背景與限制】：
 ${brandContext}
 
-【重要任務指派原則】：
-你設計的網頁架構與廣告數據指標，必須「百分之百圍繞在下方指派的具體任務（子提示詞）主題」上。
-品牌知識背景僅供定位與名詞規範之參考，**絕對禁止**偏離具體任務指派而生成與該主題無關的通用品牌架構及數據！
+【上游專家 Iris 提供之核心關鍵字策略 (必須融入文案中，極重要)】：
+${keywordsStr}
 
-請根據以下指派的子提示詞，同時生成他們的成果，並以一個 JSON 物件回傳。
+請根據以下指派的子提示詞，撰寫一篇深度社群貼文。你生成的內容必須巧妙地融入上述 Iris 提供的核心關鍵字，以便極大化 SEO/AEO 效益。
 
-### Leon 的任務指派 (網頁架構)：
+### 任務指派 (子提示詞)：
+${mayaPrompt}
+
+### 寫作限制：
+1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字以上。
+2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】，禁止出現「...」或截斷現象。
+3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），標題與重點以換行區隔，以便直接貼到 FB。
+4. 每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆，且開頭必須注入高質感配色 %%{init: ... }%% 區塊）。
+5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個：
+   - Erick專欄：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
+   - I8 (企業醫生)：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
+   - NAS (生命數字)：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
+   - ABL (量子調頻)：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
+
+### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
+{
+  "social_copy": "Maya 產出的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)"
+}`;
+
+    const mayaResponse = await runQueryWithFallback(mayaStepPrompt, config, true);
+    const mayaResult = robustJSONParse(mayaResponse);
+
+    return {
+      content: "",
+      dispatchData: {
+        social_copy: mayaResult.social_copy || "",
+        seo_keywords: irisResult.seo_keywords || [],
+        aeo_schema: irisResult.aeo_schema || "",
+        aeo_faq: irisResult.aeo_faq || ""
+      }
+    };
+  }
+
+  // ========== 第二條鏈：Leon (設計) + Jack (廣告) ==========
+  if (stage === "expert" && expertType === "leon_jack") {
+    const keywordsStr = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
+    const socialCopyStr = prevData?.social_copy || "";
+
+    // 步驟 3：呼叫設計總監 Leon 生成高轉換的 Landing Page 視覺 HTML (Tailwind)
+    const leonStepPrompt = `你現在是設計總監 Leon。你的職責是規劃高點閱、高轉換的 Landing Page 網頁版塊架構與視覺配色風格。
+    
+【Erick 核心語氣與思考邏輯最高工作準則】：
+${ERICK_PERSONA_SKILL}
+
+【品牌知識背景與限制】：
+${brandContext}
+
+【上游專家 Iris 規劃的核心關鍵字】：
+${keywordsStr}
+
+【上游專家 Maya 產出的爆款社群文案】：
+${socialCopyStr}
+
+請根據上述上游文案與關鍵字，設計一版結構完整的 Landing Page 銷售頁網頁架構。
+你必須直接產出完整的、符合響應式排版的 Tailwind CSS HTML 代碼，並規劃視覺設計風格。
+
+### 網頁板塊必須包含：
+1. **導覽列 (Navbar)** 與 **首頁主視覺區 (Hero Section)**：引人入勝的標題、副標題與主按鈕。
+2. **痛點共鳴區 (Problem Section)**：點出使用者正面臨的核心內耗與卡點。
+3. **關鍵對位區 (Solution Section)**：展示如何透過品牌服務進行對位（結合 ABL, NAS 或 I8 品牌核心）。
+4. **客戶見證/信任背書 (Social Proof & Testimonials)**：展示信任度。
+5. **行動呼籲區 (Call to Action - CTA)**：醒目的諮詢預約按鈕或測評按鈕（使用官網唯一合法連結：https://erickfirm.com/#contact）。
+6. **頁尾 (Footer)**。
+
+### 輸出 HTML 規範：
+- 必須是乾淨的 HTML 區塊（不包含 <html> 或 <body> 標籤，僅從最外層容器 <div> 開始）。
+- 使用 Tailwind CSS 最新排版類名（如 flex, grid, gap-6, bg-slate-900, text-white, border, hover:scale-105 等），做出質感極高、帶有精美陰影與字體排版的現代視覺頁面。
+- 顏色請依據品牌定位調配（如 I8 配深藍/青色、NAS 配大地色/溫暖橙黃、ABL 配科幻紫/能量藍），字體使用優質字體。
+
+### 任務指派 (子提示詞)：
 ${leonPrompt}
 
-### Jack 的任務指派 (廣告數據)：
+### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
+{
+  "web_architecture": "Leon 產出的 Landing Page 網頁 Tailwind HTML 內容",
+  "visual_direction": {
+    "palette": ["主要色代碼", "輔助色代碼", "背景色代碼"],
+    "fonts": "推薦字體風格",
+    "theme": "風格定位描述 (如 McKinsey 簡約高階商務)"
+  }
+}`;
+
+    const leonResponse = await runQueryWithFallback(leonStepPrompt, config, true);
+    const leonResult = robustJSONParse(leonResponse);
+
+    // 步驟 4：呼叫廣告策略師 Jack，結合 Leon 的落地頁與上游文案進行廣告預估與診斷
+    const landingPageHtml = leonResult.web_architecture || "";
+    const visualDirStr = JSON.stringify(leonResult.visual_direction || {});
+    
+    const jackStepPrompt = `你現在是廣告策略師 Jack。你負責判讀行銷數據、規劃 Meta/Google 廣告素材方向與投放預算分配。
+    
+【Erick 核心語氣與思考邏輯最高工作準則】：
+${ERICK_PERSONA_SKILL}
+
+【品牌知識背景與限制】：
+${brandContext}
+
+【上游專家規劃成果 (參考依據)】：
+1. Iris 關鍵字：${keywordsStr}
+2. Maya 社群貼文：${socialCopyStr}
+3. Leon 網頁 Landing Page HTML & 視覺定位：
+   - 視覺風格：${visualDirStr}
+   - 網頁結構簡述：${landingPageHtml.substring(0, 800)}...
+
+請根據上述行銷目標與落地頁，預估該波廣告宣傳的數據指標，並撰寫具體的加碼/關閉決策與素材優化建議。
+
+### 任務指派 (子提示詞)：
 ${jackPrompt}
 
 ### 輸出 JSON 格式要求：
 你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
 {
-  "web_architecture": "Leon 產出的網頁架構樹狀 Markdown 內容 (必須以 - 縮排列表渲染網站結構，例如：\\n- 首頁\\n  - 關於我們\\n    - 聯絡諮詢)",
   "ad_data": [
-    { "label": "數據指標名稱 (如 廣告投資報酬率 (ROAS), 單次取得成本 (CPA), 預約轉換率 (CVR) 等)", "value": "數值 (如 5.2x, $12.5, 3.8%)", "change": "+/-百分比 (如 +12.5%, -4.2%)", "isPositive": true }
-  ]
-}
-請確保 JSON 格式完全正確，沒有任何額外的解釋文字。`;
+    { "label": "數據指標名稱 (如 預估ROAS, 單次點擊成本CPC, 單次預約名單成本CPA 等)", "value": "數值 (如 4.8x, $1.2, $15.0)", "change": "+/-百分比 (如 +8.5%, -3.1%)", "isPositive": true }
+  ],
+  "ad_strategy_notes": "針對目前數據的具體判讀：哪組需要加碼、哪組應該關閉、哪組需要更換素材的詳細策略建議文字。"
+}`;
 
-  let geminiResult: any = {};
-  let openaiResult: any = {};
+    const jackResponse = await runQueryWithFallback(jackStepPrompt, config, true);
+    const jackResult = robustJSONParse(jackResponse);
 
-  try {
-    let geminiTask = Promise.resolve("");
-    let openaiTask = Promise.resolve("");
-
-    // 依據 stage 與 expertType 智慧決定要執行哪一個專家任務，或者全跑
-    const runGemini = !stage || (stage === "expert" && expertType === "maya_iris");
-    const runOpenai = !stage || (stage === "expert" && expertType === "leon_jack");
-
-    // 依據可用金鑰智慧容錯調度
-    if (runGemini) {
-      if (isGeminiKeyValid) {
-        geminiTask = callGemini([{ role: "user", content: geminiPrompt }], config, true);
-      } else if (isOpenAIKeyValid) {
-        geminiTask = callOpenAI([{ role: "user", content: geminiPrompt }], config, true);
-      } else {
-        throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    // 主動嘗試從資料表/環境變數中對接實體 Meta 廣告後台 API 數據
+    let adData = jackResult.ad_data || [];
+    const adAccountId = process.env.META_AD_ACCOUNT_ID || "";
+    const metaAccessToken = process.env.META_MARKETING_ACCESS_TOKEN || "";
+    
+    if (adAccountId && metaAccessToken && !adAccountId.includes("YOUR_")) {
+      const realInsights = await fetchMetaAdAccountInsights(adAccountId, metaAccessToken);
+      if (realInsights && realInsights.length > 0) {
+        adData = [...realInsights, ...adData];
       }
     }
 
-    if (runOpenai) {
-      if (isOpenAIKeyValid) {
-        openaiTask = callOpenAI([{ role: "user", content: openaiPrompt }], config, true);
-      } else if (isGeminiKeyValid) {
-        openaiTask = callGemini([{ role: "user", content: openaiPrompt }], config, true);
-      } else {
-        throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    return {
+      content: "",
+      dispatchData: {
+        web_architecture: leonResult.web_architecture || "",
+        visual_direction: leonResult.visual_direction || {},
+        ad_data: adData,
+        ad_strategy_notes: jackResult.ad_strategy_notes || ""
       }
-    }
-
-    const [geminiResponse, openaiResponse] = await Promise.all([
-      geminiTask,
-      openaiTask
-    ]);
-
-    if (runGemini && geminiResponse) {
-      try {
-        geminiResult = robustJSONParse(geminiResponse);
-      } catch (e: any) {
-        console.error("Failed to parse Gemini parallel response:", e);
-      }
-    }
-
-    if (runOpenai && openaiResponse) {
-      try {
-        openaiResult = robustJSONParse(openaiResponse);
-      } catch (e: any) {
-        console.error("Failed to parse OpenAI parallel response:", e);
-      }
-    }
-  } catch (error: any) {
-    console.error("Parallel AI calls failed:", error);
-    if (provider !== "mock") {
-      throw new Error(`AI 大腦平行呼叫失敗: ${error.message || error}`);
-    }
-    return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
-  }
-
-  // 如果是在 expert 階段，只返回對應專家的資料即可
-  if (stage === "expert") {
-    if (expertType === "maya_iris") {
-      return {
-        content: "",
-        dispatchData: {
-          social_copy: geminiResult.social_copy || "",
-          seo_keywords: geminiResult.seo_keywords || [],
-          aeo_schema: geminiResult.aeo_schema || "",
-          aeo_faq: geminiResult.aeo_faq || ""
-        }
-      };
-    }
-    if (expertType === "leon_jack") {
-      return {
-        content: "",
-        dispatchData: {
-          web_architecture: openaiResult.web_architecture || "",
-          ad_data: openaiResult.ad_data || []
-        }
-      };
-    }
-  }
-
-  // 3. 完成四看板聯動：重新組裝成最終的 JSON
-  const finalDispatch: any = {
-    social_copy: geminiResult.social_copy || "",
-    web_architecture: openaiResult.web_architecture || "",
-    seo_keywords: geminiResult.seo_keywords || [],
-    ad_data: openaiResult.ad_data || [],
-    aeo_schema: geminiResult.aeo_schema || "",
-    aeo_faq: geminiResult.aeo_faq || ""
-  };
-
-  // 確保欄位齊全
-  if (finalDispatch.seo_keywords && Array.isArray(finalDispatch.seo_keywords)) {
-    finalDispatch.seo_keywords = finalDispatch.seo_keywords.map((kw: any) => ({
-      keyword: kw.keyword || "",
-      volume: kw.volume || "0",
-      competition: kw.competition || "低",
-      outline: kw.outline || ""
-    }));
-  }
-  
-  if (finalDispatch.ad_data && Array.isArray(finalDispatch.ad_data)) {
-    finalDispatch.ad_data = finalDispatch.ad_data.map((ad: any) => ({
-      label: ad.label || "",
-      value: ad.value || "",
-      change: ad.change || "0%",
-      isPositive: ad.isPositive !== undefined ? ad.isPositive : !String(ad.change).startsWith("-")
-    }));
+    };
   }
 
   return {
     content: cleanErickContent,
-    dispatchData: finalDispatch
+    dispatchData: null
   };
 }
 
