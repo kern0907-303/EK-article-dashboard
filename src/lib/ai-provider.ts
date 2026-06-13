@@ -234,6 +234,47 @@ async function fetchMetaAdAccountInsights(adAccountId: string, accessToken: stri
   }
 }
 
+function getBrandColorsForPrompt(brandName: string) {
+  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
+  const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
+  const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
+
+  if (isI8) {
+    return {
+      name: "I8 (Initial 8 CO.)",
+      colorName: "海軍深藍 (Navy Deep Blue)",
+      hexPrimary: "#1e3a8a",
+      hexAccent: "#3b82f6",
+      tailwindClasses: "主色：海軍藍 (bg-blue-900 / text-blue-100)，輔助色：靛藍色 (text-indigo-400) 或深藍 (slate-900)"
+    };
+  } else if (isAbl) {
+    return {
+      name: "ABL (量子調頻)",
+      colorName: "蒂芬妮藍 (Tiffany Blue)",
+      hexPrimary: "#0abab5",
+      hexAccent: "#22d3ee",
+      tailwindClasses: "主色：蒂芬妮藍 (bg-cyan-500 / text-cyan-950)，輔助色：深青色 (text-cyan-400 / border-cyan-500/20) 或湖綠色"
+    };
+  } else if (isNas) {
+    return {
+      name: "NAS (平衡空間)",
+      colorName: "神秘紫 (Mysterious Purple)",
+      hexPrimary: "#7c3aed",
+      hexAccent: "#c084fc",
+      tailwindClasses: "主色：神秘紫 (bg-purple-900 / text-purple-100)，輔助色：紫色 (text-purple-400 / border-purple-500/20) 或深紫"
+    };
+  } else {
+    // Personal Erick
+    return {
+      name: "Erick 個人品牌",
+      colorName: "金色 (Gold)",
+      hexPrimary: "#d4af37",
+      hexAccent: "#f59e0b",
+      tailwindClasses: "主色：金色/琥珀色 (bg-amber-500 / text-amber-950)，輔助色：橘黃色 (text-amber-400 / border-amber-500/20)"
+    };
+  }
+}
+
 /**
  * 核心 AI 雙模型協作調度路由
  */
@@ -249,6 +290,7 @@ export async function callErickCOO(
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
+  const brandColors = getBrandColorsForPrompt(brandName);
   
   if (provider === "mock") {
     const mockResult = await callMockCOO(history[history.length - 1]?.content || "", brandName);
@@ -280,69 +322,75 @@ export async function callErickCOO(
     }
   }
 
-  // 1. Erick 總指揮 (OpenAI)
-  const systemMessage = {
-    role: "system",
-    content: `${ERICK_SYSTEM_PROMPT}\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
-  };
-
-  const formattedMessages = [
-    systemMessage,
-    ...history.map(msg => ({
-      role: msg.role === "user" ? "user" : "assistant",
-      content: msg.content
-    }))
-  ];
-
-  // 檢查金鑰有效性
-  const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
-  const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
-    (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
-
-  let erickOutput = "";
-  try {
-    if (provider === "openai" && !isOpenAIKeyValid && isGeminiKeyValid) {
-      erickOutput = await callGemini(formattedMessages, config);
-    } else if (provider === "gemini" && !isGeminiKeyValid && isOpenAIKeyValid) {
-      erickOutput = await callOpenAI(formattedMessages, config);
-    } else {
-      erickOutput = provider === "gemini" 
-        ? await callGemini(formattedMessages, config)
-        : await callOpenAI(formattedMessages, config);
-    }
-  } catch (error: any) {
-    console.error("Erick COO call failed:", error);
-    if (provider !== "mock") {
-      throw new Error(`Erick COO 呼叫失敗: ${error.message || error}`);
-    }
-    return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
-  }
-
-  // 解析 Erick 的輸出以提取子提示詞
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-  const match = erickOutput.match(jsonRegex);
   let subPrompts: any = null;
-  let cleanErickContent = erickOutput;
+  let cleanErickContent = "";
 
-  if (match && match[1]) {
-    try {
-      const parsed = JSON.parse(match[1].trim());
-      subPrompts = parsed.sub_prompts;
-      cleanErickContent = erickOutput.replace(jsonRegex, "").trim();
-    } catch (e) {
-      console.error("Failed to parse sub-prompts JSON from Erick response:", e);
-    }
-  }
-
-  if (!subPrompts) {
-    return parseCOOOutput(erickOutput);
-  }
-
-  if (stage === "coo") {
-    return {
-      content: cleanErickContent,
-      dispatchData: { subPrompts }
+  if (stage === "expert" && subPromptsInput) {
+    subPrompts = subPromptsInput;
+  } else {
+    // 1. Erick 總指揮 (OpenAI)
+    const systemMessage = {
+      role: "system",
+      content: `${ERICK_SYSTEM_PROMPT}\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
     };
+
+    const formattedMessages = [
+      systemMessage,
+      ...history.map(msg => ({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.content
+      }))
+    ];
+
+    // 檢查金鑰有效性
+    const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
+    const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
+      (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+
+    let erickOutput = "";
+    try {
+      if (provider === "openai" && !isOpenAIKeyValid && isGeminiKeyValid) {
+        erickOutput = await callGemini(formattedMessages, config);
+      } else if (provider === "gemini" && !isGeminiKeyValid && isOpenAIKeyValid) {
+        erickOutput = await callOpenAI(formattedMessages, config);
+      } else {
+        erickOutput = provider === "gemini" 
+          ? await callGemini(formattedMessages, config)
+          : await callOpenAI(formattedMessages, config);
+      }
+    } catch (error: any) {
+      console.error("Erick COO call failed:", error);
+      if (provider !== "mock") {
+        throw new Error(`Erick COO 呼叫失敗: ${error.message || error}`);
+      }
+      return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
+    }
+
+    // 解析 Erick 的輸出以提取子提示詞
+    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+    const match = erickOutput.match(jsonRegex);
+    cleanErickContent = erickOutput;
+
+    if (match && match[1]) {
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        subPrompts = parsed.sub_prompts;
+        cleanErickContent = erickOutput.replace(jsonRegex, "").trim();
+      } catch (e) {
+        console.error("Failed to parse sub-prompts JSON from Erick response:", e);
+      }
+    }
+
+    if (!subPrompts) {
+      return parseCOOOutput(erickOutput);
+    }
+
+    if (stage === "coo") {
+      return {
+        content: cleanErickContent,
+        dispatchData: { subPrompts }
+      };
+    }
   }
 
   // 2. 專家工作流調度 (Chained Multi-Agent Pipeline)
@@ -432,7 +480,24 @@ ${mayaPrompt}
 1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字以上。
 2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】，禁止出現「...」或截斷現象。
 3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），標題與重點以換行區隔，以便直接貼到 FB。
-4. 每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆，且開頭必須注入高質感配色 %%{init: ... }%% 區塊）。
+4. 每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）。
+   Mermaid 圖表必須符合以下品牌配色規範：
+   - 當前品牌：${brandColors.name}，系統色為：${brandColors.colorName}。
+   - 請在 Mermaid 開頭注入以下高質感配色 %%{init: ... }%% 區塊，使圖表底色、文字、框線與系統色完美契合：
+     \`\`\`mermaid
+     %%{init: {
+       'theme': 'base',
+       'themeVariables': {
+         'primaryColor': '${brandColors.hexPrimary}',
+         'primaryTextColor': '#ffffff',
+         'primaryBorderColor': '${brandColors.hexAccent}',
+         'lineColor': '${brandColors.hexAccent}',
+         'secondaryColor': '#1e293b',
+         'tertiaryColor': '#0f172a'
+       }
+     }}%%
+     ...圖表內容...
+     \`\`\`
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個：
    - Erick專欄：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
    - I8 (企業醫生)：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
@@ -502,7 +567,8 @@ ${socialCopyStr}
 ### 輸出 HTML 規範：
 - 必須是乾淨的 HTML 區塊（不包含 <html> 或 <body> 標籤，僅從最外層容器 <div> 開始）。
 - 使用 Tailwind CSS 最新排版類名（如 flex, grid, gap-6, bg-slate-900, text-white, border, hover:scale-105 等），做出質感極高、帶有精美陰影與字體排版的現代視覺頁面。
-- 顏色請依據品牌定位調配（如 I8 配深藍/青色、NAS 配大地色/溫暖橙黃、ABL 配科幻紫/能量藍），字體使用優質字體。
+- 顏色必須依據品牌系統色規範：【${brandColors.name}】的系統色為【${brandColors.colorName}】。
+  請使用 Tailwind 類名呈現該品牌風格（建議使用如 ${brandColors.tailwindClasses}），營造出極具質感的網頁視覺。字體使用優質字體。
 
 ### 任務指派 (子提示詞)：
 ${leonPrompt}
@@ -636,6 +702,13 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }]
     }));
+
+  if (contents.length === 0) {
+    contents.push({
+      role: "user",
+      parts: [{ text: "Hello" }]
+    });
+  }
 
   const systemInstruction = messages.find(m => m.role === "system")?.content;
 

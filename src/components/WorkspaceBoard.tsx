@@ -18,6 +18,119 @@ import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 
+export interface BrandTheme {
+  primary: string;
+  primaryColor: string;
+  primaryBg: string;
+  primaryBgHover: string;
+  primaryBorder: string;
+  primaryRing: string;
+  focusBorder: string;
+  gradientFromTo: string;
+  gradientFromTransparent: string;
+  glowShadow: string;
+  bulletBg: string;
+  hoverText: string;
+  copyIconColor: string;
+  loaderColor: string;
+  primaryBtnText: string;
+  btnBorder: string;
+  bgOpacity20: string;
+  borderOpacity20: string;
+}
+
+export function getBrandTheme(brandId: string): BrandTheme {
+  const isI8 = brandId.includes("i8") || brandId.includes("brand_a");
+  const isAbl = brandId.includes("abl") || brandId.includes("brand_c");
+  const isNas = brandId.includes("nas") || brandId.includes("brand_b");
+
+  if (isI8) {
+    return {
+      primary: "indigo",
+      primaryColor: "text-indigo-400",
+      primaryBg: "bg-indigo-600",
+      primaryBgHover: "hover:bg-indigo-500",
+      primaryBorder: "border-indigo-500/20",
+      primaryRing: "focus:ring-indigo-500/20",
+      focusBorder: "focus:border-indigo-500/60",
+      gradientFromTo: "from-indigo-600 to-indigo-800",
+      gradientFromTransparent: "from-indigo-500/10 to-transparent",
+      glowShadow: "shadow-indigo-500/10",
+      bulletBg: "bg-indigo-500",
+      hoverText: "hover:text-indigo-400",
+      copyIconColor: "text-indigo-500",
+      loaderColor: "text-indigo-500",
+      primaryBtnText: "text-slate-100",
+      btnBorder: "border-indigo-400/25",
+      bgOpacity20: "bg-indigo-500/20",
+      borderOpacity20: "border-indigo-500/20"
+    };
+  } else if (isAbl) {
+    return {
+      primary: "cyan",
+      primaryColor: "text-cyan-400",
+      primaryBg: "bg-cyan-500",
+      primaryBgHover: "hover:bg-cyan-400",
+      primaryBorder: "border-cyan-500/20",
+      primaryRing: "focus:ring-cyan-500/20",
+      focusBorder: "focus:border-cyan-500/60",
+      gradientFromTo: "from-cyan-500 to-teal-500",
+      gradientFromTransparent: "from-cyan-500/10 to-transparent",
+      glowShadow: "shadow-cyan-500/10",
+      bulletBg: "bg-cyan-500",
+      hoverText: "hover:text-cyan-400",
+      copyIconColor: "text-cyan-500",
+      loaderColor: "text-cyan-500",
+      primaryBtnText: "text-slate-950",
+      btnBorder: "border-cyan-400/25",
+      bgOpacity20: "bg-cyan-500/20",
+      borderOpacity20: "border-cyan-500/20"
+    };
+  } else if (isNas) {
+    return {
+      primary: "purple",
+      primaryColor: "text-purple-400",
+      primaryBg: "bg-purple-600",
+      primaryBgHover: "hover:bg-purple-500",
+      primaryBorder: "border-purple-500/20",
+      primaryRing: "focus:ring-purple-500/20",
+      focusBorder: "focus:border-purple-500/60",
+      gradientFromTo: "from-purple-600 to-indigo-600",
+      gradientFromTransparent: "from-purple-500/10 to-transparent",
+      glowShadow: "shadow-purple-500/10",
+      bulletBg: "bg-purple-500",
+      hoverText: "hover:text-purple-400",
+      copyIconColor: "text-purple-500",
+      loaderColor: "text-purple-500",
+      primaryBtnText: "text-slate-100",
+      btnBorder: "border-purple-400/25",
+      bgOpacity20: "bg-purple-500/20",
+      borderOpacity20: "border-purple-500/20"
+    };
+  } else {
+    return {
+      primary: "amber",
+      primaryColor: "text-amber-400",
+      primaryBg: "bg-amber-500",
+      primaryBgHover: "hover:bg-amber-400",
+      primaryBorder: "border-amber-500/20",
+      primaryRing: "focus:ring-amber-500/20",
+      focusBorder: "focus:border-amber-500/60",
+      gradientFromTo: "from-amber-500 to-orange-500",
+      gradientFromTransparent: "from-amber-500/10 to-transparent",
+      glowShadow: "shadow-amber-500/10",
+      bulletBg: "bg-amber-500",
+      hoverText: "hover:text-amber-400",
+      copyIconColor: "text-amber-500",
+      loaderColor: "text-amber-500",
+      primaryBtnText: "text-slate-950",
+      btnBorder: "border-amber-400/25",
+      bgOpacity20: "bg-amber-500/20",
+      borderOpacity20: "border-amber-500/20"
+    };
+  }
+}
+
 interface WorkspaceBoardProps {
   activeBrandId: string;
   aiProvider: string;
@@ -68,6 +181,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
         {tabs.map((tab) => {
           const TabIcon = tab.icon;
           const isActive = activeTab === tab.id;
+          const theme = getBrandTheme(activeBrandId);
           return (
             <button
               key={tab.id}
@@ -78,7 +192,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/25"
               }`}
             >
-              <TabIcon className={`w-4 h-4 ${isActive ? "text-amber-400 animate-pulse" : ""}`} />
+              <TabIcon className={`w-4 h-4 ${isActive ? `${theme.primaryColor} animate-pulse` : ""}`} />
               <div className="text-left leading-none">
                 <span className="block">{tab.label}</span>
                 <span className="block text-[8px] text-slate-500 mt-0.5">專門家 {tab.expert}</span>
@@ -153,6 +267,7 @@ function SocialTabContent({
   aeoSchema?: string; 
   aeoFaq?: string; 
 }) {
+  const theme = getBrandTheme(brandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [val, setVal] = useState(socialCopy);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -446,14 +561,14 @@ function SocialTabContent({
         const parts = content.split("**");
         elements.push(
           <li key={i} className="ml-5 list-disc text-slate-350 text-xs leading-relaxed my-1">
-            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-450 font-semibold">{part}</strong> : part)}
+            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className={`font-semibold ${theme.primaryColor}`}>{part}</strong> : part)}
           </li>
         );
       } else {
         const parts = line.split("**");
         elements.push(
           <p key={i} className="text-slate-350 text-xs leading-relaxed my-1.5">
-            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className="text-amber-450 font-semibold">{part}</strong> : part)}
+            {parts.map((part, pIdx) => pIdx % 2 === 1 ? <strong key={pIdx} className={`font-semibold ${theme.primaryColor}`}>{part}</strong> : part)}
           </p>
         );
       }
@@ -489,7 +604,7 @@ function SocialTabContent({
                       handlePublish("schedule", scheduleTime);
                       setShowDatePicker(false);
                     }}
-                    className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-[9px] font-bold rounded cursor-pointer transition"
+                    className={`px-2 py-0.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} disabled:bg-slate-800 disabled:text-slate-500 text-[9px] font-bold rounded cursor-pointer transition`}
                   >
                     確定
                   </button>
@@ -524,7 +639,7 @@ function SocialTabContent({
                         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                         : pubStatus === "error"
                         ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                        : "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 border-amber-400/25 hover:shadow-lg hover:shadow-amber-500/10 cursor-pointer"
+                        : `bg-gradient-to-r ${theme.gradientFromTo} ${theme.primaryBtnText} ${theme.btnBorder} hover:shadow-lg hover:${theme.glowShadow} cursor-pointer`
                     }`}
                   >
                     {isPublishing ? (
@@ -558,7 +673,7 @@ function SocialTabContent({
                 className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
                 title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
               >
-                <Copy className="w-3.5 h-3.5 text-amber-500" /> 複製貼文
+                <Copy className={`w-3.5 h-3.5 ${theme.copyIconColor}`} /> 複製貼文
               </button>
             )}
             <button
@@ -588,7 +703,7 @@ function SocialTabContent({
             onChange={(e) => setVal(e.target.value)}
             onBlur={handleSave}
             placeholder="在此輸入社群文案..."
-            className="flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 focus:border-amber-500/60 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 font-mono resize-none"
+            className={`flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 ${theme.focusBorder} text-slate-200 text-sm focus:outline-none focus:ring-1 ${theme.primaryRing} font-mono resize-none`}
           />
           <button
             onClick={handleSave}
@@ -611,7 +726,7 @@ function SocialTabContent({
           className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/30 hover:bg-slate-900/50 transition-colors text-left cursor-pointer"
         >
           <div className="flex items-center gap-2">
-            <Folder className="w-4 h-4 text-amber-500" />
+            <Folder className={`w-4 h-4 ${theme.copyIconColor}`} />
             <span className="text-xs font-bold text-slate-200">📚 歷史上架文章庫 (Supabase Archive)</span>
             <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">
               {historyArticles.length} 篇
@@ -658,7 +773,7 @@ function SocialTabContent({
                       <button
                         onClick={() => handleSyndicateArticle(article.content)}
                         disabled={isPublishing}
-                        className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[10px] font-bold rounded-lg hover:shadow-md hover:shadow-amber-500/5 transition cursor-pointer flex items-center gap-1"
+                        className={`px-2.5 py-1 bg-gradient-to-r ${theme.gradientFromTo} ${theme.primaryBtnText} text-[10px] font-bold rounded-lg hover:shadow-md hover:${theme.glowShadow} transition cursor-pointer flex items-center gap-1`}
                         title="透過 N8N 自動化補發至社群與留言連結"
                       >
                         <Send className="w-3 h-3 text-slate-950" />
@@ -678,6 +793,7 @@ function SocialTabContent({
 
 // ==================== 2. 網頁架構分頁 (Leon) ====================
 function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
+  const theme = getBrandTheme(brandId);
   const [val, setVal] = useState(architecture);
   const [isEditing, setIsEditing] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
@@ -723,7 +839,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
                 />
               )}
               {level === 0 ? (
-                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                <Folder className={`w-4 h-4 ${theme.copyIconColor} shrink-0`} />
               ) : (
                 <FileCode className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               )}
@@ -776,7 +892,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
                 onClick={() => setViewMode("preview")}
                 className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
                   viewMode === "preview" 
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/20" 
+                    ? `${theme.bgOpacity20} ${theme.primaryColor} border ${theme.borderOpacity20}` 
                     : "text-slate-400 hover:text-slate-300"
                 }`}
               >
@@ -786,7 +902,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
                 onClick={() => setViewMode("code")}
                 className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
                   viewMode === "code" 
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/20" 
+                    ? `${theme.bgOpacity20} ${theme.primaryColor} border ${theme.borderOpacity20}` 
                     : "text-slate-400 hover:text-slate-300"
                 }`}
               >
@@ -817,7 +933,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
             value={val}
             onChange={(e) => setVal(e.target.value)}
             placeholder={`使用 HTML 或層級大綱，例如：\n- 首頁\n  - 關於我們\n  - 服務項目\n    - 智慧系統`}
-            className="flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 focus:border-amber-500/60 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 font-mono resize-none"
+            className={`flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 ${theme.focusBorder} text-slate-200 text-sm focus:outline-none focus:ring-1 ${theme.primaryRing} font-mono resize-none`}
           />
         </div>
       ) : (
@@ -862,6 +978,7 @@ function SEOTabContent({
   aeoFaq?: string; 
   aiProvider: string; 
 }) {
+  const theme = getBrandTheme(brandId);
   const [newKeyword, setNewKeyword] = useState("");
   const [newVolume, setNewVolume] = useState("");
   const [newComp, setNewComp] = useState("低");
@@ -1015,19 +1132,19 @@ function SEOTabContent({
             onChange={(e) => setNewKeyword(e.target.value)}
             placeholder="新關鍵字"
             required
-            className="flex-1 min-w-[80px] px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:border-amber-500/60 text-slate-200"
+            className={`flex-1 min-w-[80px] px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none ${theme.focusBorder} text-slate-200`}
           />
           <input
             type="text"
             value={newVolume}
             onChange={(e) => setNewVolume(e.target.value)}
             placeholder="月搜尋量"
-            className="w-20 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:border-amber-500/60 text-slate-200"
+            className={`w-20 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none ${theme.focusBorder} text-slate-200`}
           />
           <select
             value={newComp}
             onChange={(e) => setNewComp(e.target.value)}
-            className="w-16 px-1 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:border-amber-500/60 text-slate-200"
+            className={`w-16 px-1 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none ${theme.focusBorder} text-slate-200`}
           >
             <option value="低">低</option>
             <option value="中">中</option>
@@ -1040,11 +1157,11 @@ function SEOTabContent({
             value={newOutline}
             onChange={(e) => setNewOutline(e.target.value)}
             placeholder="文章大綱 (Outline)"
-            className="flex-1 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:border-amber-500/60 text-slate-200"
+            className={`flex-1 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs focus:outline-none ${theme.focusBorder} text-slate-200`}
           />
           <button
             type="submit"
-            className="px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded font-bold cursor-pointer hover:shadow-md transition shrink-0 flex items-center justify-center"
+            className={`px-3 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} rounded font-bold cursor-pointer hover:shadow-md transition shrink-0 flex items-center justify-center`}
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -1053,9 +1170,9 @@ function SEOTabContent({
 
       {/* AEO/SEO 智慧優化器 */}
       <div className="mt-4 pt-4 border-t border-slate-800/60 flex flex-col space-y-4">
-        <div className="flex justify-between items-center bg-gradient-to-r from-amber-500/10 to-transparent p-3 rounded-xl border border-amber-500/20">
+        <div className={`flex justify-between items-center bg-gradient-to-r ${theme.gradientFromTransparent} p-3 rounded-xl border ${theme.borderOpacity20}`}>
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+            <Sparkles className={`w-4 h-4 ${theme.primaryColor} animate-pulse`} />
             <div>
               <h4 className="text-xs font-bold text-slate-200">AEO/SEO 智慧優化器 (Iris 強化)</h4>
               <p className="text-[10px] text-slate-400">一鍵生成 FAQ 結構化資料與 Answer Engine 優化問答集，鎖定 AI 搜尋引用源</p>
@@ -1071,7 +1188,7 @@ function SEOTabContent({
                 ? "bg-slate-800 text-slate-400 cursor-not-allowed" 
                 : !keywords || keywords.length === 0
                 ? "bg-slate-900/50 text-slate-500 border border-slate-850 cursor-not-allowed"
-                : "bg-amber-500 hover:bg-amber-400 text-slate-950 hover:shadow-lg hover:shadow-amber-500/10"
+                : `${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} hover:shadow-lg hover:${theme.glowShadow}`
             }`}
           >
             {isGeneratingAeo ? (
@@ -1090,7 +1207,7 @@ function SEOTabContent({
 
         {isGeneratingAeo && (
           <div className="flex flex-col items-center justify-center p-8 rounded-xl bg-slate-950/20 border border-slate-850/65 border-dashed">
-            <Loader2 className="w-8 h-8 text-amber-500 animate-spin mb-2" />
+            <Loader2 className={`w-8 h-8 ${theme.loaderColor} animate-spin mb-2`} />
             <p className="text-slate-400 text-xs font-semibold animate-pulse">正在利用 AI 大腦分析關鍵字，為您部署 AEO 引流策略...</p>
             <p className="text-[10px] text-slate-500 mt-1">預計需要 3 - 5 秒</p>
           </div>
@@ -1172,6 +1289,7 @@ function SEOTabContent({
 
 // ==================== 4. 廣告數據分頁 (Jack) ====================
 function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataItem[] }) {
+  const theme = getBrandTheme(brandId);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editVal, setEditVal] = useState("");
   const [editChange, setEditChange] = useState("");
@@ -1228,7 +1346,7 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
                       {!isEditing && (
                         <button 
                           onClick={() => handleEdit(index)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-amber-400 hover:bg-slate-800 rounded transition cursor-pointer"
+                          className={`opacity-0 group-hover:opacity-100 p-1 text-slate-500 ${theme.hoverText} hover:bg-slate-800 rounded transition cursor-pointer`}
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
@@ -1253,7 +1371,7 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
                         />
                         <button
                           onClick={() => handleSave(index)}
-                          className="w-full py-1 bg-amber-500 hover:bg-amber-450 text-slate-950 rounded text-[10px] font-bold transition cursor-pointer"
+                          className={`w-full py-1 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} rounded text-[10px] font-bold transition cursor-pointer`}
                         >
                           儲存
                         </button>
@@ -1303,6 +1421,7 @@ function GuidelinesTabContent({
   brandId: string;
   brandGuidelines: string;
 }) {
+  const theme = getBrandTheme(brandId);
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(brandGuidelines);
 
@@ -1359,8 +1478,8 @@ function GuidelinesTabContent({
           const trimmed = line.trim();
           if (trimmed.startsWith("【") && trimmed.endsWith("】")) {
             return (
-              <h4 key={idx} className="text-base font-extrabold text-amber-400 mt-4 mb-2 flex items-center gap-2 border-b border-slate-800/85 pb-2">
-                <Shield className="w-4 h-4 text-amber-400 animate-pulse" />
+              <h4 key={idx} className={`text-base font-extrabold ${theme.primaryColor} mt-4 mb-2 flex items-center gap-2 border-b border-slate-800/85 pb-2`}>
+                <Shield className={`w-4 h-4 ${theme.primaryColor} animate-pulse`} />
                 {trimmed}
               </h4>
             );
@@ -1368,7 +1487,7 @@ function GuidelinesTabContent({
           if (trimmed.startsWith("- ")) {
             return (
               <div key={idx} className="pl-4 flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-2 shrink-0" />
+                <span className={`w-1.5 h-1.5 rounded-full ${theme.bulletBg} mt-2 shrink-0`} />
                 <span>{trimmed.substring(2)}</span>
               </div>
             );
@@ -1407,7 +1526,7 @@ function GuidelinesTabContent({
             <>
               <button
                 onClick={() => setIsEditing(true)}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-450 text-slate-950 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-500/5"
+                className={`px-3 py-1.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md hover:shadow-${theme.primary}-500/5`}
               >
                 <Edit2 className="w-3.5 h-3.5" />
                 <span>編輯大腦</span>
@@ -1449,7 +1568,7 @@ function GuidelinesTabContent({
           <textarea
             value={val}
             onChange={(e) => setVal(e.target.value)}
-            className="w-full flex-1 bg-slate-950 border border-slate-850 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 text-slate-200 text-sm font-mono p-4 rounded-xl focus:outline-none resize-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent leading-relaxed"
+            className={`w-full flex-1 bg-slate-950 border border-slate-850 ${theme.focusBorder} focus:ring-1 ${theme.primaryRing} text-slate-200 text-sm font-mono p-4 rounded-xl focus:outline-none resize-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent leading-relaxed`}
             placeholder="請輸入品牌的核心定位、核心產品、目標受眾、語調與寫作限制..."
           />
         ) : (

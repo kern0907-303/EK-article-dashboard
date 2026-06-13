@@ -19,36 +19,36 @@ export const BRANDS: Brand[] = [
     name: "I8 (Initial 8 CO.)", 
     desc: "企業關鍵因素與決策校準", 
     icon: Activity, 
-    colorClass: "bg-amber-500/10 text-amber-400",
-    borderClass: "border-amber-500/20",
-    textClass: "text-amber-400"
+    colorClass: "bg-indigo-500/10 text-indigo-400",
+    borderClass: "border-indigo-500/20",
+    textClass: "text-indigo-400"
   },
   { 
     id: "brand_b_nas", 
     name: "NAS (平衡空間)", 
     desc: "生命數字自我探索與關係理解", 
     icon: Compass, 
-    colorClass: "bg-sky-500/10 text-sky-400",
-    borderClass: "border-sky-500/20",
-    textClass: "text-sky-400"
+    colorClass: "bg-purple-500/10 text-purple-400",
+    borderClass: "border-purple-500/20",
+    textClass: "text-purple-400"
   },
   { 
     id: "brand_c_abl", 
     name: "ABL (量子調頻)", 
     desc: "信息場狀態分析與能量調和", 
     icon: Sparkles, 
-    colorClass: "bg-emerald-500/10 text-emerald-400",
-    borderClass: "border-emerald-500/20",
-    textClass: "text-emerald-400"
+    colorClass: "bg-cyan-500/10 text-cyan-400",
+    borderClass: "border-cyan-500/20",
+    textClass: "text-cyan-400"
   },
   { 
     id: "personal_brand", 
     name: "Erick 個人品牌", 
     desc: "事業與人生關鍵因素諮詢", 
     icon: Brain, 
-    colorClass: "bg-purple-500/10 text-purple-400",
-    borderClass: "border-purple-500/20",
-    textClass: "text-purple-400"
+    colorClass: "bg-amber-500/10 text-amber-400",
+    borderClass: "border-amber-500/20",
+    textClass: "text-amber-400"
   }
 ];
 
