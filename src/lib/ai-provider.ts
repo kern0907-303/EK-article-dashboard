@@ -120,7 +120,7 @@ async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
       const payload = [{
         keywords: keywords.slice(0, 10),
         location_name: "Taiwan",
-        language_code: "zh"
+        language_name: "Chinese (Traditional)"
       }];
 
       const res = await fetch(url, {
