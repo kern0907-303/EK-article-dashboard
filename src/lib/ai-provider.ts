@@ -69,7 +69,7 @@ export function getAIConfig(): AIProviderConfig {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     geminiModel: process.env.GEMINI_MODEL || "gemini-flash-latest",
-    anthropicModel: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022",
+    anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
     webhookUrl: process.env.N8N_WEBHOOK_URL || "",
   };
 }
@@ -852,7 +852,7 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
   const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing ANTHROPIC_API_KEY");
 
-  const model = config.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
+  const model = config.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
   const systemInstruction = messages.find(m => m.role === "system")?.content;
   const anthropicMessages = messages
     .filter(m => m.role !== "system")
