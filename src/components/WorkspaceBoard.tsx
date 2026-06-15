@@ -447,13 +447,35 @@ function SocialTabContent({
       // 1. 移除任何既有的 %%{init: ... }%% 區塊，以防格式衝突
       code = code.replace(/%%\{init:[\s\S]*?\}%%\s*/g, "");
       
-      // 2. 將標準 A[text] 節點升級為膠囊形狀 A([text])，避免破壞特殊節點形狀如決策 A{text} 或資料庫 A[(text)]
-      code = code.replace(/([a-zA-Z0-9_-]+)\s*\[(.*?)\]/g, (match, nodeId, label) => {
-        if (label.startsWith("(") || label.startsWith("[") || label.endsWith(")") || label.endsWith("]")) {
-          return match;
+      // 2. 將標準 A[text] 節點升級為膠囊形狀 A([text])，但排除 subgraph、style 等宣告行，避免破壞特殊節點語法與結構
+      const linesList = code.split("\n");
+      const processedLines = linesList.map((line) => {
+        const trimmed = line.trim();
+        const lower = trimmed.toLowerCase();
+        
+        if (
+          lower.startsWith("subgraph") ||
+          lower.startsWith("style") ||
+          lower.startsWith("classdef") ||
+          lower.startsWith("class ") ||
+          lower.startsWith("click") ||
+          lower.startsWith("linkstyle")
+        ) {
+          return line;
         }
-        return `${nodeId}([${label}])`;
+        
+        return line.replace(/([a-zA-Z0-9_-]+)\s*\[(.*?)\]/g, (match, nodeId, label) => {
+          const lowerNodeId = nodeId.toLowerCase();
+          if (["subgraph", "style", "classdef", "click", "linkstyle", "direction"].includes(lowerNodeId)) {
+            return match;
+          }
+          if (label.startsWith("(") || label.startsWith("[") || label.endsWith(")") || label.endsWith("]")) {
+            return match;
+          }
+          return `${nodeId}([${label}])`;
+        });
       });
+      code = processedLines.join("\n");
       
       // 3. 注入麥肯錫/BCG 高階企管顧問風格之專業配色主題 (海軍藍、蒂芙尼綠、極簡白)
       const themeConfig = `%%{init: {
