@@ -533,6 +533,11 @@ ${irisPrompt}
 
     // 步驟 2：將 Iris 生成的關鍵字，鏈式傳遞給 Maya 用於社群寫作
     const keywordsStr = JSON.stringify(irisResult.seo_keywords || []);
+    const isAbl = brandName.toLowerCase().includes("abl") || brandName.toLowerCase().includes("brand_c");
+    const imgInstruction = isAbl 
+      ? `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<情境描述>](https://filedn.com/your-id/website-assets/<slug>-scenario.png)\`，此圖片網址字尾必須為 -scenario.png。方括號中的 <情境描述> 必須是一段極為詳細且具備畫面感的感性情境圖描述（例如：一位女子在靜謐溫暖的房間內閉眼放鬆，身邊繚繞著清晨的陽光與淡藍色的療癒光譜），以便後端 AI (如 DALL-E) 讀取此情境描述並自動生圖發送至 FB；同時，在此標籤下方，你仍須提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構圖渲染。`
+      : `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，此圖片網址字尾必須為 -framework.png。並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）。`;
+
     const mayaStepPrompt = `你現在是社群行銷專家 Maya。
     
 【Erick 核心語氣與思考邏輯最高工作準則】：
@@ -553,7 +558,7 @@ ${mayaPrompt}
 1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字以上。
 2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】，禁止出現「...」或截斷現象。
 3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），標題與重點以換行區隔，以便直接貼到 FB。
-4. 每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）。
+4. ${imgInstruction}
    Mermaid 圖表必須符合以下品牌配色規範：
    - 當前品牌：${brandColors.name}，系統色為：${brandColors.colorName}。
    - 請在 Mermaid 開頭注入以下高質感配色 %%{init: ... }%% 區塊，使圖表底色、文字、框線與系統色完美契合：
