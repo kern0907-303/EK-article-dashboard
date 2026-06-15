@@ -533,10 +533,29 @@ ${irisPrompt}
 
     // 步驟 2：將 Iris 生成的關鍵字，鏈式傳遞給 Maya 用於社群寫作
     const keywordsStr = JSON.stringify(irisResult.seo_keywords || []);
+    const isI8 = brandName.toLowerCase().includes("i8") || brandName.toLowerCase().includes("brand_a");
+    const isNas = brandName.toLowerCase().includes("nas") || brandName.toLowerCase().includes("brand_b");
     const isAbl = brandName.toLowerCase().includes("abl") || brandName.toLowerCase().includes("brand_c");
-    const imgInstruction = isAbl 
-      ? `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<情境描述>](https://filedn.com/your-id/website-assets/<slug>-scenario.png)\`，此圖片網址字尾必須為 -scenario.png。方括號中的 <情境描述> 必須是一段極為詳細且具備畫面感的感性情境圖描述（例如：一位女子在靜謐溫暖的房間內閉眼放鬆，身邊繚繞著清晨的陽光與淡藍色的療癒光譜），以便後端 AI (如 DALL-E) 讀取此情境描述並自動生圖發送至 FB；同時，在此標籤下方，你仍須提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構圖渲染。`
-      : `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<圖表描述>](https://filedn.com/your-id/website-assets/<slug>-framework.png)\`，此圖片網址字尾必須為 -framework.png。並在其下方附帶一個完整的 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）。`;
+
+    let imgLabel = "個人成長與思維反思情境描述";
+    let imgSuffix = "reflection";
+    let imgExample = "一位中年男子在寧靜的書房中望向窗外的微光，神情放鬆且專注，身邊擺放著筆記本與書籍，呈現出溫暖沉靜且具有洞察力的色調";
+
+    if (isI8) {
+      imgLabel = "企業經營與決策場景情境描述";
+      imgSuffix = "strategy";
+      imgExample = "一位專注的中小企業主與顧問在簡約高質感的會議室黑板前討論組織架構，黑板上有著結構清晰的思維導圖，畫面呈深藍色調，展現專業與決策智慧";
+    } else if (isNas) {
+      imgLabel = "天賦特質與關係探索情境描述";
+      imgSuffix = "discovery";
+      imgExample = "一位女子在漫天星空或溫暖的光影下探索生命軌跡，身邊圍繞著溫柔的數字幾何光影，畫面充滿奇幻、探索與療癒天賦的溫馨氛圍";
+    } else if (isAbl) {
+      imgLabel = "心靈療癒與狀態調和情境描述";
+      imgSuffix = "scenario";
+      imgExample = "一位女子在靜謐溫暖的房間內閉眼放鬆，身邊繚繞著清晨的陽光與淡藍色/翠綠色的療癒量子光譜，呈現出極度放鬆與能量調和的安定感";
+    }
+
+    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<${imgLabel}>](https://filedn.com/your-id/website-assets/<slug>-${imgSuffix}.png)\`，此圖片網址字尾必須為 -${imgSuffix}.png。方括號中的 <${imgLabel}> 必須是一段極為詳細、具備強烈畫面感的社群情境生圖描述（例如：${imgExample}），以便後端 AI (如 DALL-E) 讀取此情境描述並自動生圖發送至 FB；同時，在此標籤下方，你仍須提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構圖渲染。`;
 
     const mayaStepPrompt = `你現在是社群行銷專家 Maya。
     
