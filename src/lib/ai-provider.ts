@@ -67,7 +67,7 @@ export function getAIConfig(): AIProviderConfig {
     apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || "",
     geminiApiKey: process.env.GEMINI_API_KEY || "",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
     geminiModel: process.env.GEMINI_MODEL || "gemini-flash-latest",
     anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
     webhookUrl: process.env.N8N_WEBHOOK_URL || "",
@@ -764,7 +764,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
   console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
 
   const requestBody: any = {
-    model: config.model || "gpt-4o",
+    model: config.model || "gpt-5.4-mini",
     messages: messages,
     temperature: 0.7
   };

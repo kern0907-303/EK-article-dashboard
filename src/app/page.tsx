@@ -54,7 +54,7 @@ export default function DashboardPage() {
               suppressHydrationWarning
             >
               <option value="mock" className="bg-slate-950 text-slate-200">本地模擬 (Mock)</option>
-              <option value="openai" className="bg-slate-950 text-slate-200">OpenAI (GPT-4o)</option>
+              <option value="openai" className="bg-slate-950 text-slate-200">OpenAI (GPT-5.4 Mini)</option>
               <option value="gemini" className="bg-slate-950 text-slate-200">Google Gemini</option>
               <option value="anthropic" className="bg-slate-950 text-slate-200">Anthropic Claude</option>
               <option value="n8n" className="bg-slate-950 text-slate-200">n8n Webhook</option>

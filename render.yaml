@@ -9,7 +9,7 @@ services:
       - key: AI_PROVIDER
         value: anthropic
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: gpt-5.4-mini
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY

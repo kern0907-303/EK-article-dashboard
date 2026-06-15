@@ -34,9 +34,9 @@
 ### 4. 模組化 AI 驅動大腦與 n8n Webhook 預留
 在 `src/lib/ai-provider.ts` 中封裝了統一的大腦接口，您可以修改 `.env.local` 中的 `AI_PROVIDER` 設定：
 * `mock` (預設)：本地智慧模擬，會分析您的輸入關鍵字，智慧分派給右側專家對應的成果，免 API 金鑰即可高速展示。
-* `openai`：呼叫 OpenAI GPT-4o-mini / GPT-4o 驅動 Erick。
+* `openai`：呼叫 OpenAI GPT-5.4 Mini 驅動 Erick。
 * `gemini`：呼叫 Google Gemini 1.5 系列。
-* `anthropic`：呼叫 Anthropic Claude 3.5 系列。
+* `anthropic`：呼叫 Anthropic Claude Sonnet 4.6。
 * `n8n`：**一鍵發送至您的外部 n8n Webhook**，傳入品牌、對話歷史與 System Prompt，完美預留單元 7 的自動化 Agent 流程。
 
 ---
