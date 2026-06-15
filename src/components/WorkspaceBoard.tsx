@@ -495,13 +495,50 @@ function SocialTabContent({
             const imageUrl = `https://mermaid.ink/img/${base64}`;
             
             elements.push(
-              <div key={`mermaid-${i}`} className="my-5 flex flex-col items-center select-none bg-slate-900/30 p-4 rounded-xl border border-slate-850">
+              <div key={`mermaid-${i}`} className="my-5 flex flex-col items-center select-none bg-slate-900/30 p-4 rounded-xl border border-slate-850 w-full max-w-lg mx-auto">
                 <img 
                   src={imageUrl} 
                   alt="概念模型架構圖" 
                   className="rounded-lg border border-slate-800 max-h-[350px] shadow-lg shadow-black/30 hover:scale-[1.01] transition-transform duration-300"
                 />
                 <span className="text-[10px] text-slate-500 mt-2.5 italic">動態架構流程圖 (自動即時渲染)</span>
+                
+                <div className="flex gap-3 mt-3 w-full justify-center">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(imageUrl);
+                        const blob = await res.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = blobUrl;
+                        a.download = `mermaid-${brandId}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(blobUrl);
+                      } catch (e) {
+                        window.open(imageUrl, "_blank");
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    📥 下載圖表圖片 (FB發文用)
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(imageUrl);
+                        alert("📋 已複製圖片網址！");
+                      } catch (e) {
+                        alert("❌ 複製失敗");
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    🔗 複製圖片網址
+                  </button>
+                </div>
               </div>
             );
           } else {
