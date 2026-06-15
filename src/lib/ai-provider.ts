@@ -555,7 +555,12 @@ ${irisPrompt}
       imgExample = "一位女子在靜謐溫暖的房間內閉眼放鬆，身邊繚繞著清晨的陽光與淡藍色/翠綠色的療癒量子光譜，呈現出極度放鬆與能量調和的安定感";
     }
 
-    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤：\`![<${imgLabel}>](https://filedn.com/your-id/website-assets/<slug>-${imgSuffix}.png)\`，此圖片網址字尾必須為 -${imgSuffix}.png。方括號中的 <${imgLabel}> 必須是一段極為詳細、具備強烈畫面感的社群情境生圖描述（例如：${imgExample}），以便後端 AI (如 DALL-E) 讀取此情境描述並自動生圖發送至 FB；同時，在此標籤下方，你仍須提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構圖渲染。`;
+    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤，格式為：\`![<你為本篇文章量身設計的詳細生圖描述>](https://filedn.com/your-id/website-assets/<你為本篇文章量身設計的獨特英文slug>-${imgSuffix}.png)\`。
+
+【重要生圖規則】：
+1. 圖片網址字尾必須為 -${imgSuffix}.png。
+2. 你必須將 \`<你為本篇文章量身設計的獨特英文slug>\` 替換為與本篇貼文主題完全相關、且每次都不同的獨特英文 slug（例如：若主題是睡眠，可使用 \`abl-deep-sleep-healing\`）。絕對禁止保留 \`<slug>\` 或直接複製範例！
+3. 方括號中的 \`<你為本篇文章量身設計的詳細生圖描述>\` 必須被你替換為一段**全新、與本文主題密切相關、極具畫面感與細節**的繁體中文生圖提示詞描述（例如：${imgExample}）。這個描述每次都必須根據貼文主題量身設計，絕對禁止直接輸出 \`<${imgLabel}>\` 或 \`情境描述\` 等字樣！這是後續 AI 生圖的唯一依據！同時，在此標籤下方，你仍須提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構圖渲染。`;
 
     const mayaStepPrompt = `你現在是社群行銷專家 Maya。
     
