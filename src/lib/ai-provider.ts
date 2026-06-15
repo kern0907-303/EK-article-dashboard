@@ -102,7 +102,12 @@ function robustJSONParse(text: string): any {
   }
 }
 
-async function runQueryWithFallback(prompt: string, config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+async function runQueryWithFallback(
+  prompt: string,
+  config: AIProviderConfig,
+  jsonMode?: boolean,
+  preferredProvider?: "openai" | "gemini" | "anthropic"
+): Promise<string> {
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
     (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
@@ -110,7 +115,7 @@ async function runQueryWithFallback(prompt: string, config: AIProviderConfig, js
     (config.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "").trim().startsWith("sk-ant-"));
     
   const providersToTry: string[] = [];
-  const primaryProvider = config.provider || "openai";
+  const primaryProvider = preferredProvider || config.provider || "openai";
   
   if (primaryProvider === "gemini") {
     providersToTry.push("gemini", "openai", "anthropic");
@@ -511,7 +516,7 @@ ${irisPrompt}
   "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
 }`;
 
-    const irisResponse = await runQueryWithFallback(irisStepPrompt, config, true);
+    const irisResponse = await runQueryWithFallback(irisStepPrompt, config, true, "gemini");
     const irisResult = robustJSONParse(irisResponse);
     
     // 如果有找到關鍵字，主動抓取實體 API (如 SEMrush) 的搜尋量與競爭度
@@ -614,7 +619,7 @@ ${mayaPrompt}
   "social_copy": "Maya 產出的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)"
 }`;
 
-    const mayaResponse = await runQueryWithFallback(mayaStepPrompt, config, true);
+    const mayaResponse = await runQueryWithFallback(mayaStepPrompt, config, true, "anthropic");
     const mayaResult = robustJSONParse(mayaResponse);
 
     let formattedSchema = "";
@@ -688,7 +693,7 @@ ${leonPrompt}
   }
 }`;
 
-    const leonResponse = await runQueryWithFallback(leonStepPrompt, config, true);
+    const leonResponse = await runQueryWithFallback(leonStepPrompt, config, true, "openai");
     const leonResult = robustJSONParse(leonResponse);
 
     // 步驟 4：呼叫廣告策略師 Jack，結合 Leon 的落地頁與上游文案進行廣告預估與診斷
@@ -724,7 +729,7 @@ ${jackPrompt}
   "ad_strategy_notes": "針對目前數據的具體判讀：哪組需要加碼、哪組應該關閉、哪組需要更換素材的詳細策略建議文字。"
 }`;
 
-    const jackResponse = await runQueryWithFallback(jackStepPrompt, config, true);
+    const jackResponse = await runQueryWithFallback(jackStepPrompt, config, true, "openai");
     const jackResult = robustJSONParse(jackResponse);
 
     // 主動嘗試從資料表/環境變數中對接實體 Meta 廣告後台 API 數據
