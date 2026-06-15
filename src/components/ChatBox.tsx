@@ -172,7 +172,14 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   throw new Error("專家回傳資料格式不正確");
                 }
               } else {
-                throw new Error(`HTTP 狀態碼: ${res.status}`);
+                let errorMsg = `HTTP 狀態碼: ${res.status}`;
+                try {
+                  const errorData = await res.json();
+                  if (errorData && errorData.error) {
+                    errorMsg += ` - ${errorData.error}`;
+                  }
+                } catch (_) {}
+                throw new Error(errorMsg);
               }
             } catch (e: any) {
               if (e.name === 'AbortError') {
@@ -212,7 +219,14 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   throw new Error("專家回傳資料格式不正確");
                 }
               } else {
-                throw new Error(`HTTP 狀態碼: ${res.status}`);
+                let errorMsg = `HTTP 狀態碼: ${res.status}`;
+                try {
+                  const errorData = await res.json();
+                  if (errorData && errorData.error) {
+                    errorMsg += ` - ${errorData.error}`;
+                  }
+                } catch (_) {}
+                throw new Error(errorMsg);
               }
             } catch (e: any) {
               if (e.name === 'AbortError') {

@@ -53,7 +53,10 @@ export interface AIProviderConfig {
   provider: string;
   apiKey?: string;
   geminiApiKey?: string;
+  anthropicApiKey?: string;
   model?: string;
+  geminiModel?: string;
+  anthropicModel?: string;
   webhookUrl?: string;
 }
 
@@ -63,7 +66,10 @@ export function getAIConfig(): AIProviderConfig {
     provider: process.env.AI_PROVIDER || "mock",
     apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || "",
     geminiApiKey: process.env.GEMINI_API_KEY || "",
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     model: process.env.OPENAI_MODEL || "gpt-4o",
+    geminiModel: process.env.GEMINI_MODEL || "gemini-flash-latest",
+    anthropicModel: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022",
     webhookUrl: process.env.N8N_WEBHOOK_URL || "",
   };
 }
@@ -100,14 +106,49 @@ async function runQueryWithFallback(prompt: string, config: AIProviderConfig, js
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
     (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+  const isAnthropicKeyValid = !!((config.anthropicApiKey || process.env.ANTHROPIC_API_KEY) && 
+    (config.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "").trim().startsWith("sk-ant-"));
     
-  if (isGeminiKeyValid) {
-    return callGemini([{ role: "user", content: prompt }], config, jsonMode);
-  } else if (isOpenAIKeyValid) {
-    return callOpenAI([{ role: "user", content: prompt }], config, jsonMode);
+  const providersToTry: string[] = [];
+  const primaryProvider = config.provider || "openai";
+  
+  if (primaryProvider === "gemini") {
+    providersToTry.push("gemini", "openai", "anthropic");
+  } else if (primaryProvider === "anthropic") {
+    providersToTry.push("anthropic", "openai", "gemini");
   } else {
-    throw new Error("沒有可用的 AI 金鑰 (OpenAI 與 Gemini 金鑰均無效)");
+    providersToTry.push("openai", "gemini", "anthropic");
   }
+
+  const validProviders = providersToTry.filter(p => {
+    if (p === "openai") return isOpenAIKeyValid;
+    if (p === "gemini") return isGeminiKeyValid;
+    if (p === "anthropic") return isAnthropicKeyValid;
+    return false;
+  });
+
+  if (validProviders.length === 0) {
+    throw new Error("沒有可用的 AI 金鑰 (OpenAI、Gemini 與 Anthropic 金鑰均無效)");
+  }
+
+  let lastError: any = null;
+  for (const provider of validProviders) {
+    try {
+      console.log(`[runQueryWithFallback] Attempting ${provider}...`);
+      if (provider === "gemini") {
+        return await callGemini([{ role: "user", content: prompt }], config, jsonMode);
+      } else if (provider === "openai") {
+        return await callOpenAI([{ role: "user", content: prompt }], config, jsonMode);
+      } else if (provider === "anthropic") {
+        return await callAnthropic([{ role: "user", content: prompt }], config);
+      }
+    } catch (err: any) {
+      console.error(`[runQueryWithFallback] ${provider} failed:`, err);
+      lastError = err;
+    }
+  }
+
+  throw new Error(`所有可用 AI 服務均呼叫失敗。最後一個錯誤為: ${lastError?.message || lastError}`);
 }
 
 async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
@@ -293,6 +334,7 @@ export async function callErickCOO(
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
+  config.provider = provider; // 確保專家端能讀取到目前選用的 Provider
   const brandColors = getBrandColorsForPrompt(brandName);
   
   if (provider === "mock") {
@@ -349,22 +391,50 @@ export async function callErickCOO(
     const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
     const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
       (config.geminiApiKey || process.env.GEMINI_API_KEY || "").trim().startsWith("AIzaSy"));
+    const isAnthropicKeyValid = !!((config.anthropicApiKey || process.env.ANTHROPIC_API_KEY) && 
+      (config.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "").trim().startsWith("sk-ant-"));
+
+    const providersToTry: string[] = [];
+    if (provider === "gemini") {
+      providersToTry.push("gemini", "openai", "anthropic");
+    } else if (provider === "anthropic") {
+      providersToTry.push("anthropic", "openai", "gemini");
+    } else {
+      providersToTry.push("openai", "gemini", "anthropic");
+    }
+
+    const validProviders = providersToTry.filter(p => {
+      if (p === "openai") return isOpenAIKeyValid;
+      if (p === "gemini") return isGeminiKeyValid;
+      if (p === "anthropic") return isAnthropicKeyValid;
+      return false;
+    });
 
     let erickOutput = "";
-    try {
-      if (provider === "openai" && !isOpenAIKeyValid && isGeminiKeyValid) {
-        erickOutput = await callGemini(formattedMessages, config);
-      } else if (provider === "gemini" && !isGeminiKeyValid && isOpenAIKeyValid) {
-        erickOutput = await callOpenAI(formattedMessages, config);
-      } else {
-        erickOutput = provider === "gemini" 
-          ? await callGemini(formattedMessages, config)
-          : await callOpenAI(formattedMessages, config);
+    let lastError: any = null;
+
+    if (validProviders.length > 0) {
+      for (const p of validProviders) {
+        try {
+          console.log(`[callErickCOO] Attempting COO generation with ${p}...`);
+          if (p === "gemini") {
+            erickOutput = await callGemini(formattedMessages, config);
+          } else if (p === "openai") {
+            erickOutput = await callOpenAI(formattedMessages, config);
+          } else if (p === "anthropic") {
+            erickOutput = await callAnthropic(formattedMessages, config);
+          }
+          break; // Success!
+        } catch (error: any) {
+          console.error(`[callErickCOO] ${p} failed:`, error);
+          lastError = error;
+        }
       }
-    } catch (error: any) {
-      console.error("Erick COO call failed:", error);
+    }
+
+    if (!erickOutput) {
       if (provider !== "mock") {
-        throw new Error(`Erick COO 呼叫失敗: ${error.message || error}`);
+        throw new Error(`Erick COO 呼叫失敗: 所有可用 AI 服務均呼叫失敗。最後一個錯誤為: ${lastError?.message || lastError}`);
       }
       return parseCOOOutput(await callMockCOO(history[history.length - 1]?.content || "", brandName));
     }
@@ -665,7 +735,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
   console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
 
   const requestBody: any = {
-    model: config.model || "gpt-5.4-mini",
+    model: config.model || "gpt-4o",
     messages: messages,
     temperature: 0.7
   };
@@ -697,8 +767,9 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
   const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
 
+  const model = config.geminiModel || process.env.GEMINI_MODEL || "gemini-flash-latest";
   const keyPrefix = apiKey.substring(0, 10);
-  console.log(`[Gemini Call] Using key prefix: ${keyPrefix}... (length: ${apiKey.length})`);
+  console.log(`[Gemini Call] Using model: ${model}, key prefix: ${keyPrefix}... (length: ${apiKey.length})`);
 
   // Gemini API 格式轉換
   const contents = messages
@@ -717,7 +788,7 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
 
   const systemInstruction = messages.find(m => m.role === "system")?.content;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
   const generationConfig: any = {
     temperature: 0.7
@@ -749,9 +820,10 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
 
 // 3. Anthropic 實作
 async function callAnthropic(messages: any[], config: AIProviderConfig): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing ANTHROPIC_API_KEY");
 
+  const model = config.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
   const systemInstruction = messages.find(m => m.role === "system")?.content;
   const anthropicMessages = messages
     .filter(m => m.role !== "system")
@@ -768,7 +840,7 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: "claude-3-5-sonnet-20241022",
+      model: model,
       system: systemInstruction,
       messages: anthropicMessages,
       max_tokens: 4000,
