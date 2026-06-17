@@ -58,6 +58,20 @@ export interface AdDataItem {
   isPositive?: boolean;
 }
 
+export interface ReachKillerItem {
+  original_sentence: string;
+  reason: string;
+  viral_rewrite: string;
+  improvement_type: string;
+}
+
+export interface TheoAnalysis {
+  viral_score: number;
+  explanation: string;
+  reach_killers: ReachKillerItem[];
+  analyzed_at: number;
+}
+
 export interface WorkspaceData {
   social_copy: string;
   web_architecture: string;
@@ -66,6 +80,8 @@ export interface WorkspaceData {
   aeo_schema?: string;
   aeo_faq?: string;
   brand_guidelines?: string;
+  theo_analysis?: TheoAnalysis;
+  active_platform?: string;
 }
 
 // Constant templates for initial data setup
@@ -460,6 +476,99 @@ export async function saveWorkspace(brandId: string, updatedFields: Partial<Work
     const updated = { ...current, ...updatedFields };
     localStorage.setItem(storageKey, JSON.stringify(updated));
     localEmitter.emit(`workspace_update_${brandId}`, updated);
+  }
+
+  // --- Google Sheets Sync for Stage Projects ---
+  if (typeof window !== "undefined" && brandId.startsWith("project_")) {
+    const scriptUrl = localStorage.getItem("google_sheets_apps_script_url");
+    if (scriptUrl) {
+      // Get the merged full data
+      let fullWorkspace: WorkspaceData;
+      if (db) {
+        // Fetch from Firestore
+        try {
+          const docRef = doc(db, "users", userId, "brands", brandId, "workspace_data", "current");
+          const docSnap = await getDoc(docRef);
+          fullWorkspace = docSnap.exists() ? (docSnap.data() as WorkspaceData) : {
+            social_copy: "",
+            web_architecture: "",
+            seo_keywords: [],
+            ad_data: [],
+            brand_guidelines: ""
+          };
+        } catch (e) {
+          fullWorkspace = {
+            social_copy: "",
+            web_architecture: "",
+            seo_keywords: [],
+            ad_data: [],
+            brand_guidelines: "",
+            ...updatedFields
+          };
+        }
+      } else {
+        // Fetch from LocalStorage
+        const storageKey = `ai_team_dashboard_workspace_${brandId}`;
+        try {
+          const dataStr = localStorage.getItem(storageKey);
+          fullWorkspace = dataStr ? JSON.parse(dataStr) : {
+            social_copy: "",
+            web_architecture: "",
+            seo_keywords: [],
+            ad_data: [],
+            brand_guidelines: ""
+          };
+        } catch (e) {
+          fullWorkspace = {
+            social_copy: "",
+            web_architecture: "",
+            seo_keywords: [],
+            ad_data: [],
+            brand_guidelines: "",
+            ...updatedFields
+          };
+        }
+      }
+
+      // Find project name from list
+      let projectName = "階段專案";
+      try {
+        const listStr = localStorage.getItem("google_sheets_projects");
+        if (listStr) {
+          const list = JSON.parse(listStr);
+          const pObj = list.find((p: any) => p.id === brandId);
+          if (pObj) projectName = pObj.name;
+        }
+      } catch (e) {}
+
+      const projectPayload = {
+        id: brandId,
+        name: projectName,
+        guidelines: fullWorkspace.brand_guidelines || "",
+        social_copy: fullWorkspace.social_copy || "",
+        web_architecture: fullWorkspace.web_architecture || "",
+        seo_keywords: JSON.stringify(fullWorkspace.seo_keywords || []),
+        ad_data: JSON.stringify(fullWorkspace.ad_data || []),
+        aeo_schema: fullWorkspace.aeo_schema || "",
+        aeo_faq: fullWorkspace.aeo_faq || ""
+      };
+
+      // Send to proxy API route in background
+      fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: scriptUrl, project: projectPayload })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) {
+          console.error("Failed to sync workspace to Google Sheet:", data.error);
+        } else {
+          console.log("Workspace synced to Google Sheet successfully:", brandId);
+        }
+      })
+      .catch(err => console.error("Network error syncing workspace to Google Sheet:", err));
+    }
   }
 }
 

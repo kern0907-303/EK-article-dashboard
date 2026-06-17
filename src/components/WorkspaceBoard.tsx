@@ -5,18 +5,36 @@ import {
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
-  Copy, Loader2, Sparkles, Brain, Shield
+  Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   WorkspaceData, subscribeToWorkspace, saveWorkspace, 
-  SEOKeyword, AdDataItem 
+  SEOKeyword, AdDataItem, TheoAnalysis, ReachKillerItem
 } from "@/lib/firebase";
 import { BRANDS } from "./BrandSelector";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
+
+const getBrandOrProjectName = (id: string): string => {
+  if (id && id.startsWith("project_")) {
+    try {
+      const savedProjects = localStorage.getItem("google_sheets_projects");
+      if (savedProjects) {
+        const list = JSON.parse(savedProjects);
+        const p = list.find((item: any) => item.id === id);
+        if (p) return p.name;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return "階段專案";
+  }
+  const brand = BRANDS.find((b) => b.id === id);
+  return brand ? brand.name : BRANDS[0].name;
+};
 
 export interface BrandTheme {
   primary: string;
@@ -219,6 +237,9 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 socialCopy={data.social_copy} 
                 aeoSchema={data.aeo_schema}
                 aeoFaq={data.aeo_faq}
+                theoAnalysis={data.theo_analysis}
+                aiProvider={aiProvider}
+                activePlatform={data.active_platform}
               />
             )}
             {activeTab === "architecture" && (
@@ -255,17 +276,31 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
   );
 }
 
+const getPlatformLimit = (p: string) => {
+  if (p === "threads") return 500;
+  if (p === "instagram") return 2200;
+  if (p === "red") return 1000;
+  if (p === "tiktok") return 1000;
+  return Infinity;
+};
+
 // ==================== 1. 社群文案分頁 (Maya) ====================
 function SocialTabContent({ 
   brandId, 
   socialCopy, 
   aeoSchema, 
-  aeoFaq 
+  aeoFaq,
+  theoAnalysis,
+  aiProvider,
+  activePlatform
 }: { 
   brandId: string; 
   socialCopy: string; 
   aeoSchema?: string; 
   aeoFaq?: string; 
+  theoAnalysis?: TheoAnalysis;
+  aiProvider: string;
+  activePlatform?: string;
 }) {
   const theme = getBrandTheme(brandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
@@ -275,6 +310,77 @@ function SocialTabContent({
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [platform, setPlatform] = useState(activePlatform || "threads");
+
+  useEffect(() => {
+    if (activePlatform) {
+      setPlatform(activePlatform);
+    }
+  }, [activePlatform]);
+
+  const handlePlatformChange = async (newPlatform: string) => {
+    setPlatform(newPlatform);
+    await saveWorkspace(brandId, { active_platform: newPlatform });
+  };
+
+  const handleAnalyzeViral = async () => {
+    if (isAnalyzing || !val.trim()) return;
+    setIsAnalyzing(true);
+    try {
+      const brandName = getBrandOrProjectName(brandId);
+      const res = await fetch("/api/theo/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: val,
+          brandName,
+          aiProvider,
+          platform
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "流量預測分析失敗");
+      }
+
+      const resData = await res.json();
+      if (resData.success && resData.data) {
+        await saveWorkspace(brandId, {
+          theo_analysis: resData.data
+        });
+      }
+    } catch (error: any) {
+      console.error("Theo analysis error:", error);
+      alert(`❌ 流量預測檢測失敗：${error.message}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleApplyRewrite = async (original: string, rewrite: string) => {
+    if (!val.includes(original)) {
+      alert("⚠️ 無法在文案中找到一模一樣的原句，可能您已手動編輯過。請手動修改或重新檢測！");
+      return;
+    }
+    const newVal = val.replace(original, rewrite);
+    setVal(newVal);
+
+    // 過濾已套用的 reach_killer
+    let updatedAnalysis = undefined;
+    if (theoAnalysis) {
+      updatedAnalysis = {
+        ...theoAnalysis,
+        reach_killers: theoAnalysis.reach_killers.filter(k => k.original_sentence !== original)
+      };
+    }
+
+    await saveWorkspace(brandId, {
+      social_copy: newVal,
+      ...(updatedAnalysis ? { theo_analysis: updatedAnalysis } : {})
+    });
+  };
 
   // 歷史文章狀態
   const [historyArticles, setHistoryArticles] = useState<any[]>([]);
@@ -326,14 +432,14 @@ function SocialTabContent({
     if (isPublishingWebsite || !val) return;
     setIsPublishingWebsite(true);
     try {
-      const activeBrand = BRANDS.find((b) => b.id === brandId) || BRANDS[0];
+      const brandName = getBrandOrProjectName(brandId);
       
       const response = await fetch("/api/publish-website", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brandId,
-          brandName: activeBrand.name,
+          brandName,
           content: val,
           aeoSchema: aeoSchema || null,
           aeoFaq: aeoFaq || null
@@ -726,14 +832,30 @@ function SocialTabContent({
 
           <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
             {val && (
-              <button
-                type="button"
-                onClick={handleCopyCleanText}
-                className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
-                title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
-              >
-                <Copy className={`w-3.5 h-3.5 ${theme.copyIconColor}`} /> 複製貼文
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={isAnalyzing}
+                  onClick={handleAnalyzeViral}
+                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
+                  title="由流量軍師 Theo 進行 Meta 演算法與病毒分數分析"
+                >
+                  {isAnalyzing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                  ) : (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  )}
+                  {isAnalyzing ? "正在逆向算法..." : "🔍 流量分析"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyCleanText}
+                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
+                  title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
+                >
+                  <Copy className={`w-3.5 h-3.5 ${theme.copyIconColor}`} /> 複製貼文
+                </button>
+              </>
             )}
             <button
               onClick={() => setMode("preview")}
@@ -755,6 +877,36 @@ function SocialTabContent({
         </div>
       </div>
 
+      {/* 📱 社群平台切換器 */}
+      <div className="grid grid-cols-3 sm:flex bg-slate-950 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none">
+        {[
+          { id: "threads", name: "Threads (脆)", active: true, desc: "500字限 | 禁正文連結 | 鉤子優先" },
+          { id: "facebook", name: "Facebook", active: true, desc: "無字限 | 長文說書 | 互動排版" },
+          { id: "instagram", name: "Instagram", active: true, desc: "2200字 | 豐富 Emojis | hashtags" },
+          { id: "red", name: "小紅書 (預留)", active: false, desc: "標題黨 | 閨蜜調性" },
+          { id: "tiktok", name: "抖音腳本 (預留)", active: false, desc: "口播腳本 | 黃金3秒" }
+        ].map((plat) => {
+          const isSelected = platform === plat.id;
+          return (
+            <button
+              key={plat.id}
+              disabled={!plat.active}
+              onClick={() => handlePlatformChange(plat.id)}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg flex flex-col items-center justify-center transition-all ${
+                !plat.active
+                  ? "opacity-35 cursor-not-allowed text-slate-600"
+                  : isSelected
+                  ? `${theme.primaryBg} ${theme.primaryBtnText} shadow-md`
+                  : "hover:bg-slate-900/50 text-slate-400 hover:text-slate-200 cursor-pointer"
+              }`}
+            >
+              <span className="text-[10px] font-bold">{plat.name}</span>
+              <span className={`text-[8px] mt-0.5 scale-90 ${isSelected ? "opacity-90 animate-pulse" : "text-slate-500"}`}>{plat.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {mode === "edit" ? (
         <div className="flex-1 flex flex-col space-y-3">
           <textarea
@@ -764,6 +916,17 @@ function SocialTabContent({
             placeholder="在此輸入社群文案..."
             className={`flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 ${theme.focusBorder} text-slate-200 text-sm focus:outline-none focus:ring-1 ${theme.primaryRing} font-mono resize-none`}
           />
+          <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 py-0.5">
+            <span>
+              已輸入：<strong className={val.length > getPlatformLimit(platform) ? "text-rose-400 font-bold" : "text-slate-200"}>{val.length}</strong> 字 
+              {getPlatformLimit(platform) !== Infinity && ` / 上限 ${getPlatformLimit(platform)} 字`}
+            </span>
+            {val.length > getPlatformLimit(platform) && (
+              <span className="text-rose-400 font-bold flex items-center gap-0.5 animate-pulse">
+                ⚠️ 已超過該平台限制字數！
+              </span>
+            )}
+          </div>
           <button
             onClick={handleSave}
             className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-slate-100 rounded-lg text-xs font-bold transition cursor-pointer"
@@ -774,6 +937,120 @@ function SocialTabContent({
       ) : (
         <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px]">
           {renderMarkdown(val)}
+        </div>
+      )}
+
+      {/* 🦠 Theo 演算法流量預測與優化面版 */}
+      {(isAnalyzing || theoAnalysis) && (
+        <div className="bg-slate-900/20 border border-amber-500/25 p-4 rounded-xl space-y-4 backdrop-blur-md relative overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+          {/* Decorative background glow */}
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full filter blur-xl -mr-6 -mt-6 select-none pointer-events-none" />
+          
+          <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🦠</span>
+              <div>
+                <h4 className="text-xs font-bold text-slate-200">軍師 Theo 演算法流量分析</h4>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold mt-0.5">Meta Algorithm Viral Index Audit</p>
+              </div>
+            </div>
+            {theoAnalysis && !isAnalyzing && (
+              <span className="text-[9px] text-slate-500 font-semibold bg-slate-950 px-2 py-0.5 rounded border border-slate-850">
+                分析時間: {new Date(theoAnalysis.analyzed_at).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+
+          {isAnalyzing ? (
+            <div className="flex flex-col items-center justify-center py-8 space-y-3">
+              <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+              <div className="text-center space-y-1">
+                <p className="text-xs font-bold text-slate-200 animate-pulse">Theo 正在逆向演算法與稽核文案中...</p>
+                <p className="text-[10px] text-slate-500">正在評估首句 Hook、導流外連限制與商業 Spam 降權機制</p>
+              </div>
+            </div>
+          ) : theoAnalysis ? (
+            <div className="space-y-4">
+              {/* Viral Score & Explanation */}
+              <div className="flex flex-col sm:flex-row items-stretch gap-4 p-3 bg-slate-950/60 border border-slate-850 rounded-lg">
+                {/* Score badge */}
+                <div className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border min-w-[85px] shrink-0 ${
+                  theoAnalysis.viral_score >= 80 
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm shadow-emerald-500/5"
+                    : theoAnalysis.viral_score >= 50
+                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-sm shadow-amber-500/5"
+                    : "bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-sm shadow-rose-500/5"
+                }`}>
+                  <span className="text-[8px] text-slate-500 font-bold uppercase tracking-wider">病毒指數</span>
+                  <span className="text-3xl font-black mt-1 tracking-tight">{theoAnalysis.viral_score}</span>
+                  <span className="text-[8px] text-slate-400 font-semibold mt-0.5">/ 100</span>
+                </div>
+
+                {/* Explanation text */}
+                <div className="flex-1 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[10px] text-slate-400 font-bold">演算法評估診斷：</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+                    {theoAnalysis.explanation}
+                  </p>
+                </div>
+              </div>
+
+              {/* Reach Killers */}
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-500" />
+                  <span className="text-xs font-bold text-slate-200">🔍 殺觸及檢測與爆款優化建議</span>
+                </div>
+
+                {theoAnalysis.reach_killers.length === 0 ? (
+                  <div className="p-4 bg-emerald-500/5 border border-emerald-500/15 rounded-lg text-center flex flex-col items-center justify-center space-y-1">
+                    <span className="text-base">🎉</span>
+                    <p className="text-xs font-bold text-emerald-400">恭喜！文案完美契合 Meta 自然傳播演算法</p>
+                    <p className="text-[9px] text-slate-500">未檢測到包含直白導流外連或商業降權詞彙。</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {theoAnalysis.reach_killers.map((item, index) => (
+                      <div key={index} className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[9px] font-bold">
+                          <span className="flex items-center gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded uppercase">
+                            ⚠️ 流量卡點 ({item.improvement_type})
+                          </span>
+                          <span className="text-slate-500">扣分原因: {item.reason}</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          {/* Original line */}
+                          <div className="p-2.5 rounded bg-rose-500/5 border border-rose-500/10 text-rose-300 line-through decoration-rose-500/40 select-all">
+                            {item.original_sentence}
+                          </div>
+                          
+                          {/* Rewrite line */}
+                          <div className="p-2.5 rounded bg-emerald-500/5 border border-emerald-500/15 text-emerald-400 flex flex-col justify-between select-all">
+                            <div className="leading-relaxed">{item.viral_rewrite}</div>
+                            <div className="flex justify-end mt-2.5">
+                              <button
+                                type="button"
+                                onClick={() => handleApplyRewrite(item.original_sentence, item.viral_rewrite)}
+                                className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-extrabold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded transition-all cursor-pointer shadow-sm hover:shadow-emerald-500/20"
+                                title="直接將編輯區內文對應的原句替換為此優化版"
+                              >
+                                <Zap className="w-2.5 h-2.5 text-slate-950 fill-current" />
+                                套用改寫
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -1076,8 +1353,7 @@ function SEOTabContent({
     if (isGeneratingAeo) return;
     setIsGeneratingAeo(true);
     try {
-      const activeBrand = BRANDS.find((b) => b.id === brandId) || BRANDS[0];
-      const brandName = activeBrand.name;
+      const brandName = getBrandOrProjectName(brandId);
 
       const res = await fetch("/api/aeo", {
         method: "POST",

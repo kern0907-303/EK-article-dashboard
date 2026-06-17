@@ -3,20 +3,49 @@
 import React, { useState, useEffect } from "react";
 import { Bot, Sparkles, Radio, Cpu, Network, Menu, X } from "lucide-react";
 import BrandSelector, { BRANDS } from "@/components/BrandSelector";
+import ProjectSelector from "@/components/ProjectSelector";
 import ChatBox from "@/components/ChatBox";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
 
 export default function DashboardPage() {
   const [activeBrandId, setActiveBrandId] = useState<string>("brand_a_i8");
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [currentMode, setCurrentMode] = useState<"brand" | "project">("brand");
   const [aiProvider, setAiProvider] = useState<string>("mock");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "board">("chat");
+  const [projectsCache, setProjectsCache] = useState<any[]>([]);
 
   useEffect(() => {
     const saved = localStorage.getItem("ai_provider_override");
     if (saved) {
       setAiProvider(saved);
     }
+
+    // Load projects cache initially
+    const savedProjects = localStorage.getItem("google_sheets_projects");
+    if (savedProjects) {
+      try {
+        setProjectsCache(JSON.parse(savedProjects));
+      } catch (e) {}
+    }
+
+    // Watch for local storage updates to sync projects listing
+    const handleStorageChange = () => {
+      const savedProjs = localStorage.getItem("google_sheets_projects");
+      if (savedProjs) {
+        try {
+          setProjectsCache(JSON.parse(savedProjs));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    const interval = setInterval(handleStorageChange, 2000);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleProviderChange = (newProvider: string) => {
@@ -25,6 +54,18 @@ export default function DashboardPage() {
   };
 
   const activeBrand = BRANDS.find((b) => b.id === activeBrandId) || BRANDS[0];
+
+  const resolvedBrandId = currentMode === "project" && activeProjectId ? activeProjectId : activeBrandId;
+
+  const getActiveEntityName = () => {
+    if (currentMode === "project") {
+      const p = projectsCache.find(x => x.id === activeProjectId);
+      return p ? p.name : "階段專案";
+    }
+    return activeBrand.name;
+  };
+
+  const activeBrandName = getActiveEntityName();
 
   return (
     <main className="min-h-screen h-screen bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
@@ -103,14 +144,53 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              {/* Brand Dropdown Selector */}
-              <BrandSelector 
-                activeBrandId={activeBrandId} 
-                onChangeBrand={(id) => {
-                  setActiveBrandId(id);
-                  setIsDrawerOpen(false); // Auto close drawer on select
-                }} 
-              />
+              {/* Mode Toggle (Segmented Control) */}
+              <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl p-1 flex">
+                <button
+                  onClick={() => setCurrentMode("brand")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    currentMode === "brand"
+                      ? "bg-slate-800 text-slate-100 border border-slate-700/50 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  長期品牌
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentMode("project");
+                    if (!activeProjectId && projectsCache.length > 0) {
+                      setActiveProjectId(projectsCache[0].id);
+                    }
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    currentMode === "project"
+                      ? "bg-amber-500 text-slate-950 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  階段專案
+                </button>
+              </div>
+
+              {/* Brand or Project Dropdown Selector */}
+              {currentMode === "brand" ? (
+                <BrandSelector 
+                  activeBrandId={activeBrandId} 
+                  onChangeBrand={(id) => {
+                    setActiveBrandId(id);
+                    setIsDrawerOpen(false); // Auto close drawer on select
+                  }} 
+                />
+              ) : (
+                <ProjectSelector
+                  activeProjectId={activeProjectId}
+                  onChangeProject={(id) => {
+                    setActiveProjectId(id);
+                    setIsDrawerOpen(false); // Auto close drawer on select
+                  }}
+                />
+              )}
 
               {/* Erick Profile Widget */}
               <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/40 space-y-4">
@@ -146,6 +226,13 @@ export default function DashboardPage() {
                     </li>
                     <li className="flex items-center justify-between text-slate-300">
                       <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        Theo (流量預測)
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">病毒分數</span>
+                    </li>
+                    <li className="flex items-center justify-between text-slate-300">
+                      <span className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
                         Leon (系統架構)
                       </span>
@@ -176,7 +263,7 @@ export default function DashboardPage() {
                 <Network className="w-3.5 h-3.5 text-slate-500" />
                 <div className="truncate">
                   <span className="block text-[8px] text-slate-600 font-bold uppercase">當前領域</span>
-                  <span className="block font-semibold text-slate-300 text-[10px] truncate">{activeBrand.name}</span>
+                  <span className="block font-semibold text-slate-300 text-[10px] truncate">{activeBrandName}</span>
                 </div>
               </div>
               <p className="text-[9px] text-slate-600 text-center font-semibold uppercase tracking-wider">
@@ -220,11 +307,47 @@ export default function DashboardPage() {
         {/* Left Column (Brand Switcher & Profile Card) - Hidden on mobile, shown on desktop */}
         <div className="hidden lg:flex lg:w-1/4 xl:w-1/5 flex flex-col justify-between h-full bg-slate-900/20 border border-slate-800/60 p-5 rounded-2xl backdrop-blur-md shrink-0">
           <div className="space-y-6">
-            {/* Brand Dropdown Selector */}
-            <BrandSelector 
-              activeBrandId={activeBrandId} 
-              onChangeBrand={setActiveBrandId} 
-            />
+            {/* Mode Toggle (Segmented Control) */}
+            <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl p-1 flex">
+              <button
+                onClick={() => setCurrentMode("brand")}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  currentMode === "brand"
+                    ? "bg-slate-800 text-slate-100 border border-slate-700/50 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                長期品牌
+              </button>
+              <button
+                onClick={() => {
+                  setCurrentMode("project");
+                  if (!activeProjectId && projectsCache.length > 0) {
+                    setActiveProjectId(projectsCache[0].id);
+                  }
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  currentMode === "project"
+                    ? "bg-amber-500 text-slate-950 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                階段專案
+              </button>
+            </div>
+
+            {/* Brand or Project Dropdown Selector */}
+            {currentMode === "brand" ? (
+              <BrandSelector 
+                activeBrandId={activeBrandId} 
+                onChangeBrand={setActiveBrandId} 
+              />
+            ) : (
+              <ProjectSelector
+                activeProjectId={activeProjectId}
+                onChangeProject={setActiveProjectId}
+              />
+            )}
 
             {/* Erick Profile Widget */}
             <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/40 space-y-4">
@@ -260,6 +383,13 @@ export default function DashboardPage() {
                   </li>
                   <li className="flex items-center justify-between text-slate-300">
                     <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Theo (流量預測)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">病毒分數</span>
+                  </li>
+                  <li className="flex items-center justify-between text-slate-300">
+                    <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
                       Leon (系統架構)
                     </span>
@@ -290,7 +420,7 @@ export default function DashboardPage() {
               <Network className="w-3.5 h-3.5 text-slate-500" />
               <div className="truncate">
                 <span className="block text-[8px] text-slate-600 font-bold uppercase">當前領域</span>
-                <span className="block font-semibold text-slate-300 text-[10px] truncate">{activeBrand.name}</span>
+                <span className="block font-semibold text-slate-300 text-[10px] truncate">{activeBrandName}</span>
               </div>
             </div>
             <p className="text-[9px] text-slate-600 text-center font-semibold uppercase tracking-wider">
@@ -302,8 +432,8 @@ export default function DashboardPage() {
         {/* Center Column (ChatBox) */}
         <div className={`flex-1 lg:w-2/5 h-full flex flex-col ${activeTab === "chat" ? "flex" : "hidden lg:flex"}`}>
           <ChatBox 
-            activeBrandId={activeBrandId} 
-            activeBrandName={activeBrand.name} 
+            activeBrandId={resolvedBrandId} 
+            activeBrandName={activeBrandName} 
             aiProvider={aiProvider}
           />
         </div>
@@ -311,7 +441,7 @@ export default function DashboardPage() {
         {/* Right Column (WorkspaceBoard) */}
         <div className={`flex-1 lg:w-2/5 h-full flex flex-col ${activeTab === "board" ? "flex" : "hidden lg:flex"}`}>
           <WorkspaceBoard 
-            activeBrandId={activeBrandId} 
+            activeBrandId={resolvedBrandId} 
             aiProvider={aiProvider}
           />
         </div>
