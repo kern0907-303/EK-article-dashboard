@@ -74,31 +74,107 @@ export function getAIConfig(): AIProviderConfig {
   };
 }
 
-function robustJSONParse(text: string): any {
-  const clean = text.trim();
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-  const match = clean.match(jsonRegex);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1].trim());
-    } catch (e) {
-      // fallback
+function extractJSON(text: string): string | null {
+  const startObj = text.indexOf('{');
+  const startArr = text.indexOf('[');
+  
+  if (startObj === -1 && startArr === -1) return null;
+  
+  let start = -1;
+  let openBrace = '';
+  let closeBrace = '';
+  
+  if (startObj !== -1 && (startArr === -1 || startObj < startArr)) {
+    start = startObj;
+    openBrace = '{';
+    closeBrace = '}';
+  } else {
+    start = startArr;
+    openBrace = '[';
+    closeBrace = ']';
+  }
+
+  let count = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === openBrace) {
+        count++;
+      } else if (char === closeBrace) {
+        count--;
+        if (count === 0) {
+          return text.substring(start, i + 1);
+        }
+      }
     }
   }
 
+  return null;
+}
+
+function robustJSONParse(text: string): any {
+  const clean = text.trim();
+  
+  // 1. 優先嘗試解析 Markdown 中的 json 區塊
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+  const match = clean.match(jsonRegex);
+  if (match && match[1]) {
+    const codeBlockContent = match[1].trim();
+    try {
+      return JSON.parse(codeBlockContent);
+    } catch (e) {
+      // 降級方案：使用括號匹配提取區塊內部的 JSON
+      const extracted = extractJSON(codeBlockContent);
+      if (extracted) {
+        try {
+          return JSON.parse(extracted);
+        } catch (_) {}
+      }
+    }
+  }
+
+  // 2. 嘗試直接解析整段文字
   try {
     return JSON.parse(clean);
-  } catch (e) {
+  } catch (e: any) {
+    // 3. 降級方案：使用括號匹配從整段文字中提取 JSON 物件或陣列
+    const extracted = extractJSON(clean);
+    if (extracted) {
+      try {
+        return JSON.parse(extracted);
+      } catch (e2) {}
+    }
+    
+    // 4. 最末降級方案：從第一個 { 到最後一個 } 截取
     const start = clean.indexOf('{');
     const end = clean.lastIndexOf('}');
     if (start !== -1 && end !== -1 && end > start) {
       try {
         return JSON.parse(clean.substring(start, end + 1));
-      } catch (e2) {
-        // fallback
-      }
+      } catch (e2) {}
     }
-    throw e;
+    
+    console.error("[robustJSONParse] 解析 JSON 失敗，原始文字為:", text);
+    throw new Error(`${e.message || "JSON 格式錯誤"} (原始長度: ${text.length})`);
   }
 }
 
