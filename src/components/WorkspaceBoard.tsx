@@ -229,7 +229,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="h-full"
+            className="min-h-full flex flex-col"
           >
             {activeTab === "social" && (
               <SocialTabContent 
@@ -751,7 +751,7 @@ function SocialTabContent({
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col min-h-full space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-3 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">社群行銷專家：Maya</h4>
@@ -1222,7 +1222,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col min-h-full space-y-4">
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">系統架構師：Leon</h4>
@@ -1403,7 +1403,7 @@ function SEOTabContent({
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col min-h-full space-y-4">
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">SEO 專家：Iris</h4>
@@ -1661,7 +1661,7 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col min-h-full space-y-4">
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">廣告數據專家：Jack</h4>
@@ -1842,7 +1842,7 @@ function GuidelinesTabContent({
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col min-h-full space-y-4">
       {/* 品牌大腦頂部標題卡 */}
       <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-xl border border-slate-800/60 shrink-0">
         <div>
