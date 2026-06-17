@@ -319,13 +319,21 @@ function SocialTabContent({
     }
   }, [activePlatform]);
 
+  // 當 Maya 生成文案但尚無 Theo 分析報告時，自動在客戶端背景觸發流量檢測
+  useEffect(() => {
+    if (socialCopy && !theoAnalysis && !isAnalyzing) {
+      handleAnalyzeViral(socialCopy);
+    }
+  }, [socialCopy, theoAnalysis]);
+
   const handlePlatformChange = async (newPlatform: string) => {
     setPlatform(newPlatform);
     await saveWorkspace(brandId, { active_platform: newPlatform });
   };
 
-  const handleAnalyzeViral = async () => {
-    if (isAnalyzing || !val.trim()) return;
+  const handleAnalyzeViral = async (textToAnalyze?: string) => {
+    const targetContent = textToAnalyze !== undefined ? textToAnalyze : val;
+    if (isAnalyzing || !targetContent.trim()) return;
     setIsAnalyzing(true);
     try {
       const brandName = getBrandOrProjectName(brandId);
@@ -333,7 +341,7 @@ function SocialTabContent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: val,
+          content: targetContent,
           brandName,
           aiProvider,
           platform
@@ -836,7 +844,7 @@ function SocialTabContent({
                 <button
                   type="button"
                   disabled={isAnalyzing}
-                  onClick={handleAnalyzeViral}
+                  onClick={() => handleAnalyzeViral()}
                   className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
                   title="由流量軍師 Theo 進行 Meta 演算法與病毒分數分析"
                 >

@@ -634,13 +634,6 @@ ${mayaPrompt}
       }
     }
 
-    let theoAnalysis = null;
-    try {
-      theoAnalysis = await callTheoAnalysis(mayaResult.social_copy || "", brandName, config.provider, "threads");
-    } catch (e) {
-      console.error("[Background Theo Analysis Failed]:", e);
-    }
-
     return {
       content: "",
       dispatchData: {
@@ -648,7 +641,6 @@ ${mayaPrompt}
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
         aeo_faq: irisResult.aeo_faq || "",
-        theo_analysis: theoAnalysis || undefined,
         active_platform: "threads"
       }
     };
