@@ -235,11 +235,15 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
               <SocialTabContent 
                 brandId={activeBrandId} 
                 socialCopy={data.social_copy} 
+                socialCopyThreads={data.social_copy_threads}
+                socialCopyFacebook={data.social_copy_facebook}
+                socialCopyInstagram={data.social_copy_instagram}
                 aeoSchema={data.aeo_schema}
                 aeoFaq={data.aeo_faq}
                 theoAnalysis={data.theo_analysis}
                 aiProvider={aiProvider}
                 activePlatform={data.active_platform}
+                seoKeywords={data.seo_keywords}
               />
             )}
             {activeTab === "architecture" && (
@@ -288,19 +292,27 @@ const getPlatformLimit = (p: string) => {
 function SocialTabContent({ 
   brandId, 
   socialCopy, 
+  socialCopyThreads,
+  socialCopyFacebook,
+  socialCopyInstagram,
   aeoSchema, 
   aeoFaq,
   theoAnalysis,
   aiProvider,
-  activePlatform
+  activePlatform,
+  seoKeywords
 }: { 
   brandId: string; 
   socialCopy: string; 
+  socialCopyThreads?: string;
+  socialCopyFacebook?: string;
+  socialCopyInstagram?: string;
   aeoSchema?: string; 
   aeoFaq?: string; 
   theoAnalysis?: TheoAnalysis;
   aiProvider: string;
   activePlatform?: string;
+  seoKeywords?: any[];
 }) {
   const theme = getBrandTheme(brandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
@@ -312,6 +324,74 @@ function SocialTabContent({
   const [scheduleTime, setScheduleTime] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [platform, setPlatform] = useState(activePlatform || "threads");
+  const [isAdapting, setIsAdapting] = useState(false);
+
+  const getOtherPlatformCopy = () => {
+    if (platform !== "facebook" && socialCopyFacebook?.trim()) return socialCopyFacebook;
+    if (platform !== "instagram" && socialCopyInstagram?.trim()) return socialCopyInstagram;
+    if (platform !== "threads" && socialCopyThreads?.trim()) return socialCopyThreads;
+    if (socialCopy?.trim()) return socialCopy;
+    return "";
+  };
+
+  const getOtherPlatformName = () => {
+    if (platform !== "facebook" && socialCopyFacebook?.trim()) return "Facebook";
+    if (platform !== "instagram" && socialCopyInstagram?.trim()) return "Instagram";
+    if (platform !== "threads" && socialCopyThreads?.trim()) return "Threads";
+    return "";
+  };
+
+  const hasCopyOnOtherPlatform = !!getOtherPlatformCopy();
+
+  const handleAdaptPlatform = async (forceGenerateFromKeywords: boolean = false) => {
+    if (isAdapting) return;
+    setIsAdapting(true);
+    try {
+      const brandName = getBrandOrProjectName(brandId);
+      
+      let sourceCopy = "";
+      if (!forceGenerateFromKeywords) {
+        if (val?.trim()) {
+          sourceCopy = val;
+        } else {
+          sourceCopy = getOtherPlatformCopy();
+        }
+      }
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "adapt",
+          brandName,
+          aiProvider,
+          platform,
+          prevData: { 
+            social_copy: sourceCopy,
+            seo_keywords: seoKeywords 
+          }
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("轉化改寫失敗，請檢查 API 金鑰與連線。");
+      }
+
+      const responseData = await res.json();
+      if (responseData.dispatchData && responseData.dispatchData.social_copy) {
+        const newCopy = responseData.dispatchData.social_copy;
+        setVal(newCopy);
+        await saveWorkspace(brandId, { social_copy: newCopy });
+      } else {
+        throw new Error("轉化資料格式不正確");
+      }
+    } catch (e: any) {
+      console.error("Adaptation error:", e);
+      alert(e.message || "轉化改寫失敗");
+    } finally {
+      setIsAdapting(false);
+    }
+  };
 
   useEffect(() => {
     if (activePlatform) {
@@ -857,6 +937,20 @@ function SocialTabContent({
                 </button>
                 <button
                   type="button"
+                  disabled={isAdapting}
+                  onClick={() => handleAdaptPlatform(false)}
+                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-amber-400 hover:text-amber-350 hover:bg-amber-500/10 border border-amber-500/15"
+                  title="將現有文案改寫並適配為當前選取的平台規格"
+                >
+                  {isAdapting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                  ) : (
+                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                  )}
+                  {isAdapting ? "正在轉化規格..." : `⚡ 一鍵改寫為 ${platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 規格`}
+                </button>
+                <button
+                  type="button"
                   onClick={handleCopyCleanText}
                   className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
                   title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
@@ -943,9 +1037,58 @@ function SocialTabContent({
           </button>
         </div>
       ) : (
-        <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px]">
-          {renderMarkdown(val)}
-        </div>
+        val ? (
+          <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px]">
+            {renderMarkdown(val)}
+          </div>
+        ) : (
+          <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px] flex flex-col items-center justify-center text-center space-y-4">
+            <FileText className="w-8 h-8 text-slate-700" />
+            <div>
+              <p className="text-xs font-bold text-slate-400">目前尚無社群文案</p>
+              <p className="text-[10px] text-slate-500 mt-1">您可以使用左側對話視窗指派任務，或直接點擊下方按鈕一鍵生成。</p>
+            </div>
+            {hasCopyOnOtherPlatform ? (
+              <div className="flex flex-col sm:flex-row items-center gap-2 mt-2 w-full max-w-lg justify-center">
+                <button
+                  disabled={isAdapting}
+                  onClick={() => handleAdaptPlatform(true)}
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                  title="無視其他平台的文案，直接從關鍵字庫生成全新的貼文"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  生成全新 {platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 文案
+                </button>
+                <button
+                  disabled={isAdapting}
+                  onClick={() => handleAdaptPlatform(false)}
+                  className={`w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText}`}
+                  title={`根據已生成的 ${getOtherPlatformName()} 文案改寫為適合 ${platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 規格的文案`}
+                >
+                  {isAdapting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  根據已生成文案二次加工 (改寫)
+                </button>
+              </div>
+            ) : (
+              <button
+                disabled={isAdapting}
+                onClick={() => handleAdaptPlatform(true)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText}`}
+              >
+                {isAdapting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5 fill-current" />
+                )}
+                一鍵生成 {platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 文案
+              </button>
+            )}
+          </div>
+        )
       )}
 
       {/* 🦠 Theo 演算法流量預測與優化面版 */}

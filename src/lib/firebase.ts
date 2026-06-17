@@ -74,6 +74,9 @@ export interface TheoAnalysis {
 
 export interface WorkspaceData {
   social_copy: string;
+  social_copy_threads?: string;
+  social_copy_facebook?: string;
+  social_copy_instagram?: string;
   web_architecture: string;
   seo_keywords: SEOKeyword[];
   ad_data: AdDataItem[];
@@ -81,6 +84,9 @@ export interface WorkspaceData {
   aeo_faq?: string;
   brand_guidelines?: string;
   theo_analysis?: TheoAnalysis;
+  theo_analysis_threads?: TheoAnalysis;
+  theo_analysis_facebook?: TheoAnalysis;
+  theo_analysis_instagram?: TheoAnalysis;
   active_platform?: string;
 }
 
@@ -447,6 +453,52 @@ export function subscribeToWorkspace(brandId: string, callback: (data: Workspace
   }
 }
 
+function syncPlatformFields(current: WorkspaceData, updatedFields: Partial<WorkspaceData>): Partial<WorkspaceData> {
+  const merged = { ...current, ...updatedFields };
+  const platform = merged.active_platform || "threads";
+  
+  const updates: Partial<WorkspaceData> = { ...updatedFields };
+  
+  // 1. If switching platform, populate the active copy and analysis from the target platform's stored values
+  if (updatedFields.active_platform !== undefined && updatedFields.active_platform !== current.active_platform) {
+    const targetPlat = updatedFields.active_platform;
+    if (targetPlat === "threads") {
+      updates.social_copy = current.social_copy_threads !== undefined ? current.social_copy_threads : (current.active_platform === "threads" || !current.active_platform ? current.social_copy : "");
+      updates.theo_analysis = current.theo_analysis_threads !== undefined ? current.theo_analysis_threads : (current.active_platform === "threads" || !current.active_platform ? current.theo_analysis : undefined);
+    } else if (targetPlat === "facebook") {
+      updates.social_copy = current.social_copy_facebook !== undefined ? current.social_copy_facebook : (current.active_platform === "facebook" ? current.social_copy : "");
+      updates.theo_analysis = current.theo_analysis_facebook !== undefined ? current.theo_analysis_facebook : (current.active_platform === "facebook" ? current.theo_analysis : undefined);
+    } else if (targetPlat === "instagram") {
+      updates.social_copy = current.social_copy_instagram !== undefined ? current.social_copy_instagram : (current.active_platform === "instagram" ? current.social_copy : "");
+      updates.theo_analysis = current.theo_analysis_instagram !== undefined ? current.theo_analysis_instagram : (current.active_platform === "instagram" ? current.theo_analysis : undefined);
+    }
+  }
+  
+  // 2. If copy is changing, sync it to the platform-specific field
+  if (updates.social_copy !== undefined) {
+    if (platform === "threads") {
+      updates.social_copy_threads = updates.social_copy;
+    } else if (platform === "facebook") {
+      updates.social_copy_facebook = updates.social_copy;
+    } else if (platform === "instagram") {
+      updates.social_copy_instagram = updates.social_copy;
+    }
+  }
+  
+  // 3. If analysis is changing, sync it to the platform-specific field
+  if (updates.theo_analysis !== undefined) {
+    if (platform === "threads") {
+      updates.theo_analysis_threads = updates.theo_analysis;
+    } else if (platform === "facebook") {
+      updates.theo_analysis_facebook = updates.theo_analysis;
+    } else if (platform === "instagram") {
+      updates.theo_analysis_instagram = updates.theo_analysis;
+    }
+  }
+  
+  return updates;
+}
+
 /**
  * 儲存/更新部分看板資料
  */
@@ -456,12 +508,18 @@ export async function saveWorkspace(brandId: string, updatedFields: Partial<Work
   if (db) {
     const docRef = doc(db, "users", userId, "brands", brandId, "workspace_data", "current");
     const docSnap = await getDoc(docRef);
+    let currentData: WorkspaceData;
     if (docSnap.exists()) {
-      await setDoc(docRef, { ...docSnap.data(), ...updatedFields }, { merge: true });
+      currentData = docSnap.data() as WorkspaceData;
     } else {
-      const defaultData = DEFAULT_MOCK_WORKSPACE[brandId] || DEFAULT_MOCK_WORKSPACE.brand_a_i8;
-      await setDoc(docRef, { ...defaultData, ...updatedFields });
+      currentData = DEFAULT_MOCK_WORKSPACE[brandId] || DEFAULT_MOCK_WORKSPACE.brand_a_i8;
     }
+    const syncedFields = syncPlatformFields(currentData, updatedFields);
+    const finalData = { ...currentData, ...syncedFields };
+    if (syncedFields.theo_analysis === undefined) {
+      delete (finalData as any).theo_analysis;
+    }
+    await setDoc(docRef, finalData);
   } else {
     const storageKey = `ai_team_dashboard_workspace_${brandId}`;
     let current: WorkspaceData;
@@ -473,9 +531,13 @@ export async function saveWorkspace(brandId: string, updatedFields: Partial<Work
       current = { ...(DEFAULT_MOCK_WORKSPACE[brandId] || DEFAULT_MOCK_WORKSPACE.brand_a_i8) };
     }
     
-    const updated = { ...current, ...updatedFields };
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    localEmitter.emit(`workspace_update_${brandId}`, updated);
+    const syncedFields = syncPlatformFields(current, updatedFields);
+    const finalData = { ...current, ...syncedFields };
+    if (syncedFields.theo_analysis === undefined) {
+      delete (finalData as any).theo_analysis;
+    }
+    localStorage.setItem(storageKey, JSON.stringify(finalData));
+    localEmitter.emit(`workspace_update_${brandId}`, finalData);
   }
 
   // --- Google Sheets Sync for Stage Projects ---

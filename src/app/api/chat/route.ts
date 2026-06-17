@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     const { history, brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform } = await req.json();
 
-    if (stage !== "expert" && (!history || !Array.isArray(history))) {
+    if (stage !== "expert" && stage !== "adapt" && (!history || !Array.isArray(history))) {
       return NextResponse.json(
         { error: "Invalid or missing history payload" },
         { status: 400 }

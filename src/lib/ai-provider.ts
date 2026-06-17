@@ -421,6 +421,24 @@ export async function callErickCOO(
   const activePlatform = platform || "threads";
   
   if (provider === "mock") {
+    if (stage === "adapt") {
+      const sourceCopy = prevData?.social_copy || "";
+      const targetPlatform = platform || "threads";
+      const keywords = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
+      
+      let mockAdapted = "";
+      if (sourceCopy) {
+        mockAdapted = `【MOCK 改寫 - ${targetPlatform.toUpperCase()}】\n這是根據原有文案改寫為符合 ${targetPlatform.toUpperCase()} 規格的內容：\n\n${sourceCopy}\n\n#mock_${targetPlatform}`;
+      } else {
+        mockAdapted = `【MOCK 生成 - ${targetPlatform.toUpperCase()}】\n這是根據關鍵字：${keywords} 全新生成的符合 ${targetPlatform.toUpperCase()} 規格的內容。\n\n#mock_${targetPlatform}`;
+      }
+      return {
+        content: "",
+        dispatchData: {
+          social_copy: mockAdapted
+        }
+      };
+    }
     const mockResult = await callMockCOO(history[history.length - 1]?.content || "", brandName);
     const parsed = parseCOOOutput(mockResult);
     if (stage === "coo") {
@@ -448,6 +466,86 @@ export async function callErickCOO(
     } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
       brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
     }
+  }
+
+  if (stage === "adapt") {
+    const currentCopy = prevData?.social_copy || "";
+    const targetPlatform = platform || "threads";
+    
+    let platformInstructions = "";
+    if (targetPlatform === "threads") {
+      platformInstructions = `1. 完全使用繁體中文(台灣)，文章字數嚴格限制在 500 字以內，建議 200-400 字，結構短小精悍。
+2. 絕對不能包含任何 Markdown 格式符號（如 ** 或 # ）。最開頭第一行必須是聳動、具備極強互動感、痛點共鳴或好奇心缺口的文章主標題（不可有 # 符號），標題與內文以換行區隔，適合直接貼到 Threads。
+3. 嚴禁在文案正文中包含任何外部連結 (HTTP/HTTPS URL)，如果是改寫，請將其改寫為「詳細連結我放在留言區第一則了」。
+4. 語意風格親切口語，像跟朋友分享，多用痛點句和好奇心 Hook。
+5. 結尾 Hashtags 只能挑選 0-2 個。`;
+    } else if (targetPlatform === "instagram") {
+      platformInstructions = `1. 完全使用繁體中文(台灣)，文章字數限制在 2200 字以內，但請以視覺體驗優先，排版要保持極高的舒適度。
+2. 絕對不能包含任何 Markdown 格式符號（如 ** 或 # ）。每段之間多用合適且高質感的表情符號 (Emojis) 進行引導與分隔。
+3. 嚴禁在正文中放入無法點擊的網址。請在貼文末尾引導讀者點擊「個人檔案首頁連結 (Link in Bio)」或「私訊小盒子」。
+4. 最開頭第一行必須是吸睛的文章主標題（不可有 # 符號），標題與內文以換行區隔。
+5. 結尾必須包含 5-15 個高度相關的標籤（Hashtags）。`;
+    } else {
+      // Facebook
+      platformInstructions = `1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字左右，適合進行深度痛點共鳴與說書解析。
+2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】（不可有 # 符號），標題與內文以空行或換行區隔。
+3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），以換行和空白段落區隔重點。
+4. 建議在文案結尾寫「詳細資訊與連結我放在留言區第一則」，避免在貼文正文中直接塞網址。
+5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個。`;
+    }
+
+    let adaptPrompt = "";
+    if (currentCopy) {
+      adaptPrompt = `你現在是社群行銷專家 Maya。
+你的任務是將以下現有的社群文案，改寫並轉化為適合在【${targetPlatform.toUpperCase()}】平台發布的規格與排版樣式。
+
+【品牌與語氣背景限制】：
+${brandContext}
+
+【目標平台 ${targetPlatform.toUpperCase()} 寫作限制】：
+${platformInstructions}
+
+### 原始文案內容：
+"""
+${currentCopy}
+"""
+
+### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束），禁止任何額外的首尾引言或問候語：
+{
+  "social_copy": "改寫後符合 ${targetPlatform.toUpperCase()} 平台限制的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)"
+}
+`;
+    } else {
+      const keywords = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
+      adaptPrompt = `你現在是社群行銷專家 Maya。
+你的任務是為【${targetPlatform.toUpperCase()}】平台撰寫一篇全新的爆款社群貼文。
+
+【品牌與語氣背景限制】：
+${brandContext}
+
+【目標平台 ${targetPlatform.toUpperCase()} 寫作限制】：
+${platformInstructions}
+
+【參考關鍵字與大綱】：
+${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主題。"}
+
+### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束），禁止任何額外的首尾引言或問候語：
+{
+  "social_copy": "生成的符合 ${targetPlatform.toUpperCase()} 平台限制的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)"
+}
+`;
+    }
+
+    const response = await runQueryWithFallback(adaptPrompt, config, true, "anthropic");
+    const result = robustJSONParse(response);
+    return {
+      content: "",
+      dispatchData: {
+        social_copy: result.social_copy || ""
+      }
+    };
   }
 
   let subPrompts: any = null;
