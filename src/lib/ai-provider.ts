@@ -1563,8 +1563,8 @@ ${socialCopy}
 - "original_sentence" 必須從輸入文案中**複製原句（一字不差）**。
 - 如果是 Threads 且字數超過 500 字，請將過長的部分標記為 readability 殺觸及，並在 rewrite 中給出精簡版。`;
 
-  // 執行大腦分析，預設使用 openai (或 fallback)
-  const response = await runQueryWithFallback(theoPrompt, config, true, "openai");
+  // 執行大腦分析，預設使用 anthropic (Claude 3.5 Sonnet) (或 fallback)
+  const response = await runQueryWithFallback(theoPrompt, config, true, "anthropic");
   const result = robustJSONParse(response);
 
   return {
