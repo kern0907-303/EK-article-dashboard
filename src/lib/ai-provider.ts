@@ -411,12 +411,14 @@ export async function callErickCOO(
   expertType?: string,
   subPromptsInput?: any,
   brandGuidelines?: string,
-  prevData?: any
+  prevData?: any,
+  platform?: string
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
   config.provider = provider; // 確保專家端能讀取到目前選用的 Provider
   const brandColors = getBrandColorsForPrompt(brandName);
+  const activePlatform = platform || "threads";
   
   if (provider === "mock") {
     const mockResult = await callMockCOO(history[history.length - 1]?.content || "", brandName);
@@ -457,7 +459,7 @@ export async function callErickCOO(
     // 1. Erick 總指揮 (OpenAI)
     const systemMessage = {
       role: "system",
-      content: `${ERICK_SYSTEM_PROMPT}\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
+      content: `${ERICK_SYSTEM_PROMPT}\n\n【發布平台指令】：\n當前使用者選擇的社群平台是：【${activePlatform.toUpperCase()}】。請務必在指派給 Maya 的子提示詞（maya）中，明確指定該平台的寫作限制（如 Threads 限 500 字以內且禁正文連結；IG 限 2200 字以內且多 emoji；FB 適合 800-1500 字長文說書且連結放留言）。\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
     };
 
     const formattedMessages = [
@@ -646,6 +648,28 @@ ${irisPrompt}
 5. 這個描述每次都必須根據貼文主題量身設計，絕對禁止直接輸出 \`<${imgLabel}>\` 或 \`情境描述\` 等字樣！這是後續 AI 生圖的唯一依據！
 6. 同時，在該圖片標籤下方，你仍須另外提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構流程圖渲染，將官網的邏輯流程圖與 FB 的真人情境圖完全區分開。`;
 
+    let mayaPlatformRules = "";
+    if (activePlatform === "threads") {
+      mayaPlatformRules = `1. 完全使用繁體中文(台灣)，文章字數嚴格限制在 500 字以內，建議 200-400 字，結構短小精悍。
+2. 絕對不能包含任何 Markdown 格式符號（如 ** 或 # ）。最開頭第一行必須是聳動、具備極強互動感、痛點共鳴或好奇心缺口的文章主標題（不可有 # 符號），標題與內文以換行區隔，適合直接貼到 Threads。
+3. 嚴禁在文案正文中包含任何外部連結 (HTTP/HTTPS URL)，否則會被算法降權。如果有連結需求，請在貼文末尾引導讀者「詳細連結我放在留言區第一則了」。
+4. 語意風格偏向親切口語，像跟朋友分享，多用痛點句和好奇心 Hook。
+5. 結尾 Hashtags 只能挑選 0-2 個，維持頁面乾淨。`;
+    } else if (activePlatform === "instagram") {
+      mayaPlatformRules = `1. 完全使用繁體中文(台灣)，文章字數限制在 2200 字以內，但請以視覺體驗優先，排版要保持極高的舒適度。
+2. 絕對不能包含任何 Markdown 格式符號（如 ** 或 # ）。每段之間多用合適且高質感的表情符號 (Emojis) 進行引導 and 分隔，避免大篇幅沉悶的純文字。
+3. 嚴禁在正文中放入無法點擊的網址。請在貼文末尾引導讀者點擊「個人檔案首頁連結 (Link in Bio)」或「私訊小盒子」。
+4. 最開頭第一行必須是吸睛的文章主標題（不可有 # 符號），標題與內文以換行區隔。
+5. 結尾必須包含 5-15 個高度相關的標籤（Hashtags），可從品牌標準標籤庫中挑選並補充 2-3 個熱門探索詞。`;
+    } else {
+      // 預設為 Facebook (或 fallback)
+      mayaPlatformRules = `1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字左右，適合進行深度痛點共鳴與說書解析。
+2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】（不可有 # 符號），標題與內文以空行或換行區隔。
+3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），以換行和空白段落區隔重點，以便直接複製貼到 Facebook。
+4. 為了防止演算法降權，建議在文案結尾寫「詳細資訊與連結我放在留言區第一則」，避免在貼文正文中直接塞網址。
+5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個。`;
+    }
+
     const mayaStepPrompt = `你現在是社群行銷專家 Maya。
     
 【Erick 核心語氣與思考邏輯最高工作準則】：
@@ -662,10 +686,8 @@ ${keywordsStr}
 ### 任務指派 (子提示詞)：
 ${mayaPrompt}
 
-### 寫作限制：
-1. 完全使用繁體中文(台灣)，文章字數 800 至 1500 字以上。
-2. 最開頭第一行必須是聳動且完整的文章主標題，如【標題】，禁止出現「...」或截斷現象。
-3. 嚴禁包含任何 Markdown 格式符號（如 ** 或 # ），標題與重點以換行區隔，以便直接貼到 FB。
+### 寫作平台自適應限制 (當前發布平台: ${activePlatform.toUpperCase()})：
+${mayaPlatformRules}
 4. ${imgInstruction}
    Mermaid 圖表必須符合以下品牌配色規範：
    - 當前品牌：${brandColors.name}，系統色為：${brandColors.colorName}。

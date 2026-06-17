@@ -28,12 +28,20 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     return () => unsubscribe();
   }, [activeBrandId]);
 
-  // 訂閱當前品牌的看板資料以獲取品牌說明
+  const [activePlat, setActivePlat] = useState("threads");
+
+  // 訂閱當前品牌的看板資料以獲取品牌說明與平台設定
   useEffect(() => {
     setBrandGuidelines("");
+    setActivePlat("threads");
     const unsubscribe = subscribeToWorkspace(activeBrandId, (wData) => {
-      if (wData && wData.brand_guidelines) {
-        setBrandGuidelines(wData.brand_guidelines);
+      if (wData) {
+        if (wData.brand_guidelines) {
+          setBrandGuidelines(wData.brand_guidelines);
+        }
+        if (wData.active_platform) {
+          setActivePlat(wData.active_platform);
+        }
       }
     });
     return () => unsubscribe();
@@ -103,7 +111,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           history: updatedHistory,
           brandName: activeBrandName,
           aiProvider: aiProvider,
-          brandGuidelines
+          brandGuidelines,
+          platform: activePlat
         })
       });
 
@@ -161,7 +170,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   subPrompts,
                   brandName: activeBrandName,
                   aiProvider,
-                  brandGuidelines
+                  brandGuidelines,
+                  platform: activePlat
                 })
               });
               if (res.ok) {
