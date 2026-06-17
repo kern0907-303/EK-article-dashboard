@@ -752,7 +752,7 @@ function SocialTabContent({
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-3 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">社群行銷專家：Maya</h4>
           <p className="text-[10px] text-slate-400">產出高轉換貼文與社群文案規劃</p>
@@ -886,7 +886,7 @@ function SocialTabContent({
       </div>
 
       {/* 📱 社群平台切換器 */}
-      <div className="grid grid-cols-3 sm:flex bg-slate-950 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none">
+      <div className="grid grid-cols-3 sm:flex bg-slate-950 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none shrink-0">
         {[
           { id: "threads", name: "Threads (脆)", active: true, desc: "500字限 | 禁正文連結 | 鉤子優先" },
           { id: "facebook", name: "Facebook", active: true, desc: "無字限 | 長文說書 | 互動排版" },
@@ -1223,7 +1223,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">系統架構師：Leon</h4>
           <p className="text-[10px] text-slate-400">網頁與功能路由層次結構規劃</p>
@@ -1404,7 +1404,7 @@ function SEOTabContent({
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">SEO 專家：Iris</h4>
           <p className="text-[10px] text-slate-400">探索高點擊潛力詞與競爭度分析</p>
@@ -1662,7 +1662,7 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">廣告數據專家：Jack</h4>
           <p className="text-[10px] text-slate-400">廣告投放效能預估與關鍵成效指標</p>
@@ -1844,7 +1844,7 @@ function GuidelinesTabContent({
   return (
     <div className="flex flex-col h-full space-y-4">
       {/* 品牌大腦頂部標題卡 */}
-      <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-xl border border-slate-800/60">
+      <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-bold text-slate-200">品牌大腦知識庫定位規範</h4>
