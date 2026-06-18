@@ -5,7 +5,8 @@ import {
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
-  Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp
+  Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp,
+  Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -342,6 +343,163 @@ function SocialTabContent({
   };
 
   const hasCopyOnOtherPlatform = !!getOtherPlatformCopy();
+
+  const renderPlatformPreview = (content: string) => {
+    const brandName = getBrandOrProjectName(brandId);
+    const initial = brandName ? brandName.charAt(0).toUpperCase() : "B";
+    
+    if (platform === "threads") {
+      return (
+        <div className="max-w-xl mx-auto w-full bg-slate-950 border border-slate-900 rounded-2xl p-4 font-sans text-slate-200 shadow-2xl relative overflow-hidden transition-all duration-300">
+          <div className="flex items-start gap-3">
+            <div className={`w-9 h-9 rounded-full bg-gradient-to-tr ${theme.gradientFromTo} flex items-center justify-center text-xs font-black text-slate-950 shrink-0 shadow-inner`}>
+              {initial}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-xs text-slate-100 hover:underline cursor-pointer">{brandName}</span>
+                  <span className="w-3.5 h-3.5 bg-blue-500 text-[8px] text-white flex items-center justify-center rounded-full" title="經 Erick 營運長決策校準認證">✓</span>
+                </div>
+                <span className="text-[10px] text-slate-500">12m</span>
+              </div>
+              
+              <div className="mt-1.5 text-xs text-slate-200 leading-relaxed break-words whitespace-pre-wrap select-text selection:bg-slate-800">
+                {renderMarkdown(content)}
+              </div>
+              
+              <div className="mt-4 flex items-center gap-4 text-slate-500">
+                <button className="hover:text-rose-500 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><Heart className="w-3.5 h-3.5" /></button>
+                <button className="hover:text-sky-500 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><MessageCircle className="w-3.5 h-3.5" /></button>
+                <button className="hover:text-emerald-500 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><Repeat className="w-3.5 h-3.5" /></button>
+                <button className="hover:text-slate-200 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><Share2 className="w-3.5 h-3.5" /></button>
+              </div>
+              
+              <div className="mt-2.5 flex items-center gap-1.5 text-[9px] text-slate-500 border-t border-slate-900/60 pt-2">
+                <span>96 則愛心</span>
+                <span>•</span>
+                <span>12 則回覆</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (platform === "facebook") {
+      return (
+        <div className="max-w-xl mx-auto w-full bg-[#18191a] border border-[#2f3031] rounded-xl p-4 font-sans text-slate-200 shadow-2xl relative overflow-hidden transition-all duration-300">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-tr ${theme.gradientFromTo} flex items-center justify-center text-xs font-black text-slate-950 shrink-0`}>
+                {initial}
+              </div>
+              <div>
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-xs text-slate-100 hover:underline cursor-pointer">{brandName}</span>
+                </div>
+                <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium">
+                  <span>剛剛</span>
+                  <span>·</span>
+                  <span className="text-[10px]" title="公開">🌐</span>
+                </div>
+              </div>
+            </div>
+            <button className="text-slate-400 hover:text-slate-200 p-1 rounded-full hover:bg-[#242526] transition cursor-pointer">
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="mt-3 text-xs text-[#e4e6eb] leading-relaxed break-words whitespace-pre-wrap select-text selection:bg-blue-600/30">
+            {renderMarkdown(content)}
+          </div>
+          
+          <div className="mt-4 flex items-center justify-between text-[10px] text-slate-400 border-b border-[#2f3031] pb-2.5">
+            <div className="flex items-center gap-1">
+              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-[8px] text-white">👍</span>
+              <span className="font-medium hover:underline cursor-pointer">你與其他 148 人</span>
+            </div>
+            <div className="hover:underline cursor-pointer">
+              <span>28 次分享</span>
+            </div>
+          </div>
+          
+          <div className="mt-1 flex items-center justify-around text-slate-400 font-bold text-[11px] pt-1">
+            <button className="flex items-center justify-center gap-1.5 py-1.5 hover:bg-[#242526] rounded-lg w-full transition hover:text-blue-500 cursor-pointer">
+              <ThumbsUp className="w-3.5 h-3.5" />
+              <span>讚</span>
+            </button>
+            <button className="flex items-center justify-center gap-1.5 py-1.5 hover:bg-[#242526] rounded-lg w-full transition hover:text-slate-200 cursor-pointer">
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>留言</span>
+            </button>
+            <button className="flex items-center justify-center gap-1.5 py-1.5 hover:bg-[#242526] rounded-lg w-full transition hover:text-slate-200 cursor-pointer">
+              <Share2 className="w-3.5 h-3.5" />
+              <span>分享</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    if (platform === "instagram") {
+      // Extract first line for graphic layout
+      const firstLine = content.split("\n")[0] || "";
+      const displayTitle = firstLine.replace(/[#【】\[\]*]/g, "").substring(0, 30) || "精選社群貼文";
+      
+      return (
+        <div className="max-w-xl mx-auto w-full bg-black border border-slate-900 rounded-xl font-sans text-slate-200 shadow-2xl relative overflow-hidden transition-all duration-300">
+          <div className="flex items-center justify-between p-3 border-b border-slate-900">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-7 h-7 rounded-full bg-gradient-to-tr ${theme.gradientFromTo} flex items-center justify-center text-[10px] font-black text-slate-950 shrink-0`}>
+                {initial}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="font-bold text-xs text-slate-100 hover:underline cursor-pointer">{brandName}</span>
+                <span className="w-3 h-3 bg-blue-500 text-[7px] text-white flex items-center justify-center rounded-full">✓</span>
+              </div>
+            </div>
+            <button className="text-slate-400 hover:text-slate-200 p-1 rounded-full hover:bg-slate-950 transition cursor-pointer">
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className={`aspect-video w-full bg-gradient-to-br ${theme.gradientFromTo} flex flex-col items-center justify-center p-6 text-center select-none`}>
+            <span className="text-[10px] font-bold text-slate-950/40 uppercase tracking-widest mb-2">{brandName} x AI BOARD</span>
+            <p className="text-slate-950 font-black text-lg sm:text-xl leading-tight max-w-sm drop-shadow-sm font-sans">
+              {displayTitle}
+            </p>
+            <div className="w-8 h-1 bg-slate-950/30 rounded mt-4" />
+          </div>
+          
+          <div className="flex items-center justify-between p-3">
+            <div className="flex items-center gap-3.5 text-slate-300">
+              <button className="hover:text-rose-500 transition p-0.5 cursor-pointer"><Heart className="w-4 h-4" /></button>
+              <button className="hover:text-slate-100 transition p-0.5 cursor-pointer"><MessageCircle className="w-4 h-4" /></button>
+              <button className="hover:text-slate-100 transition p-0.5 cursor-pointer"><Share2 className="w-4 h-4" /></button>
+            </div>
+            <button className="hover:text-slate-100 transition p-0.5 cursor-pointer text-slate-300"><Bookmark className="w-4 h-4" /></button>
+          </div>
+          
+          <div className="px-3 pb-4 space-y-1.5 text-xs">
+            <p className="font-bold text-slate-100">1,248 個讚</p>
+            <div className="leading-relaxed text-slate-200 break-words select-text selection:bg-pink-500/20">
+              <span className="font-bold text-slate-100 mr-2 hover:underline cursor-pointer">{brandName}</span>
+              {renderMarkdown(content)}
+            </div>
+            <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">12 小時前</p>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px]">
+        {renderMarkdown(content)}
+      </div>
+    );
+  };
 
   const handleAdaptPlatform = async (forceGenerateFromKeywords: boolean = false) => {
     if (isAdapting) return;
@@ -980,30 +1138,76 @@ function SocialTabContent({
       </div>
 
       {/* 📱 社群平台切換器 */}
-      <div className="grid grid-cols-3 sm:flex bg-slate-950 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none shrink-0">
+      <div className="grid grid-cols-2 md:flex bg-slate-950/60 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none shrink-0 backdrop-blur-md">
         {[
-          { id: "threads", name: "Threads (脆)", active: true, desc: "500字限 | 禁正文連結 | 鉤子優先" },
-          { id: "facebook", name: "Facebook", active: true, desc: "無字限 | 長文說書 | 互動排版" },
-          { id: "instagram", name: "Instagram", active: true, desc: "2200字 | 豐富 Emojis | hashtags" },
-          { id: "red", name: "小紅書 (預留)", active: false, desc: "標題黨 | 閨蜜調性" },
-          { id: "tiktok", name: "抖音腳本 (預留)", active: false, desc: "口播腳本 | 黃金3秒" }
+          { 
+            id: "threads", 
+            name: "Threads (脆)", 
+            active: true, 
+            desc: "500字限 | 禁連結 | 鉤子優先",
+            icon: AtSign,
+            activeClass: "bg-slate-900 border-slate-700 text-white shadow-lg shadow-black/40 border",
+            hoverClass: "hover:bg-slate-900/40 text-slate-400 hover:text-slate-100"
+          },
+          { 
+            id: "facebook", 
+            name: "Facebook", 
+            active: true, 
+            desc: "無字限 | 長文說書 | 互動排版",
+            icon: Facebook,
+            activeClass: "bg-blue-600/10 border-blue-500/30 text-blue-400 shadow-md shadow-blue-500/5 border",
+            hoverClass: "hover:bg-blue-900/10 text-slate-400 hover:text-blue-400"
+          },
+          { 
+            id: "instagram", 
+            name: "Instagram", 
+            active: true, 
+            desc: "2200字 | 豐富 Emojis | hashtags",
+            icon: Instagram,
+            activeClass: "bg-pink-500/10 border-pink-500/30 text-pink-400 shadow-md shadow-pink-500/5 border",
+            hoverClass: "hover:bg-pink-900/10 text-slate-400 hover:text-pink-400"
+          },
+          { 
+            id: "red", 
+            name: "小紅書 (預留)", 
+            active: false, 
+            desc: "標題黨 | 閨蜜調性",
+            icon: FileText,
+            activeClass: "",
+            hoverClass: ""
+          },
+          { 
+            id: "tiktok", 
+            name: "抖音腳本 (預留)", 
+            active: false, 
+            desc: "口播腳本 | 黃金3秒",
+            icon: FileCode,
+            activeClass: "",
+            hoverClass: ""
+          }
         ].map((plat) => {
           const isSelected = platform === plat.id;
+          const PlatIcon = plat.icon;
           return (
             <button
               key={plat.id}
               disabled={!plat.active}
               onClick={() => handlePlatformChange(plat.id)}
-              className={`flex-1 py-1.5 px-2.5 rounded-lg flex flex-col items-center justify-center transition-all ${
+              className={`flex-1 py-1.5 px-2.5 rounded-lg flex items-center gap-2.5 transition-all duration-300 ${
                 !plat.active
-                  ? "opacity-35 cursor-not-allowed text-slate-600"
+                  ? "opacity-30 cursor-not-allowed text-slate-600 border border-transparent"
                   : isSelected
-                  ? `${theme.primaryBg} ${theme.primaryBtnText} shadow-md`
-                  : "hover:bg-slate-900/50 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  ? plat.activeClass
+                  : `cursor-pointer ${plat.hoverClass} border border-transparent`
               }`}
             >
-              <span className="text-[10px] font-bold">{plat.name}</span>
-              <span className={`text-[8px] mt-0.5 scale-90 ${isSelected ? "opacity-90 animate-pulse" : "text-slate-500"}`}>{plat.desc}</span>
+              <div className={`p-1 rounded-md shrink-0 ${isSelected && plat.active ? "bg-slate-950/50" : "bg-transparent"}`}>
+                <PlatIcon className={`w-3.5 h-3.5 ${isSelected ? "animate-pulse" : ""}`} />
+              </div>
+              <div className="text-left flex-1 min-w-0">
+                <span className="block text-[10px] font-bold tracking-wide">{plat.name}</span>
+                <span className={`block text-[8px] scale-90 -translate-x-1 origin-left truncate ${isSelected ? "opacity-90 font-medium" : "text-slate-500 font-normal"}`}>{plat.desc}</span>
+              </div>
             </button>
           );
         })}
@@ -1038,25 +1242,36 @@ function SocialTabContent({
         </div>
       ) : (
         val ? (
-          <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px]">
-            {renderMarkdown(val)}
+          <div className="flex-1 p-5 rounded-xl bg-slate-950/20 border border-slate-850/40 overflow-y-auto min-h-[300px] flex items-center justify-center">
+            {renderPlatformPreview(val)}
           </div>
         ) : (
-          <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto min-h-[300px] flex flex-col items-center justify-center text-center space-y-4">
-            <FileText className="w-8 h-8 text-slate-700" />
-            <div>
-              <p className="text-xs font-bold text-slate-400">目前尚無社群文案</p>
-              <p className="text-[10px] text-slate-500 mt-1">您可以使用左側對話視窗指派任務，或直接點擊下方按鈕一鍵生成。</p>
+          <div className="flex-1 p-8 rounded-2xl bg-slate-950/30 border border-slate-850/80 backdrop-blur-md overflow-y-auto min-h-[350px] flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300">
+            {/* Ambient glowing circle */}
+            <div className={`absolute -top-12 w-48 h-48 bg-gradient-to-tr ${theme.gradientFromTo} opacity-5 rounded-full filter blur-2xl select-none pointer-events-none`} />
+            
+            <div className={`p-4 rounded-full bg-slate-900 border border-slate-800 shadow-xl ${theme.glowShadow} mb-4 relative`}>
+              <FileText className={`w-8 h-8 ${theme.primaryColor} animate-pulse`} />
             </div>
+            
+            <div className="z-10">
+              <p className="text-sm font-bold text-slate-200 tracking-wide">
+                目前尚未生成 {platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 規格文案
+              </p>
+              <p className="text-xs text-slate-400 max-w-sm mt-1 mb-4 leading-relaxed">
+                您可以透過左側與 Maya 進行對話創作，或直接選擇下方快捷選項一鍵產出。
+              </p>
+            </div>
+            
             {hasCopyOnOtherPlatform ? (
-              <div className="flex flex-col sm:flex-row items-center gap-2 mt-2 w-full max-w-lg justify-center">
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full max-w-md justify-center z-10">
                 <button
                   disabled={isAdapting}
                   onClick={() => handleAdaptPlatform(true)}
-                  className="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-850 text-slate-350 border border-slate-800 hover:border-slate-700 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
                   title="無視其他平台的文案，直接從關鍵字庫生成全新的貼文"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 text-slate-400" />
                   生成全新 {platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 文案
                 </button>
                 <button
@@ -1077,7 +1292,7 @@ function SocialTabContent({
               <button
                 disabled={isAdapting}
                 onClick={() => handleAdaptPlatform(true)}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText}`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 z-10 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText}`}
               >
                 {isAdapting ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
