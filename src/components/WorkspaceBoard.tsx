@@ -557,12 +557,12 @@ function SocialTabContent({
     }
   }, [activePlatform]);
 
-  // 當 Maya 生成文案但尚無 Theo 分析報告時，自動在客戶端背景觸發流量檢測
-  useEffect(() => {
-    if (socialCopy && !theoAnalysis && !isAnalyzing) {
-      handleAnalyzeViral(socialCopy);
-    }
-  }, [socialCopy, theoAnalysis]);
+  // 依照使用者需求，取消自動流量檢測，改為純手動觸發
+  // useEffect(() => {
+  //   if (socialCopy && !theoAnalysis && !isAnalyzing) {
+  //     handleAnalyzeViral(socialCopy);
+  //   }
+  // }, [socialCopy, theoAnalysis]);
 
   const handlePlatformChange = async (newPlatform: string) => {
     setPlatform(newPlatform);
@@ -1220,7 +1220,7 @@ function SocialTabContent({
             onChange={(e) => setVal(e.target.value)}
             onBlur={handleSave}
             placeholder="在此輸入社群文案..."
-            className={`flex-1 w-full p-4 rounded-xl bg-slate-950/60 border border-slate-850 ${theme.focusBorder} text-slate-200 text-sm focus:outline-none focus:ring-1 ${theme.primaryRing} font-mono resize-none`}
+            className={`flex-1 w-full p-4 min-h-[400px] rounded-xl bg-slate-950/60 border border-slate-850 ${theme.focusBorder} text-slate-200 text-sm focus:outline-none focus:ring-1 ${theme.primaryRing} font-mono resize-none`}
           />
           <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 py-0.5">
             <span>
