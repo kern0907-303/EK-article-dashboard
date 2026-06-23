@@ -1005,7 +1005,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
       "Authorization": `Bearer ${config.apiKey}`
     },
     body: JSON.stringify(requestBody),
-    signal: getTimeoutSignal(12000)
+    signal: getTimeoutSignal(60000)
   });
 
   if (!response.ok) {
@@ -1062,7 +1062,7 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
       systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
       generationConfig
     }),
-    signal: getTimeoutSignal(12000)
+    signal: getTimeoutSignal(60000)
   });
 
   if (!response.ok) {
@@ -1102,7 +1102,7 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
       max_tokens: 4000,
       temperature: 0.7
     }),
-    signal: getTimeoutSignal(12000)
+    signal: getTimeoutSignal(60000)
   });
 
   if (!response.ok) {
