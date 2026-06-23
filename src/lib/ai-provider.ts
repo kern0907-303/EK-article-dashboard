@@ -4,6 +4,7 @@ import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
+import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
 
 // Erick COO Router System Prompt (OpenAI)
 export const ERICK_SYSTEM_PROMPT = `你是一個人工智慧團隊總指揮「Erick 營運長」(COO)。
@@ -47,6 +48,12 @@ JSON 格式如下：
 export interface AIServiceResponse {
   content: string;
   dispatchData?: any; // 解析出來的 dispatch JSON 物件
+}
+
+function getTimeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
 }
 
 export interface AIProviderConfig {
@@ -254,7 +261,8 @@ async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
           "Content-Type": "application/json",
           "Authorization": `Basic ${auth}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: getTimeoutSignal(3000)
       });
 
       if (res.ok) {
@@ -286,7 +294,7 @@ async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
       const results = [];
       for (const kw of keywords.slice(0, 5)) {
         const url = `https://api.semrush.com/?type=phrase_this&key=${apiKey}&phrase=${encodeURIComponent(kw)}&database=tw&export_columns=Ph,Nq,Cp`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: getTimeoutSignal(3000) });
         if (res.ok) {
           const text = await res.text();
           const lines = text.trim().split("\n");
@@ -328,7 +336,8 @@ async function fetchMetaAdAccountInsights(adAccountId: string, accessToken: stri
     const res = await fetch(url, {
       headers: {
         "Authorization": `Bearer ${accessToken}`
-      }
+      },
+      signal: getTimeoutSignal(3000)
     });
     if (res.ok) {
       const data = await res.json();
@@ -412,7 +421,8 @@ export async function callErickCOO(
   subPromptsInput?: any,
   brandGuidelines?: string,
   prevData?: any,
-  platform?: string
+  platform?: string,
+  copywritingFramework?: string
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
@@ -466,6 +476,11 @@ export async function callErickCOO(
     } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
       brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
     }
+  }
+
+  const frameworkData = copywritingFramework ? COPYWRITING_FRAMEWORKS[copywritingFramework] : null;
+  if (frameworkData && frameworkData.promptContext) {
+    brandContext += "\n\n" + frameworkData.promptContext;
   }
 
   if (stage === "adapt") {
@@ -692,28 +707,6 @@ ${irisPrompt}
   "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
 }`;
 
-    const irisResponse = await runQueryWithFallback(irisStepPrompt, config, true, "gemini");
-    const irisResult = robustJSONParse(irisResponse);
-    
-    // 如果有找到關鍵字，主動抓取實體 API (如 SEMrush) 的搜尋量與競爭度
-    if (irisResult.seo_keywords && Array.isArray(irisResult.seo_keywords)) {
-      const kws = irisResult.seo_keywords.map((k: any) => k.keyword).filter(Boolean);
-      if (kws.length > 0) {
-        const liveMetrics = await fetchLiveKeywordMetrics(kws);
-        irisResult.seo_keywords = irisResult.seo_keywords.map((kwObj: any, index: number) => {
-          const live = liveMetrics.find((l: any) => l.keyword === kwObj.keyword) || liveMetrics[index];
-          return {
-            keyword: kwObj.keyword,
-            volume: live ? live.volume : kwObj.volume,
-            competition: live ? live.competition : kwObj.competition,
-            outline: kwObj.outline
-          };
-        });
-      }
-    }
-
-    // 步驟 2：將 Iris 生成的關鍵字，鏈式傳遞給 Maya 用於社群寫作
-    const keywordsStr = JSON.stringify(irisResult.seo_keywords || []);
     const isI8 = brandName.toLowerCase().includes("i8") || brandName.toLowerCase().includes("brand_a");
     const isNas = brandName.toLowerCase().includes("nas") || brandName.toLowerCase().includes("brand_b");
     const isAbl = brandName.toLowerCase().includes("abl") || brandName.toLowerCase().includes("brand_c");
@@ -736,13 +729,13 @@ ${irisPrompt}
       imgExample = "寫實攝影風格，照片。一位女子在靜謐溫暖的臥室窗邊盤腿坐著，雙眼微閉進行冥想深呼吸，清晨柔和的晨光照亮她放鬆的神情，周圍有綠色植物，呈現極度放鬆與心靈安定的寫實生活照，禁止任何圖表或插圖";
     }
 
-    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤，格式為：\`![<你為本篇文章量身設計的詳細生圖描述>](https://filedn.com/your-id/website-assets/<你為本篇文章量身設計的獨特英文slug>-${imgSuffix}.png)\`。
+    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤，格式為：\`![<你為本篇文章量身設計的詳細生圖描述>](https://filedn.com/your-id/website-assets/<你為本篇文章量身設計的獨特英文slug>-${imgSuffix}.png)\`.
 
 【重要生圖規則（FB 貼文專用真實圖片，與官網流程圖不同）】：
 1. 圖片網址字尾必須為 -${imgSuffix}.png。
 2. 你必須將 \`<你為本篇文章量身設計的獨特英文slug>\` 替換為與本篇貼文主題完全相關、且每次都不同的獨特英文 slug（例如：若主題是睡眠，可使用 \`abl-deep-sleep-healing\`）。絕對禁止保留 \`<slug>\` 或直接複製範例！
 3. 方括號中的 \`<你為本篇文章量身設計的詳細生圖描述>\` 是用於生成 FB 宣傳圖片的 DALL-E 3 提示詞，**必須是「真實人物（真人）在與文章概念相符的情境中」的寫實攝影風格照片描述**。描述中必須包含：人物主體（例如：一位中年男子、一位放鬆的女子）、寫實環境（如簡約會議室、溫暖臥室）、表情動作與光影色調。
-4. **絕對禁止**在圖片描述中包含任何「流程圖、架構圖、文字說明、科技線條、幾何數字或插畫渲染」，FB 宣傳圖必須是純粹、高質感的真人寫實攝影照片！
+4. **絕對禁止**在圖片描述中包含 any 「流程圖、架構圖、文字說明、科技線條、幾何數字或插畫渲染」，FB 宣傳圖必須是純粹、高質感的真人寫實攝影照片！
 5. 這個描述每次都必須根據貼文主題量身設計，絕對禁止直接輸出 \`<${imgLabel}>\` 或 \`情境描述\` 等字樣！這是後續 AI 生圖的唯一依據！
 6. 同時，在該圖片標籤下方，你仍須另外提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構流程圖渲染，將官網的邏輯流程圖與 FB 的真人情境圖完全區分開。`;
 
@@ -776,10 +769,10 @@ ${ERICK_PERSONA_SKILL}
 【品牌知識背景與限制】：
 ${brandContext}
 
-【上游專家 Iris 提供之核心關鍵字策略 (必須融入文案中，極重要)】：
-${keywordsStr}
+【SEO 核心寫作指導】：
+請主動分析並在文案中巧妙融入與主題相關的高價值 SEO/AEO 關鍵字與行銷標籤，以極大化搜尋擴散與曝光效益。
 
-請根據以下指派的子提示詞，撰寫一篇深度社群貼文。你生成的內容必須巧妙地融入上述 Iris 提供的核心關鍵字，以便極大化 SEO/AEO 效益。
+請根據以下指派的子提示詞，撰寫一篇深度社群貼文。
 
 ### 任務指派 (子提示詞)：
 ${mayaPrompt}
@@ -818,8 +811,35 @@ ${mayaPlatformRules}
   "social_copy": "Maya 產出的純文字社群文案內容 (絕對禁止包含任何 ** 粗體或 # 標題等 Markdown 符號)"
 }`;
 
-    const mayaResponse = await runQueryWithFallback(mayaStepPrompt, config, true, "anthropic");
+    console.log("[callErickCOO] Running Iris (gemini) and Maya (anthropic) concurrently...");
+    const [irisResponse, mayaResponse] = await Promise.all([
+      runQueryWithFallback(irisStepPrompt, config, true, "gemini"),
+      runQueryWithFallback(mayaStepPrompt, config, true, "anthropic")
+    ]);
+
+    const irisResult = robustJSONParse(irisResponse);
     const mayaResult = robustJSONParse(mayaResponse);
+
+    // 如果有找到關鍵字，主動抓取實體 API (如 SEMrush) 的搜尋量與競爭度
+    if (irisResult.seo_keywords && Array.isArray(irisResult.seo_keywords)) {
+      const kws = irisResult.seo_keywords.map((k: any) => k.keyword).filter(Boolean);
+      if (kws.length > 0) {
+        try {
+          const liveMetrics = await fetchLiveKeywordMetrics(kws);
+          irisResult.seo_keywords = irisResult.seo_keywords.map((kwObj: any, index: number) => {
+            const live = liveMetrics.find((l: any) => l.keyword === kwObj.keyword) || liveMetrics[index];
+            return {
+              keyword: kwObj.keyword,
+              volume: live ? live.volume : kwObj.volume,
+              competition: live ? live.competition : kwObj.competition,
+              outline: kwObj.outline
+            };
+          });
+        } catch (err) {
+          console.error("fetchLiveKeywordMetrics failed:", err);
+        }
+      }
+    }
 
     let formattedSchema = "";
     if (irisResult.aeo_schema) {
@@ -837,12 +857,12 @@ ${mayaPlatformRules}
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
         aeo_faq: irisResult.aeo_faq || "",
-        active_platform: "threads"
+        active_platform: activePlatform
       }
     };
   }
 
-  // ========== 第二條鏈：Leon (設計) + Jack (廣告) ==========
+    // ========== 第二條鏈：Leon (設計) + Jack (廣告) ==========
   if (stage === "expert" && expertType === "leon_jack") {
     const keywordsStr = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
     const socialCopyStr = prevData?.social_copy || "";
@@ -893,13 +913,6 @@ ${leonPrompt}
   }
 }`;
 
-    const leonResponse = await runQueryWithFallback(leonStepPrompt, config, true, "openai");
-    const leonResult = robustJSONParse(leonResponse);
-
-    // 步驟 4：呼叫廣告策略師 Jack，結合 Leon 的落地頁與上游文案進行廣告預估與診斷
-    const landingPageHtml = leonResult.web_architecture || "";
-    const visualDirStr = JSON.stringify(leonResult.visual_direction || {});
-    
     const jackStepPrompt = `你現在是廣告策略師 Jack。你負責判讀行銷數據、規劃 Meta/Google 廣告素材方向與投放預算分配。
     
 【Erick 核心語氣與思考邏輯最高工作準則】：
@@ -911,11 +924,8 @@ ${brandContext}
 【上游專家規劃成果 (參考依據)】：
 1. Iris 關鍵字：${keywordsStr}
 2. Maya 社群貼文：${socialCopyStr}
-3. Leon 網頁 Landing Page HTML & 視覺定位：
-   - 視覺風格：${visualDirStr}
-   - 網頁結構簡述：${landingPageHtml.substring(0, 800)}...
 
-請根據上述行銷目標與落地頁，預估該波廣告宣傳的數據指標，並撰寫具體的加碼/關閉決策與素材優化建議。
+請根據上述行銷目標與上游文案，預估該波廣告宣傳的數據指標，並撰寫具體的加碼/關閉決策與素材優化建議。
 
 ### 任務指派 (子提示詞)：
 ${jackPrompt}
@@ -929,7 +939,13 @@ ${jackPrompt}
   "ad_strategy_notes": "針對目前數據的具體判讀：哪組需要加碼、哪組應該關閉、哪組需要更換素材的詳細策略建議文字。"
 }`;
 
-    const jackResponse = await runQueryWithFallback(jackStepPrompt, config, true, "openai");
+    console.log("[callErickCOO] Running Leon (openai) and Jack (openai) concurrently...");
+    const [leonResponse, jackResponse] = await Promise.all([
+      runQueryWithFallback(leonStepPrompt, config, true, "openai"),
+      runQueryWithFallback(jackStepPrompt, config, true, "openai")
+    ]);
+
+    const leonResult = robustJSONParse(leonResponse);
     const jackResult = robustJSONParse(jackResponse);
 
     // 主動嘗試從資料表/環境變數中對接實體 Meta 廣告後台 API 數據
@@ -938,9 +954,13 @@ ${jackPrompt}
     const metaAccessToken = process.env.META_MARKETING_ACCESS_TOKEN || "";
     
     if (adAccountId && metaAccessToken && !adAccountId.includes("YOUR_")) {
-      const realInsights = await fetchMetaAdAccountInsights(adAccountId, metaAccessToken);
-      if (realInsights && realInsights.length > 0) {
-        adData = [...realInsights, ...adData];
+      try {
+        const realInsights = await fetchMetaAdAccountInsights(adAccountId, metaAccessToken);
+        if (realInsights && realInsights.length > 0) {
+          adData = [...realInsights, ...adData];
+        }
+      } catch (err) {
+        console.error("fetchMetaAdAccountInsights failed:", err);
       }
     }
 
@@ -955,7 +975,7 @@ ${jackPrompt}
     };
   }
 
-  return {
+    return {
     content: cleanErickContent,
     dispatchData: null
   };
@@ -984,7 +1004,8 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
       "Content-Type": "application/json",
       "Authorization": `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
+    signal: getTimeoutSignal(12000)
   });
 
   if (!response.ok) {
@@ -1040,7 +1061,8 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
       contents,
       systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
       generationConfig
-    })
+    }),
+    signal: getTimeoutSignal(12000)
   });
 
   if (!response.ok) {
@@ -1079,7 +1101,8 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
       messages: anthropicMessages,
       max_tokens: 4000,
       temperature: 0.7
-    })
+    }),
+    signal: getTimeoutSignal(12000)
   });
 
   if (!response.ok) {

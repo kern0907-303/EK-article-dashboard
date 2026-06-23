@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/firebase";
+import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -29,6 +30,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   }, [activeBrandId]);
 
   const [activePlat, setActivePlat] = useState("threads");
+  const [activeFramework, setActiveFramework] = useState("default");
 
   // 訂閱當前品牌的看板資料以獲取品牌說明與平台設定
   useEffect(() => {
@@ -112,7 +114,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           brandName: activeBrandName,
           aiProvider: aiProvider,
           brandGuidelines,
-          platform: activePlat
+          platform: activePlat,
+          copywritingFramework: activeFramework
         })
       });
 
@@ -178,6 +181,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 const data = await res.json();
                 if (data.dispatchData) {
                   await saveWorkspace(activeBrandId, data.dispatchData);
+                  return data.dispatchData;
                 } else {
                   throw new Error("專家回傳資料格式不正確");
                 }
@@ -206,7 +210,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             }
           };
 
-          const runLeonJack = async () => {
+          const runLeonJack = async (prevData?: any) => {
             try {
               const res = await fetch("/api/chat", {
                 method: "POST",
@@ -218,7 +222,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   subPrompts,
                   brandName: activeBrandName,
                   aiProvider,
-                  brandGuidelines
+                  brandGuidelines,
+                  prevData
                 })
               });
               if (res.ok) {
@@ -257,9 +262,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           const runSequentially = async () => {
             setIsGenerating(true);
             try {
-              await runMayaIris();
+              const prevData = await runMayaIris();
               if (signal.aborted) return;
-              await runLeonJack();
+              await runLeonJack(prevData);
             } finally {
               if (!signal.aborted) {
                 setIsGenerating(false);
@@ -409,23 +414,40 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       {/* Input Form */}
       <form
         onSubmit={handleSend}
-        className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex gap-2.5"
+        className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={`對 Erick 營運長下達【${activeBrandName}】指令...`}
-          disabled={isLoading || isGenerating}
-          className="flex-1 px-4 py-3 rounded-xl bg-slate-900/60 border border-slate-850 focus:border-amber-500/60 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 placeholder-slate-500 disabled:opacity-50 transition-all duration-300"
-        />
-        <button
-          type="submit"
-          disabled={!inputValue.trim() || isLoading || isGenerating}
-          className="p-3 bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all duration-300 cursor-pointer shadow-lg shadow-amber-500/5 disabled:shadow-none shrink-0"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+        <div className="flex items-center">
+          <select 
+            value={activeFramework}
+            onChange={(e) => setActiveFramework(e.target.value)}
+            disabled={isLoading || isGenerating}
+            title="選擇寫作框架 (大師模式)"
+            className="text-xs bg-slate-800/80 text-slate-300 border border-slate-700/80 rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-50 cursor-pointer"
+          >
+            {Object.values(COPYWRITING_FRAMEWORKS).map(fw => (
+              <option key={fw.id} value={fw.id} title={fw.description}>
+                {fw.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2.5">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder={`對 Erick 營運長下達【${activeBrandName}】指令...`}
+            disabled={isLoading || isGenerating}
+            className="flex-1 px-4 py-3 rounded-xl bg-slate-900/60 border border-slate-850 focus:border-amber-500/60 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 placeholder-slate-500 disabled:opacity-50 transition-all duration-300"
+          />
+          <button
+            type="submit"
+            disabled={!inputValue.trim() || isLoading || isGenerating}
+            className="p-3 bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all duration-300 cursor-pointer shadow-lg shadow-amber-500/5 disabled:shadow-none shrink-0"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
       </form>
     </div>
   );
