@@ -1,6 +1,6 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./firebase";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
-import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
+import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
@@ -467,11 +467,15 @@ export async function callErickCOO(
   if (brandGuidelines && brandGuidelines.trim().length > 0) {
     brandContext += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
   } else {
-    if (brandName.includes("I8")) {
+    const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
+    const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
+    const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
+
+    if (isI8) {
       brandContext += "\n\n" + I8_BRAND_CONTEXT;
-    } else if (brandName.includes("NAS")) {
-      brandContext += "\n\n" + NAS_BRAND_CONTEXT;
-    } else if (brandName.includes("ABL")) {
+    } else if (isNas) {
+      brandContext += "\n\n" + NAS_BRAND_CONTEXT + "\n\n" + NAS_WRITING_PROMPT;
+    } else if (isAbl) {
       brandContext += "\n\n" + ABL_BRAND_CONTEXT;
     } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
       brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
