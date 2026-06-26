@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.0] - 2026-06-26
+### Added (Final Source-Centric Pivot)
+- **Category Registry**: Initialized 25 standard categories with description, language, priority, and keywords parameters.
+- **Source Registry**: Shifted core operational focus from Brand-centric to Source-centric. Added 25 supported source types.
+- **Brand Metadata**: Downgraded Brand registry to Brand Metadata mapping associated source lists.
+- **Source Discovery Engine**: Added candidate crawlers generating mock candidate lists with pluggable SEO/scraper hooks.
+- **Source Scoring & Tiering**: Integrated a 10-dimension scorer evaluating authority, traffic, SEO, quality, and relevance, classifying them into Tiers 1-4.
+- **Auto Discovery Workflow**: Built daily discovery loop running ingestion, scoring, promotion, brand linkage, and event triggers automatically.
+- **Source-Centric Knowledge Graph**: Configured queries to trace Category ➔ Source ➔ Content ➔ Pattern ➔ Decision relation sequences.
+- **CLI Commands MVP**: Refactored CLI wrapper (`run_source_os.py`) to support the 7 key operational CLI flags.
+- **Automated Scenario Tests**: Added `test_source_os.py` verifying all 7 user scenario requirements.
+
 ## [0.3.0] - 2026-06-26
 ### Added (Milestone 3 Completed)
 - **Decision Engine**: Coded recommendations generator sorting computed opportunity scores into prioritized campaigns (Top 5 / 10).

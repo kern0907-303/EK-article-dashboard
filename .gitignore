@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+database/orchestrator.db
+storage/raw/
+storage/clean/
+storage/assets/
+storage/knowledge_base.md
+storage/handoff_*.md
