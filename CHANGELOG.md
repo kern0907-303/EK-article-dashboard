@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.3.0] - 2026-06-26
+### Added (Milestone 3 Completed)
+- **Decision Engine**: Coded recommendations generator sorting computed opportunity scores into prioritized campaigns (Top 5 / 10).
+- **Content Factory**: Coded dynamically mapped asset generators compiling drafts (FB posts, scripts, quizzes).
+- **Publish Center**: Coded lifecycle states manager handling Pending review, Approved publish, and Rejected archives.
+- **Feedback & Learning Loop**: Coded analytics back-propagation (views, CTR) dynamically updating brand score weight coordinates in database.
+
 ## [0.2.0] - 2026-06-26
 ### Added (Milestone 2 Completed)
 - **Plugin Infrastructure**: Created a modular `PluginManager` supporting dynamic scraper loaders, trend harvesters, and scoring calculators.
