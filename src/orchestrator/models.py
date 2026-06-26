@@ -75,7 +75,6 @@ class Source:
             "status": status,
             "created_at": now_str,
             "updated_at": now_str,
-            # Source Reality Check fields
             "is_mock": is_mock,
             "source_confidence": source_confidence,
             "url_status": url_status
@@ -176,3 +175,42 @@ class Brand:
     @staticmethod
     def get_all() -> list:
         return get_objects_by_type("Brand")
+
+
+class Asset:
+    @staticmethod
+    def create(asset_id: str, brand: str, topic: str, keywords: list, campaign: str,
+               product: str, content_type: str, publish_date: str = None, status: str = "Published",
+               performance: dict = None, ctr: float = 0.0, conversion: float = 0.0, reuse_score: float = 0.0) -> bool:
+        
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        properties = {
+            "brand": brand,
+            "topic": topic,
+            "keywords": keywords,
+            "campaign": campaign,
+            "product": product,
+            "content_type": content_type,
+            "publish_date": publish_date or now_str.split(" ")[0],
+            "status": status,
+            "performance": performance or {},
+            "ctr": ctr,
+            "conversion": conversion,
+            "reuse_score": reuse_score,
+            "last_updated": now_str
+        }
+        return save_object(
+            obj_id=asset_id,
+            obj_type="Asset",
+            properties=properties,
+            lifecycle=status,
+            owner=brand
+        )
+
+    @staticmethod
+    def get(asset_id: str) -> dict:
+        return get_object(asset_id)
+
+    @staticmethod
+    def get_all() -> list:
+        return get_objects_by_type("Asset")

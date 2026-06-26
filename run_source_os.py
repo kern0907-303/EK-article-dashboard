@@ -8,7 +8,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(__file__))
 
 from src.database import init_db, save_object, get_object, get_objects_by_type, add_relation
-from src.orchestrator.models import Category, Source, Brand
+from src.orchestrator.models import Category, Source, Brand, Asset
 from src.orchestrator.discovery import SourceDiscoveryEngine
 from src.orchestrator.scoring import SourceScoreEngine
 from src.orchestrator.auto_discovery import AutoDiscovery
@@ -41,7 +41,6 @@ def init_system():
     
     # Init default brand metadata if empty
     if not Brand.get("test-brand"):
-        # Save V2 brand metadata properties (product focus, audience segments)
         properties = {
             "name": "Erick Brand Ecosystem",
             "positioning": "High-ticket consulting and personal growth state adjustment (ABL)",
@@ -55,9 +54,9 @@ def init_system():
             "language": "zh-TW",
             "source_ids": [],
             "status": "Active",
-            # V2 Strategy properties
             "current_product_focus": "人生承接力",
-            "target_audience_segments": ["35~55 女性", "創業者", "企業主", "CEO"]
+            "target_audience_segments": ["35~55 女性", "創業者", "企業主", "CEO"],
+            "current_campaign": "打破消耗：中年女性的狀態調整與穩定方案"
         }
         save_object(
             obj_id="test-brand",
@@ -78,7 +77,6 @@ def list_categories():
 def discover_sources(category_name: str):
     print_header(f"Source Discovery for Category: {category_name}")
     
-    # Locate category ID
     categories = Category.get_all()
     cat_id = None
     for cat in categories:
@@ -107,7 +105,6 @@ def discover_sources(category_name: str):
     
     for cand in candidates:
         source_id = cand["source_id"]
-        # Save as Candidate in DB
         Source.create(
             source_id=source_id,
             name=cand["name"],
@@ -162,7 +159,6 @@ def promote_sources():
         if overall_score >= 30.0:
             Source.promote_to_active(s["id"])
             
-            # Associate default brand test-brand
             source_obj = Source.get(s["id"])
             if source_obj:
                 sprops = source_obj["properties"]
@@ -173,7 +169,6 @@ def promote_sources():
                 add_relation("test-brand", s["id"], "owns_source")
                 add_relation(s["id"], "test-brand", "associated_brand")
                 
-                # Update Brand Metadata source list
                 brand_obj = Brand.get("test-brand")
                 if brand_obj:
                     bprops = brand_obj["properties"]
@@ -181,11 +176,9 @@ def promote_sources():
                     if s["id"] not in s_ids:
                         s_ids.append(s["id"])
                     
-                    # Preserving existing product/audience focus tags during re-save
                     bprops["source_ids"] = s_ids
                     save_object("test-brand", "Brand", bprops, bprops.get("status", "Active"), "test-brand")
             
-            # Emit promote events
             evt_id = f"event_promoted_{uuid.uuid4().hex[:8]}"
             save_object(
                 obj_id=evt_id,
@@ -197,7 +190,6 @@ def promote_sources():
             print(f"  - {C_GREEN}Promoted:{C_END} {props['name']} (Score: {overall_score}) [Mock: {props.get('is_mock')} | URL Status: {props.get('url_status')}]")
             promoted_count += 1
         else:
-            # Reject
             reject_evt_id = f"event_rejected_{uuid.uuid4().hex[:8]}"
             save_object(
                 obj_id=reject_evt_id,
@@ -248,7 +240,6 @@ def run_daily_workflow():
     top_source = sorted(active_sources, key=lambda x: x["properties"].get("overall_source_score", 0.0), reverse=True)[0]
     top_source_id = top_source["id"]
     top_source_name = top_source["properties"]["name"]
-    top_category_id = top_source["properties"]["category_id"]
     
     print(f"\nTop Active Source Selected: {C_GREEN}{top_source_name}{C_END} (Score: {top_source['properties']['overall_source_score']}) [Mock: {top_source['properties'].get('is_mock')} | Conf: {top_source['properties'].get('source_confidence')}]")
     
@@ -310,9 +301,10 @@ def print_daily_decision():
     print(f"  - URL status: {C_YELLOW}{dec['url_status']}{C_END}")
     print(f"  - Verified source conclusion: {'Verified' if dec['source_verified'] else 'Unverified / Simulated'}")
     
-    print(f"\n🚀 {C_BOLD}Strategy Alignments (V2 Engine):{C_END}")
+    print(f"\n🚀 {C_BOLD}Strategy Alignments (V3 System):{C_END}")
     print(f"  - Current Focus Product: {C_GREEN}{dec['current_product_focus']}{C_END}")
     print(f"  - Target Audience Segments: {C_GREEN}{dec['target_audience_segments']}{C_END}")
+    print(f"  - Active Campaign theme: {C_GREEN}{dec['current_campaign']}{C_END}")
 
     print(f"\n🛡 {C_BOLD}Brand Guardrail Status:{C_END}")
     print(f"  - Passed Brand Guardrail: {'Yes' if dec['passed_brand_guardrail'] else 'No (Forbidden words detected and rewritten)'}")
@@ -321,17 +313,25 @@ def print_daily_decision():
         print(f"  - Rewritten Brand-Compliant Topic: {C_GREEN}{dec['rewritten_topic']}{C_END}")
         
     print(f"\n💡 {C_BOLD}今天最值得寫的 Topic (最終推薦):{C_END} {C_GREEN}{dec['today_top_topic']}{C_END}")
-    print(f"🎬 {C_BOLD}今天最適合產出的 Content Format:{C_END} {dec['today_top_format']}")
+    print(f"🎬 {C_BOLD}今天最適合產出的 Content Format:{C_END} {C_GREEN}{dec['today_top_format']}{C_END}")
     print(f"📝 {C_BOLD}今天最值得分析的 Content:{C_END} {dec['today_top_content']}")
     print(f"📈 {C_BOLD}Confidence Score:{C_END} {C_GREEN}{dec['confidence_score'] * 100}%{C_END}")
     print(f"💬 {C_BOLD}建議理由:{C_END} {dec['reason']}")
     
-    print(f"\n{C_BOLD}今日推薦 Topic Top 5 (V2 Sorting Formula Ranks):{C_END}")
-    for item in dec["today_top_5"]:
-        status_str = f" [Passed]" if item["passed_guardrail"] else f" [Rewritten from: '{item['original_topic']}']"
-        print(f"  * {C_BOLD}Rank {item['rank']}{C_END}: {C_GREEN}{item['topic']}{C_END}{C_YELLOW}{status_str}{C_END}")
-        print(f"    - Score: {C_GREEN}{item['final_score']} points{C_END} ({item['reason']})")
-        
+    # 1. Recommended list display
+    print(f"\n{C_BOLD}=== Recommended Topics (Passed Filters) ==={C_END}")
+    for item in dec["recommended_topics"]:
+        print(f"\n  * {C_BOLD}Rank {item['rank']}: {item['topic']}{C_END}")
+        print(f"    - Content Type: {C_CYAN}{item['content_type']}{C_END} | CTA: {C_PURPLE}{item['cta']}{C_END}")
+        print(f"    - Confidence: {C_GREEN}{item['confidence'] * 100}%{C_END}")
+        print(f"    - Rationale: {item['reason']}")
+
+    # 2. Rejected list display
+    print(f"\n{C_BOLD}=== Rejected Topics (Failed Filters) ==={C_END}")
+    for item in dec["rejected_topics"]:
+        print(f"  ✖ {C_RED}{item['topic']}{C_END}")
+        print(f"    - Rejection Reason: {C_YELLOW}{item['reason']}{C_END}")
+
     print(f"\n{C_BOLD}本月行銷 Campaign 主題:{C_END} {C_PURPLE}{dec['monthly_campaign']['theme']}{C_END}")
     for g in dec['monthly_campaign']['campaign_goals']:
         print(f"  - 目標: {g}")

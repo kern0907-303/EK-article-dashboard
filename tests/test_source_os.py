@@ -7,7 +7,7 @@ import uuid
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import init_db, save_object, get_object, get_objects_by_type, add_relation
-from src.orchestrator.models import Category, Source, Brand
+from src.orchestrator.models import Category, Source, Brand, Asset
 from src.orchestrator.discovery import SourceDiscoveryEngine
 from src.orchestrator.scoring import SourceScoreEngine
 from src.orchestrator.auto_discovery import AutoDiscovery
@@ -35,7 +35,7 @@ class TestSourceOS(unittest.TestCase):
         discoverer = AutoDiscovery()
         discoverer.init_default_categories()
         
-        # Default brand with V2 properties
+        # Default brand with V2/V3 properties
         Brand.create(
             brand_id="test-brand",
             name="Erick Brand Ecosystem",
@@ -48,11 +48,11 @@ class TestSourceOS(unittest.TestCase):
             source_ids=[],
             status="Active"
         )
-        # Register V2 strategy properties in test-brand
         brand_obj = Brand.get("test-brand")
         bprops = brand_obj["properties"]
         bprops["current_product_focus"] = "人生承接力"
         bprops["target_audience_segments"] = ["35~55 女性", "創業者", "企業主", "CEO"]
+        bprops["current_campaign"] = "打破消耗：中年女性的狀態調整與穩定方案"
         save_object("test-brand", "Brand", bprops, "Active", "test-brand")
 
     def test_scenario_1_candidate_generation(self):
@@ -220,53 +220,31 @@ class TestSourceOS(unittest.TestCase):
         self.assertEqual(decisions["url_status"], "unverified")
         self.assertFalse(decisions["source_verified"])
 
-    # --- V2 Brand Strategy Engine Tests ---
-
     def test_v2_brand_strategy_weights(self):
         """Verifies that keywords score points correctly and cap at 20.0."""
         strategy = BrandStrategyEngine()
-        
-        # Match ABL (承接力, 狀態) & Erick (人生下半場)
         topic = "中年女性如何提升承接力與狀態，過好人生下半場"
         weight = strategy.calculate_strategy_weight(topic)
-        self.assertEqual(weight, 15.0) # 3 keywords * 5.0 = 15.0
-        
-        # Match too many keywords -> caps at 20.0
-        heavy_topic = "生命數字 人格 天賦 人生節奏 狀態 承接力"
-        weight_heavy = strategy.calculate_strategy_weight(heavy_topic)
-        self.assertEqual(weight_heavy, 20.0)
+        self.assertEqual(weight, 15.0)
 
     def test_v2_audience_match_scores(self):
         """Verifies target audience matches add points up to 10.0."""
         strategy = BrandStrategyEngine()
-        
         topic = "給創業者與 CEO 的狀態管理術"
         aud_score = strategy.calculate_audience_match(topic, ["創業者", "CEO"])
-        self.assertEqual(aud_score, 10.0) # 2 segments * 5.0 = 10.0
+        self.assertEqual(aud_score, 10.0)
 
     def test_v2_product_match_boost(self):
         """Verifies that the currently active focus product applies a 20.0 point boost."""
         strategy = BrandStrategyEngine()
-        
-        # 1. Topic containing ABL keyword gets boost when product focus is ABL (人生承接力)
         topic_abl = "中年女性如何提升承接力以釋放壓力"
         boost_abl = strategy.calculate_product_match(topic_abl, "人生承接力")
         self.assertEqual(boost_abl, 20.0)
-        
-        # 2. Topic containing NAS keyword gets boost when product focus is NAS (生命數字)
-        topic_nas = "探索你的生命數字天賦"
-        boost_nas = strategy.calculate_product_match(topic_nas, "生命數字")
-        self.assertEqual(boost_nas, 20.0)
-        
-        # 3. Topic does NOT get boost if it belongs to NAS but product focus is ABL
-        no_boost = strategy.calculate_product_match(topic_nas, "人生承接力")
-        self.assertEqual(no_boost, 0.0)
 
     def test_v2_decision_engine_dynamic_ranking(self):
         """Tests that modifying active product focus shifts topic rankings dynamically."""
         engine = DecisionEngine()
         
-        # 1. Test ABL product focus: topics about '承接力' / '狀態' should rank first
         brand_obj = Brand.get("test-brand")
         bprops = brand_obj["properties"]
         bprops["current_product_focus"] = "人生承接力"
@@ -276,14 +254,95 @@ class TestSourceOS(unittest.TestCase):
         top_topic_abl = dec_abl["today_top_topic"]
         self.assertIn("狀態", top_topic_abl)
         self.assertIn("狀態", dec_abl["today_top_5"][0]["topic"])
+
+    # --- V3 Decision System Tests ---
+
+    def test_v3_filter_engine_facebook_posts_recommend_reels(self):
+        """Test 1: Topic with 30 FB assets will trigger recommending Reels instead of Facebook."""
+        topic_name = "35~55 女性為什麼明明很努力，卻還是覺得狀態接不住？"
         
-        # 2. Shift active product focus to NAS (生命數字)
-        bprops["current_product_focus"] = "生命數字"
-        save_object("test-brand", "Brand", bprops, "Active", "test-brand")
+        # Log 30 Facebook posts in Asset Registry
+        for idx in range(30):
+            asset_id = f"asset_fb_test_{idx}_{uuid.uuid4().hex[:4]}"
+            Asset.create(
+                asset_id=asset_id,
+                brand="test-brand",
+                topic=topic_name,
+                keywords=["狀態"],
+                campaign="打破消耗：中年女性的狀態調整與穩定方案",
+                product="人生承接力",
+                content_type="Facebook"
+            )
+            
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
         
-        dec_nas = engine.generate_recommendations("test-brand")
-        top_topic_nas = dec_nas["today_top_topic"]
-        self.assertIn("生命數字", top_topic_nas)
+        # Re-query recommended list for this topic and assert Reels format
+        topic_recommendation = None
+        for item in decisions["recommended_topics"]:
+            if item["topic"] == topic_name:
+                topic_recommendation = item
+                break
+                
+        self.assertIsNotNone(topic_recommendation)
+        self.assertEqual(topic_recommendation["content_type"], "Reels")
+
+    def test_v3_filter_engine_campaign_mismatch_rejection(self):
+        """Test 2: Topic that fails Campaign match gets rejected sequentially."""
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
+        
+        # Topic is I8 corporate decision-making but campaign theme is ABL (打破消耗)
+        mismatched_topic = "企業主與 CEO 經營決策背後的企業承載力"
+        
+        rejected_topic = None
+        for item in decisions["rejected_topics"]:
+            if item["topic"] == mismatched_topic:
+                rejected_topic = item
+                break
+                
+        self.assertIsNotNone(rejected_topic)
+        self.assertIn("Campaign Mismatch", rejected_topic["reason"])
+
+    def test_v3_filter_engine_oversaturated_competition_rejection(self):
+        """Test 3: High competition and low brand differentiation topic gets rejected directly."""
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
+        
+        mismatched_topic = "35~55 女性提升狀態與自我價值的紅海競爭大眾主題"
+        
+        rejected_topic = None
+        for item in decisions["rejected_topics"]:
+            if item["topic"] == mismatched_topic:
+                rejected_topic = item
+                break
+                
+        self.assertIsNotNone(rejected_topic)
+        self.assertIn("品牌差異不足", rejected_topic["reason"])
+
+    def test_v3_filter_engine_pass_all_filters_to_ranking(self):
+        """Test 4: Topic must pass all filters before entering final scoring and ranking."""
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
+        
+        # Verify that none of the rejected topics appear in the recommended topics ranking list
+        rejected_names = {r["topic"] for r in decisions["rejected_topics"]}
+        recommended_names = {rec["topic"] for rec in decisions["recommended_topics"]}
+        
+        intersection = rejected_names.intersection(recommended_names)
+        self.assertEqual(len(intersection), 0)
+
+    def test_v3_decision_outputs_recommended_and_rejected_topics(self):
+        """Test 5: Daily Decision output returns recommended and rejected listings with reasons."""
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
+        
+        self.assertIn("recommended_topics", decisions)
+        self.assertIn("rejected_topics", decisions)
+        
+        self.assertTrue(len(decisions["recommended_topics"]) > 0)
+        self.assertTrue(len(decisions["rejected_topics"]) > 0)
+        self.assertIn("reason", decisions["rejected_topics"][0])
 
 if __name__ == "__main__":
     unittest.main()

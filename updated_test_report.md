@@ -1,28 +1,41 @@
-# Updated Test Report: Brand Compliance & Source Verification
+# Updated Test Report: V3 Decision System
 
-This report documents the verification of the Brand Guardrail rules and Source Reality Check behaviors.
-
-## 1. Test Run Results
-
-* **Framework**: `unittest`
-* **Test File**: `tests/test_source_os.py`
-* **Execution Time**: 0.019 seconds
-* **Outcome**: **ALL PASSED (8/8 tests)**
+This report verifies and documents the test results for the Decision System V3 filtering pipeline, format adaptation, and daily decision output structures.
 
 ---
 
-## 2. Guardrail & Reality Check Test Cases
+## 1. Test Suite Summary
 
-### Test: `test_brand_guardrail_forbidden_word_rewriter`
-* **Objective**: Confirm that the guardrail detects and rewrites forbidden words like "高票價", "無痛成交", and "能量磁場" in public copywriting.
-* **Outcome**: **PASS**. The input string is successfully flagged as failing, and is rewritten to use compliant terms like "高價值", "精準定位", and "狀態".
+* **Testing Framework**: Python `unittest`
+* **Test File**: [test_source_os.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/tests/test_source_os.py)
+* **Execution Command**: `python3 -m unittest tests/test_source_os.py`
+* **Outcome**: **ALL 16 TESTS PASSED**
+* **Duration**: 0.036 seconds
 
-### Test: `test_source_reality_check_tags`
-* **Objective**: Verify that mock candidates are properly tagged with unverified parameters, and that `source_verified` resolves to `False`.
-* **Outcome**: **PASS**. The daily decision recommendation output correctly maps `is_mock = True`, `source_confidence = "simulated"`, `url_status = "unverified"`, and `source_verified = False`.
+---
 
-### Test: `test_brand_guardrail_context_specific_rules`
-* **Objective**: Confirm that brand contexts filter unique prohibited words:
-  - **ABL**: Filters healing promises (`療效`, `根治`) and metaphysical terms.
-  - **I8**: Filters spiritual and energy-related words (`靈性`, `頻率`, `顯化`, `療癒`).
-* **Outcome**: **PASS**. Metaphysical phrases are successfully rewritten into compliant, value-based business phrases.
+## 2. V3 Core Test Cases
+
+### 1. Test: `test_v3_filter_engine_facebook_posts_recommend_reels`
+* **Objective**: Verify that if a topic has 30 or more Facebook posts logged in the Asset Registry, the engine automatically recommends the format **Reels** instead of **Facebook**.
+* **Method**: Created 30 mock Facebook posts in the Asset Registry database under the same topic and executed recommendations.
+* **Outcome**: **PASS**. The output format shifted to `Reels`.
+
+### 2. Test: `test_v3_filter_engine_campaign_mismatch_rejection`
+* **Objective**: Verify that topics not matching the currently active campaign theme are rejected sequentially.
+* **Method**: Submitted a topic related to corporate decision-making when the active campaign focus was set to ABL state-adjustment.
+* **Outcome**: **PASS**. The topic was rejected and routed to `rejected_topics` with the reason `"不符合目前活動 (Campaign Mismatch)"`.
+
+### 3. Test: `test_v3_filter_engine_oversaturated_competition_rejection`
+* **Objective**: Confirm that a high-competition topic with low brand differentiation is immediately filtered out.
+* **Method**: Evaluated a candidate topic tagged with high competition level and brand differentiation score < 60.0.
+* **Outcome**: **PASS**. The topic was correctly rejected with `"市場過度飽和，且品牌差異不足"`.
+
+### 4. Test: `test_v3_filter_engine_pass_all_filters_to_ranking`
+* **Objective**: Ensure that only topics passing all 7 filters proceed to score calculation and final ranking.
+* **Method**: Compared the set of rejected topics against the set of recommended topics.
+* **Outcome**: **PASS**. The intersection of the two sets was empty (0 overlapping items).
+
+### 5. Test: `test_v3_decision_outputs_recommended_and_rejected_topics`
+* **Objective**: Verify that the daily decision dictionary contains both `recommended_topics` and `rejected_topics` lists, each containing its respective metrics and reasons.
+* **Outcome**: **PASS**. Both lists exist, contain populated items, and have descriptive rejection explanations.
