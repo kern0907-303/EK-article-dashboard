@@ -32,7 +32,7 @@ def print_header(title):
     print(f"\n{C_BOLD}{C_PURPLE}=== {title} ==={C_END}")
 
 def init_system():
-    """Initializes DB, default categories and default brand metadata."""
+    """Initializes DB, default categories and default brand metadata with V2 strategy properties."""
     init_db()
     # Init default categories if empty
     if not Category.get_all():
@@ -41,20 +41,30 @@ def init_system():
     
     # Init default brand metadata if empty
     if not Brand.get("test-brand"):
-        Brand.create(
-            brand_id="test-brand",
-            name="Erick Brand Ecosystem",
-            positioning="High-ticket consulting and personal growth state adjustment (ABL)",
-            audience="Entrepreneurs, knowledge creators, coaching experts",
-            products=[
+        # Save V2 brand metadata properties (product focus, audience segments)
+        properties = {
+            "name": "Erick Brand Ecosystem",
+            "positioning": "High-ticket consulting and personal growth state adjustment (ABL)",
+            "audience": "Entrepreneurs, knowledge creators, coaching experts",
+            "products": [
                 {"name": "High-Ticket Consulting Masterclass", "price": 990},
                 {"name": "ABL Private Coaching", "price": 50000}
             ],
-            tone="Empowerment, high-energy, direct-response",
-            region="Global",
-            language="zh-TW",
-            source_ids=[],
-            status="Active"
+            "tone": "Empowerment, high-energy, direct-response",
+            "region": "Global",
+            "language": "zh-TW",
+            "source_ids": [],
+            "status": "Active",
+            # V2 Strategy properties
+            "current_product_focus": "人生承接力",
+            "target_audience_segments": ["35~55 女性", "創業者", "企業主", "CEO"]
+        }
+        save_object(
+            obj_id="test-brand",
+            obj_type="Brand",
+            properties=properties,
+            lifecycle="Active",
+            owner="test-brand"
         )
 
 def list_categories():
@@ -170,18 +180,10 @@ def promote_sources():
                     s_ids = bprops.get("source_ids", [])
                     if s["id"] not in s_ids:
                         s_ids.append(s["id"])
-                    Brand.create(
-                        brand_id="test-brand",
-                        name=bprops["name"],
-                        positioning=bprops["positioning"],
-                        audience=bprops["audience"],
-                        products=bprops["products"],
-                        tone=bprops["tone"],
-                        region=bprops["region"],
-                        language=bprops["language"],
-                        source_ids=s_ids,
-                        status=bprops["status"]
-                    )
+                    
+                    # Preserving existing product/audience focus tags during re-save
+                    bprops["source_ids"] = s_ids
+                    save_object("test-brand", "Brand", bprops, bprops.get("status", "Active"), "test-brand")
             
             # Emit promote events
             evt_id = f"event_promoted_{uuid.uuid4().hex[:8]}"
@@ -308,6 +310,10 @@ def print_daily_decision():
     print(f"  - URL status: {C_YELLOW}{dec['url_status']}{C_END}")
     print(f"  - Verified source conclusion: {'Verified' if dec['source_verified'] else 'Unverified / Simulated'}")
     
+    print(f"\n🚀 {C_BOLD}Strategy Alignments (V2 Engine):{C_END}")
+    print(f"  - Current Focus Product: {C_GREEN}{dec['current_product_focus']}{C_END}")
+    print(f"  - Target Audience Segments: {C_GREEN}{dec['target_audience_segments']}{C_END}")
+
     print(f"\n🛡 {C_BOLD}Brand Guardrail Status:{C_END}")
     print(f"  - Passed Brand Guardrail: {'Yes' if dec['passed_brand_guardrail'] else 'No (Forbidden words detected and rewritten)'}")
     if not dec["passed_brand_guardrail"]:
@@ -320,10 +326,11 @@ def print_daily_decision():
     print(f"📈 {C_BOLD}Confidence Score:{C_END} {C_GREEN}{dec['confidence_score'] * 100}%{C_END}")
     print(f"💬 {C_BOLD}建議理由:{C_END} {dec['reason']}")
     
-    print(f"\n{C_BOLD}今日推薦 Topic Top 5:{C_END}")
+    print(f"\n{C_BOLD}今日推薦 Topic Top 5 (V2 Sorting Formula Ranks):{C_END}")
     for item in dec["today_top_5"]:
         status_str = f" [Passed]" if item["passed_guardrail"] else f" [Rewritten from: '{item['original_topic']}']"
-        print(f"  [{item['priority']}] Rank {item['rank']}: {C_GREEN}{item['topic']}{C_END}{C_YELLOW}{status_str}{C_END}")
+        print(f"  * {C_BOLD}Rank {item['rank']}{C_END}: {C_GREEN}{item['topic']}{C_END}{C_YELLOW}{status_str}{C_END}")
+        print(f"    - Score: {C_GREEN}{item['final_score']} points{C_END} ({item['reason']})")
         
     print(f"\n{C_BOLD}本月行銷 Campaign 主題:{C_END} {C_PURPLE}{dec['monthly_campaign']['theme']}{C_END}")
     for g in dec['monthly_campaign']['campaign_goals']:

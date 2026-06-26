@@ -1,13 +1,11 @@
-# Task List: Brand Guardrail & Decision Correction
+# Task List: V2 Brand Strategy Engine
 
-- `[ ]` Create `src/orchestrator/guardrail.py` containing rule-based brand keyword checks and rewrites.
-- `[ ]` Modify `src/orchestrator/discovery.py` to tag candidates with reality checks (`is_mock`, `source_confidence`, `url_status`).
-- `[ ]` Modify `src/orchestrator/models.py` to ensure Source properties store the reality check fields.
-- `[ ]` Modify `src/orchestrator/decision.py` to pass suggestions through the Brand Guardrail and output compliance states.
-- `[ ]` Update CLI tool `run_source_os.py` to support and display reality check fields and guardrail results.
-- `[ ]` Update `tests/test_source_os.py` with test cases covering guardrail validation and reality check tagging.
-- `[ ]` Verify tests pass.
-- `[ ]` Create and update required documents:
-  - `guardrail_implementation_summary.md`
-  - `updated_test_report.md`
-  - `corrected_daily_decision_sample.md`
+- `[ ]` Create `src/orchestrator/strategy.py` with `BrandStrategyEngine` keyword weights, audience matching, and product boosts.
+- `[ ]` Modify `src/orchestrator/decision.py` to calculate V2 formula final scores and rank topics.
+- `[ ]` Update CLI tool `run_source_os.py` to display V2 decision variables.
+- `[ ]` Add unit tests in `tests/test_source_os.py` for Brand Strategy Weights, Audience Match, and Product Match.
+- `[ ]` Run tests and verify results.
+- `[ ]` Create required artifacts:
+  - `brand_strategy_engine.md`
+  - `decision_formula.md`
+  - `updated_daily_decision_sample.md`

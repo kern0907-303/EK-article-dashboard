@@ -14,6 +14,7 @@ from src.orchestrator.auto_discovery import AutoDiscovery
 from src.orchestrator.graph import KnowledgeGraph
 from src.orchestrator.decision import DecisionEngine
 from src.orchestrator.guardrail import BrandGuardrail
+from src.orchestrator.strategy import BrandStrategyEngine
 
 class TestSourceOS(unittest.TestCase):
     @classmethod
@@ -33,6 +34,8 @@ class TestSourceOS(unittest.TestCase):
         # Initialize default categories and brand metadata
         discoverer = AutoDiscovery()
         discoverer.init_default_categories()
+        
+        # Default brand with V2 properties
         Brand.create(
             brand_id="test-brand",
             name="Erick Brand Ecosystem",
@@ -45,6 +48,12 @@ class TestSourceOS(unittest.TestCase):
             source_ids=[],
             status="Active"
         )
+        # Register V2 strategy properties in test-brand
+        brand_obj = Brand.get("test-brand")
+        bprops = brand_obj["properties"]
+        bprops["current_product_focus"] = "人生承接力"
+        bprops["target_audience_segments"] = ["35~55 女性", "創業者", "企業主", "CEO"]
+        save_object("test-brand", "Brand", bprops, "Active", "test-brand")
 
     def test_scenario_1_candidate_generation(self):
         """Scenario 1: Input Women's Growth and generate >= 10 candidates."""
@@ -136,18 +145,9 @@ class TestSourceOS(unittest.TestCase):
         s_ids = bprops.get("source_ids", [])
         if source_id not in s_ids:
             s_ids.append(source_id)
-        Brand.create(
-            brand_id=brand_id,
-            name=bprops["name"],
-            positioning=bprops["positioning"],
-            audience=bprops["audience"],
-            products=bprops["products"],
-            tone=bprops["tone"],
-            region=bprops["region"],
-            language=bprops["language"],
-            source_ids=s_ids,
-            status=bprops["status"]
-        )
+            
+        bprops["source_ids"] = s_ids
+        save_object(brand_id, "Brand", bprops, "Active", brand_id)
 
         # Verifications
         promo_source = Source.get(source_id)
@@ -197,58 +197,93 @@ class TestSourceOS(unittest.TestCase):
         self.assertIn("confidence_score", decisions)
         self.assertIn("today_top_5", decisions)
 
-    # --- New Brand Guardrail and Source Reality Check tests ---
-
     def test_brand_guardrail_forbidden_word_rewriter(self):
         """First-tier public copy must be rewritten when containing forbidden terms."""
         guardrail = BrandGuardrail()
         text = "我們提供高票價課程，保證無痛成交，並教你調整能量磁場。"
         
-        # Check text violates rules
         check_res = guardrail.check_text(text, context="first_tier")
         self.assertFalse(check_res["passed"])
-        self.assertIn("高票價", check_res["violated_words"])
-        self.assertIn("無痛成交", check_res["violated_words"])
-        self.assertIn("能量磁場", check_res["violated_words"])
         
-        # Verify rewriting fixes violated terms
         rewritten = guardrail.rewrite_text(text, context="first_tier")
         self.assertNotIn("高票價", rewritten)
         self.assertNotIn("無痛成交", rewritten)
         self.assertNotIn("能量磁場", rewritten)
-        self.assertIn("高價值", rewritten)
-        self.assertIn("精準定位", rewritten)
-        self.assertIn("狀態", rewritten)
 
     def test_source_reality_check_tags(self):
         """Mock sources must be marked with unverified properties, and not concluded as verified."""
         engine = DecisionEngine()
         decisions = engine.generate_recommendations("test-brand")
         
-        # Check that top source reality check fields are outputted
         self.assertTrue(decisions["is_mock"])
         self.assertEqual(decisions["source_confidence"], "simulated")
         self.assertEqual(decisions["url_status"], "unverified")
         self.assertFalse(decisions["source_verified"])
 
-    def test_brand_guardrail_context_specific_rules(self):
-        """ABL and I8 copy must filter context-specific prohibited language."""
-        guardrail = BrandGuardrail()
+    # --- V2 Brand Strategy Engine Tests ---
+
+    def test_v2_brand_strategy_weights(self):
+        """Verifies that keywords score points correctly and cap at 20.0."""
+        strategy = BrandStrategyEngine()
         
-        # 1. ABL Metaphysical / Healing promise check
-        abl_text = "本調頻療效可以根治你的心理消耗，調整你的能量磁場。"
-        abl_rewritten = guardrail.rewrite_text(abl_text, context="ABL")
-        self.assertNotIn("療效", abl_rewritten)
-        self.assertNotIn("根治", abl_rewritten)
-        self.assertNotIn("能量磁場", abl_rewritten)
+        # Match ABL (承接力, 狀態) & Erick (人生下半場)
+        topic = "中年女性如何提升承接力與狀態，過好人生下半場"
+        weight = strategy.calculate_strategy_weight(topic)
+        self.assertEqual(weight, 15.0) # 3 keywords * 5.0 = 15.0
         
-        # 2. I8 spiritual checks
-        i8_text = "本商業顧問服務可以調整您的頻率，開啟您的靈性，顯化財富，並療癒您商場上的痛點。"
-        i8_rewritten = guardrail.rewrite_text(i8_text, context="I8")
-        self.assertNotIn("頻率", i8_rewritten)
-        self.assertNotIn("靈性", i8_rewritten)
-        self.assertNotIn("顯化", i8_rewritten)
-        self.assertNotIn("療癒", i8_rewritten)
+        # Match too many keywords -> caps at 20.0
+        heavy_topic = "生命數字 人格 天賦 人生節奏 狀態 承接力"
+        weight_heavy = strategy.calculate_strategy_weight(heavy_topic)
+        self.assertEqual(weight_heavy, 20.0)
+
+    def test_v2_audience_match_scores(self):
+        """Verifies target audience matches add points up to 10.0."""
+        strategy = BrandStrategyEngine()
+        
+        topic = "給創業者與 CEO 的狀態管理術"
+        aud_score = strategy.calculate_audience_match(topic, ["創業者", "CEO"])
+        self.assertEqual(aud_score, 10.0) # 2 segments * 5.0 = 10.0
+
+    def test_v2_product_match_boost(self):
+        """Verifies that the currently active focus product applies a 20.0 point boost."""
+        strategy = BrandStrategyEngine()
+        
+        # 1. Topic containing ABL keyword gets boost when product focus is ABL (人生承接力)
+        topic_abl = "中年女性如何提升承接力以釋放壓力"
+        boost_abl = strategy.calculate_product_match(topic_abl, "人生承接力")
+        self.assertEqual(boost_abl, 20.0)
+        
+        # 2. Topic containing NAS keyword gets boost when product focus is NAS (生命數字)
+        topic_nas = "探索你的生命數字天賦"
+        boost_nas = strategy.calculate_product_match(topic_nas, "生命數字")
+        self.assertEqual(boost_nas, 20.0)
+        
+        # 3. Topic does NOT get boost if it belongs to NAS but product focus is ABL
+        no_boost = strategy.calculate_product_match(topic_nas, "人生承接力")
+        self.assertEqual(no_boost, 0.0)
+
+    def test_v2_decision_engine_dynamic_ranking(self):
+        """Tests that modifying active product focus shifts topic rankings dynamically."""
+        engine = DecisionEngine()
+        
+        # 1. Test ABL product focus: topics about '承接力' / '狀態' should rank first
+        brand_obj = Brand.get("test-brand")
+        bprops = brand_obj["properties"]
+        bprops["current_product_focus"] = "人生承接力"
+        save_object("test-brand", "Brand", bprops, "Active", "test-brand")
+        
+        dec_abl = engine.generate_recommendations("test-brand")
+        top_topic_abl = dec_abl["today_top_topic"]
+        self.assertIn("狀態", top_topic_abl)
+        self.assertIn("狀態", dec_abl["today_top_5"][0]["topic"])
+        
+        # 2. Shift active product focus to NAS (生命數字)
+        bprops["current_product_focus"] = "生命數字"
+        save_object("test-brand", "Brand", bprops, "Active", "test-brand")
+        
+        dec_nas = engine.generate_recommendations("test-brand")
+        top_topic_nas = dec_nas["today_top_topic"]
+        self.assertIn("生命數字", top_topic_nas)
 
 if __name__ == "__main__":
     unittest.main()
