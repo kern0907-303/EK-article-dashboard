@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.0] - 2026-06-26
+### Added (Milestone 2 Completed)
+- **Plugin Infrastructure**: Created a modular `PluginManager` supporting dynamic scraper loaders, trend harvesters, and scoring calculators.
+- **Ingestion & Trend Plugins**: Implemented built-in plugins for RSS and Firecrawl scraping, Google Trends, and Reddit harvesters.
+- **Knowledge Graph Node & Edge APIs**: Coded SQL-level entity traversal, query pathing, and semantic node-edge relationships.
+- **Scoring Engine**: Built score calculations loading active metric plugins (Opportunity, Gap, ROI) and dynamically aggregating them via Brand weights.
+
 ## [0.1.0] - 2026-06-26
 ### Added (Milestone 1 Completed)
 - **Universal SQLite Object Store**: Structured a single `objects` and `object_relations` (Node-Edge) graph database layout to store all 21 domain entities.
