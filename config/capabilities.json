@@ -1,0 +1,72 @@
+{
+  "gemini": {
+    "model_name": "gemini-1.5-flash",
+    "capabilities": ["scraping", "retrieval", "summarization", "long_context_ingestion"],
+    "strengths": "擁有 2M token 的極大上下文視窗，網頁擷取與結構化速度極快，處理超長文件與影音輸入能力優越。",
+    "limitations": "程式邏輯撰寫精準度不及 Claude，創意行銷文案的語氣有時較為生硬或格式化。",
+    "token_cost": {
+      "input_per_1m": 0.075,
+      "output_per_1m": 0.3
+    },
+    "speed": "very_fast",
+    "input_format": ["URL", "text", "file", "image", "video", "audio"],
+    "output_format": ["markdown", "JSON", "text"],
+    "best_tasks": "網頁爬取、大規模文件彙整與初版大綱摘要。"
+  },
+  "claude": {
+    "model_name": "claude-3-5-sonnet",
+    "capabilities": ["deep_analysis", "logic_reasoning", "coding", "pain_point_extraction"],
+    "strengths": "邏輯推理與思維能力頂尖，極度遵守 JSON 格式指示，代碼理解與生成精準度高，能洞察深層痛點與策略定位。",
+    "limitations": "上下文視窗限制在 200k，API 呼叫成本與 Token 價格相對昂貴，生成速度中等。",
+    "token_cost": {
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0
+    },
+    "speed": "moderate",
+    "input_format": ["text", "JSON", "code", "file"],
+    "output_format": ["JSON", "markdown", "code", "text"],
+    "best_tasks": "深度內容分析、清洗與建立情報卡、複雜演算法編寫與架構審查。"
+  },
+  "chatgpt": {
+    "model_name": "gpt-4o-mini",
+    "capabilities": ["copywriting", "brand_translation", "social_media_adapt", "interactive_quiz", "cta_generation"],
+    "strengths": "創意行銷文案撰寫生動、中文字詞轉換流暢、社群傳播钩子 (Hooks) 掌握度高，Token 成本極度低廉且回應速度快。",
+    "limitations": "深度邏輯推理與極端複雜之程式編碼能力較弱，極長文本摘要容易遺漏細節。",
+    "token_cost": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 0.6
+    },
+    "speed": "fast",
+    "input_format": ["text", "JSON"],
+    "output_format": ["markdown", "JSON", "text"],
+    "best_tasks": "品牌行銷轉譯、社群貼文（FB/IG）、短影音腳本設計、高轉化 CTA 撰寫與互動 Quiz。"
+  },
+  "codex": {
+    "model_name": "local-test-runner",
+    "capabilities": ["syntax_check", "unit_test_run", "code_patching"],
+    "strengths": "本地執行，可即時進行單元測試與代碼語法修復，零 API 成本，反饋速度極快。",
+    "limitations": "不具備通用創意生成能力，僅能針對特定代碼進行編譯、測試與規則性修復。",
+    "token_cost": {
+      "input_per_1m": 0.0,
+      "output_per_1m": 0.0
+    },
+    "speed": "instant",
+    "input_format": ["code", "file_path"],
+    "output_format": ["test_report", "code_patch"],
+    "best_tasks": "自動化單元測試、語法分析、Lint 修復與系統自我診斷。"
+  },
+  "cowork": {
+    "model_name": "local-kb-sync",
+    "capabilities": ["kb_sync", "task_logging", "metadata_update"],
+    "strengths": "本地維護知識庫（Knowledge Base）與任務追蹤，確保數據庫日誌狀態一致，沒有網絡延遲或外部相依性。",
+    "limitations": "不具備自主語義生成能力，仰賴其他 AI 模組提供的 JSON 卡進行提取與同步。",
+    "token_cost": {
+      "input_per_1m": 0.0,
+      "output_per_1m": 0.0
+    },
+    "speed": "instant",
+    "input_format": ["JSON", "text"],
+    "output_format": ["markdown", "db_log"],
+    "best_tasks": "共享知識庫 Markdown 同步、狀態更新、發布日誌歸檔與任務鏈接狀態更新。"
+  }
+}
