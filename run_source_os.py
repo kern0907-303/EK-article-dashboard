@@ -245,7 +245,7 @@ def run_daily_workflow():
     
     # 2. Run Capability Orchestrator for Content Analysis
     print(f"\n2. {C_BOLD}Dispatching Task to AI Capability Orchestrator...{C_END}")
-    task_desc = f"請分析來源 {top_source_name} 的行銷與心態策略，並轉譯為 Erick ABL 品牌的 FB 貼文。"
+    task_desc = f"請爬取並分析來源網頁 {top_source_name} 的行銷與心態策略，並轉譯為 Erick ABL 品牌的 FB 貼文，並同步到知識庫。"
     
     task_id = f"task_{uuid.uuid4().hex[:8]}"
     save_object(
@@ -288,6 +288,84 @@ def run_daily_workflow():
     
     print(f"\n3. {C_BOLD}Knowledge Graph Traversal Edge Synced.{C_END}")
     print(f"   ✔ Daily Source-Centric Workflow executed successfully!")
+    print_daily_intelligence_report(dec)
+
+def print_daily_intelligence_report(dec=None):
+    if not dec:
+        decision_engine = DecisionEngine()
+        dec = decision_engine.generate_recommendations("test-brand")
+        
+    print_header("DAILY INTELLIGENCE REPORT")
+    
+    # 1. New Sources
+    print(f"\n{C_BOLD}1. NEW SOURCES (Ingested & Scored Today):{C_END}")
+    sources = Source.get_all()
+    active_sources = [s for s in sources if s["lifecycle"] == "Active"]
+    if active_sources:
+        for s in active_sources[:5]:
+            props = s["properties"]
+            print(f"  - [{props.get('tier', 'Tier 4')}] {C_BOLD}{props.get('name')}{C_END} ({props.get('source_type')}) | Score: {C_GREEN}{props.get('overall_source_score')}{C_END} | Verified: {not props.get('is_mock', True) or props.get('url_status') == 'verified'}")
+    else:
+        print("  - No new active sources registered today.")
+        
+    # 2. New Contents
+    print(f"\n{C_BOLD}2. NEW CONTENTS (Collected via Gemini):{C_END}")
+    from src.database import get_objects_by_type
+    articles = get_objects_by_type("Article")
+    if articles:
+        latest_art = articles[-1]
+        props = latest_art["properties"]
+        print(f"  - Title: {C_CYAN}{props.get('title')}{C_END}")
+        body = props.get("body", "")
+        snippet = "\n".join([line for line in body.splitlines() if line.strip()][:5])
+        print(f"  - Content Excerpt:\n{snippet}\n    ...")
+    else:
+        print("  - No new contents ingested today.")
+        
+    # 3. Top 5 Intelligence
+    print(f"\n{C_BOLD}3. TOP 5 INTELLIGENCE (Extracted via Claude):{C_END}")
+    pain_points = get_objects_by_type("Pain Point")
+    ctas = get_objects_by_type("CTA")
+    patterns = get_objects_by_type("Pattern")
+    
+    intel_count = 0
+    if pain_points:
+        for pp in pain_points[-3:]:
+            print(f"  - [Pain Point] {pp['properties'].get('description')}")
+            intel_count += 1
+    if ctas:
+        print(f"  - [CTA] Phrase: {C_PURPLE}{ctas[-1]['properties'].get('phrase')}{C_END}")
+        intel_count += 1
+    if patterns:
+        formulas = patterns[-1]['properties'].get('formulas', [])
+        if formulas:
+            print(f"  - [Pattern] Formula Hook: {formulas[0]}")
+            intel_count += 1
+            
+    if intel_count == 0:
+        print("  - No intelligence extraction nodes found in graph.")
+        
+    # 4. Top 3 Recommended Topics
+    print(f"\n{C_BOLD}4. TOP 3 RECOMMENDED TOPICS:{C_END}")
+    rec_topics = dec.get("recommended_topics", [])
+    if rec_topics:
+        for idx, item in enumerate(rec_topics[:3]):
+            print(f"  * {C_BOLD}Rank {idx+1}: {item['topic']}{C_END}")
+            print(f"    - Format: {C_CYAN}{item['content_type']}{C_END} | CTA: {C_PURPLE}{item['cta']}{C_END}")
+            print(f"    - Score: {C_GREEN}{item['final_score']}{C_END} | Confidence: {item['confidence']*100}%")
+    else:
+        print("  - No topics passed the sequential filtering pipeline today.")
+        
+    # 5. Rejected Topics
+    print(f"\n{C_BOLD}5. REJECTED TOPICS & REASONS:{C_END}")
+    rej_topics = dec.get("rejected_topics", [])
+    if rej_topics:
+        for item in rej_topics:
+            print(f"  ✖ {C_RED}{item['topic']}{C_END}")
+            print(f"    - Reason: {C_YELLOW}{item['reason']}{C_END}")
+    else:
+        print("  - No topics were rejected by filters today.")
+    print()
 
 def print_daily_decision():
     print_header("Daily Strategic Decision Output")
@@ -318,19 +396,8 @@ def print_daily_decision():
     print(f"📈 {C_BOLD}Confidence Score:{C_END} {C_GREEN}{dec['confidence_score'] * 100}%{C_END}")
     print(f"💬 {C_BOLD}建議理由:{C_END} {dec['reason']}")
     
-    # 1. Recommended list display
-    print(f"\n{C_BOLD}=== Recommended Topics (Passed Filters) ==={C_END}")
-    for item in dec["recommended_topics"]:
-        print(f"\n  * {C_BOLD}Rank {item['rank']}: {item['topic']}{C_END}")
-        print(f"    - Content Type: {C_CYAN}{item['content_type']}{C_END} | CTA: {C_PURPLE}{item['cta']}{C_END}")
-        print(f"    - Confidence: {C_GREEN}{item['confidence'] * 100}%{C_END}")
-        print(f"    - Rationale: {item['reason']}")
-
-    # 2. Rejected list display
-    print(f"\n{C_BOLD}=== Rejected Topics (Failed Filters) ==={C_END}")
-    for item in dec["rejected_topics"]:
-        print(f"  ✖ {C_RED}{item['topic']}{C_END}")
-        print(f"    - Rejection Reason: {C_YELLOW}{item['reason']}{C_END}")
+    # Also print the Daily Intelligence Report
+    print_daily_intelligence_report(dec)
 
     print(f"\n{C_BOLD}本月行銷 Campaign 主題:{C_END} {C_PURPLE}{dec['monthly_campaign']['theme']}{C_END}")
     for g in dec['monthly_campaign']['campaign_goals']:
