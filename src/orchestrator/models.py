@@ -43,7 +43,8 @@ class Source:
                threads: str = "", podcast: str = "", newsletter: str = "", update_frequency: str = "weekly",
                authority_score: float = 0.0, traffic_score: float = 0.0, seo_score: float = 0.0,
                engagement_score: float = 0.0, conversion_score: float = 0.0, quality_score: float = 0.0,
-               overall_source_score: float = 0.0, tier: str = "Tier 4", status: str = "Candidate") -> bool:
+               overall_source_score: float = 0.0, tier: str = "Tier 4", status: str = "Candidate",
+               is_mock: bool = True, source_confidence: str = "simulated", url_status: str = "unverified") -> bool:
         
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         properties = {
@@ -73,7 +74,11 @@ class Source:
             "tier": tier,
             "status": status,
             "created_at": now_str,
-            "updated_at": now_str
+            "updated_at": now_str,
+            # Source Reality Check fields
+            "is_mock": is_mock,
+            "source_confidence": source_confidence,
+            "url_status": url_status
         }
         
         saved = save_object(
@@ -105,7 +110,6 @@ class Source:
         
         # update state and overall tier
         status = props.get("status", "Candidate")
-        tier = props.get("tier", "Tier 4")
         return save_object(
             obj_id=source_id,
             obj_type="Source",

@@ -17,6 +17,7 @@ from src.orchestrator.decision import DecisionEngine
 from src.orchestrator.classifier import TaskClassifier
 from src.orchestrator.router import ModelRouter
 from src.orchestrator.runner import MockRunner
+from src.orchestrator.guardrail import BrandGuardrail
 
 # ANSI Color codes for premium CLI styling
 C_GREEN = "\033[92m"
@@ -76,7 +77,6 @@ def discover_sources(category_name: str):
             break
             
     if not cat_id:
-        # Fallback category creation or slug name
         cat_id = category_name.lower().replace("'", "").replace(" ", "_")
         Category.create(
             category_id=cat_id,
@@ -119,9 +119,12 @@ def discover_sources(category_name: str):
             authority_score=cand["authority_score"],
             traffic_score=cand["traffic_score"],
             status="Candidate",
-            tier="Tier 4"
+            tier="Tier 4",
+            is_mock=cand["is_mock"],
+            source_confidence=cand["source_confidence"],
+            url_status=cand["url_status"]
         )
-        print(f"  - [{cand['source_type']}] {cand['name']} -> Saved as {source_id} (Candidate)")
+        print(f"  - [{cand['source_type']}] {cand['name']} -> Saved as {source_id} (Candidate) [Mock: {cand['is_mock']} | Conf: {cand['source_confidence']} | URL: {cand['url_status']}]")
 
 def score_sources():
     print_header("Source Scoring Pipeline")
@@ -146,7 +149,6 @@ def promote_sources():
         props = s["properties"]
         overall_score = props.get("overall_source_score", 0.0)
         
-        # Threshold for promotion: overall_source_score >= 30.0 (Tier 3 or above)
         if overall_score >= 30.0:
             Source.promote_to_active(s["id"])
             
@@ -190,7 +192,7 @@ def promote_sources():
                 lifecycle="Emitted",
                 owner="system"
             )
-            print(f"  - {C_GREEN}Promoted:{C_END} {props['name']} (Score: {overall_score}) associated with Brand test-brand")
+            print(f"  - {C_GREEN}Promoted:{C_END} {props['name']} (Score: {overall_score}) [Mock: {props.get('is_mock')} | URL Status: {props.get('url_status')}]")
             promoted_count += 1
         else:
             # Reject
@@ -221,7 +223,7 @@ def list_sources():
         print(f"\n{C_BOLD}{C_CYAN}--- {tier_name} ({len(tiers[tier_name])} Sources) ---{C_END}")
         for s in tiers[tier_name]:
             props = s["properties"]
-            print(f"  * {C_BOLD}{s['id']}{C_END}: {props.get('name')} ({props.get('source_type')}) | Score: {C_GREEN}{props.get('overall_source_score')}{C_END} | Brand: {props.get('brand_id')}")
+            print(f"  * {C_BOLD}{s['id']}{C_END}: {props.get('name')} ({props.get('source_type')}) | Score: {C_GREEN}{props.get('overall_source_score')}{C_END} | Mock: {props.get('is_mock')} | URL: {props.get('url_status')}")
 
 def run_daily_workflow():
     print_header("Running Daily Source-Centric Workflow")
@@ -233,8 +235,6 @@ def run_daily_workflow():
     print(f"   - Categories read: {disco_res['categories_read']}")
     print(f"   - Candidates discovered: {disco_res['candidates_found']}")
     print(f"   - Promoted to registry: {len(disco_res['promoted_sources'])}")
-    print(f"   - Events emitted: {len(disco_res['events_emitted'])}")
-    print(f"   - KG contains_source relations written: {disco_res['kg_links_written']}")
     
     # Fetch top active source
     sources = Source.get_all()
@@ -248,11 +248,11 @@ def run_daily_workflow():
     top_source_name = top_source["properties"]["name"]
     top_category_id = top_source["properties"]["category_id"]
     
-    print(f"\nTop Active Source Selected for Intelligence: {C_GREEN}{top_source_name}{C_END} (Score: {top_source['properties']['overall_source_score']})")
+    print(f"\nTop Active Source Selected: {C_GREEN}{top_source_name}{C_END} (Score: {top_source['properties']['overall_source_score']}) [Mock: {top_source['properties'].get('is_mock')} | Conf: {top_source['properties'].get('source_confidence')}]")
     
     # 2. Run Capability Orchestrator for Content Analysis
     print(f"\n2. {C_BOLD}Dispatching Task to AI Capability Orchestrator...{C_END}")
-    task_desc = f"請分析來源 {top_source_name} 的最新高票價行銷策略與痛點，並轉譯為 Erick ABL 品牌的 FB 貼文與短影音腳本。"
+    task_desc = f"請分析來源 {top_source_name} 的行銷與心態策略，並轉譯為 Erick ABL 品牌的 FB 貼文。"
     
     task_id = f"task_{uuid.uuid4().hex[:8]}"
     save_object(
@@ -265,45 +265,36 @@ def run_daily_workflow():
     
     classifier = TaskClassifier()
     classification = classifier.classify(task_desc)
-    print(f"   - Task Classifier matched capabilities: {C_GREEN}{classification['required_capabilities']}{C_END}")
     
     router = ModelRouter()
     route_info = router.route(classification['required_capabilities'])
-    print(f"   - Model Router sequence: {' ➔ '.join([m.upper() for m in route_info['route_sequence']])}")
     
     runner = MockRunner()
     outputs = runner.execute_route(task_id, route_info['route_sequence'], task_desc)
-    print(f"   {C_GREEN}✔ Orchestrator mock pipeline execution completed!{C_END}")
+    print(f"   {C_GREEN}✔ Orchestrator mock pipeline completed!{C_END}")
     
     # Fetch decision
     decision_engine = DecisionEngine()
-    decisions = decision_engine.generate_recommendations("test-brand")
+    dec = decision_engine.generate_recommendations("test-brand")
     
-    # Write events for daily workflows
+    # Write events
     save_object(f"event_collected_{task_id}", "Event", {"event_type": "content_collected", "source_id": top_source_id}, "Emitted", "system")
     save_object(f"event_analyzed_{task_id}", "Event", {"event_type": "intelligence_analyzed", "source_id": top_source_id}, "Emitted", "system")
-    save_object(f"event_asset_{task_id}", "Event", {"event_type": "content_asset_created", "source_id": top_source_id}, "Emitted", "system")
-    save_object(f"event_decision_{task_id}", "Event", {"event_type": "decision_generated"}, "Emitted", "system")
 
-    # 3. Create semantic nodes and trace relations in Knowledge Graph
-    # Category -> Source (already contains_source link in AutoDiscovery)
-    # Source -> Content
+    # 3. Create semantic nodes in KG
     content_id = f"content_{task_id}"
     KnowledgeGraph.create_node(content_id, "Content", {"title": f"Transcribed content from {top_source_name}", "body": outputs.get("facebook_post")})
     KnowledgeGraph.create_edge(top_source_id, content_id, "produces_content")
     
-    # Content -> Pattern
-    pattern_id = f"pattern_{task_id}" # created in MockRunner
+    pattern_id = f"pattern_{task_id}"
     KnowledgeGraph.create_edge(content_id, pattern_id, "links_to_pattern")
     
-    # Pattern -> Decision
-    decision_id = [d["id"] for d in get_objects_by_type("Decision")][0] # Fetch latest decision ID
+    dec_objects = get_objects_by_type("Decision")
+    decision_id = dec_objects[0]["id"] if dec_objects else "decision_fallback"
     KnowledgeGraph.create_edge(pattern_id, decision_id, "leads_to_decision")
     
-    print(f"\n3. {C_BOLD}Knowledge Graph Relations Synced:{C_END}")
-    print(f"   Category ({top_category_id}) ➔ Source ({top_source_id}) ➔ Content ({content_id}) ➔ Pattern ({pattern_id}) ➔ Decision ({decision_id})")
-    
-    print(f"\n{C_BOLD}{C_GREEN}✔ Daily Source-Centric Workflow executed successfully!{C_END}\n")
+    print(f"\n3. {C_BOLD}Knowledge Graph Traversal Edge Synced.{C_END}")
+    print(f"   ✔ Daily Source-Centric Workflow executed successfully!")
 
 def print_daily_decision():
     print_header("Daily Strategic Decision Output")
@@ -311,16 +302,28 @@ def print_daily_decision():
     dec = decision_engine.generate_recommendations("test-brand")
     
     print(f"🎯 {C_BOLD}今天最值得追蹤的 Source:{C_END} {C_GREEN}{dec['today_top_source']}{C_END}")
-    print(f"📝 {C_BOLD}今天最值得分析的 Content:{C_END} {dec['today_top_content']}")
-    print(f"💡 {C_BOLD}今天最值得寫的 Topic:{C_END} {C_YELLOW}{dec['today_top_topic']}{C_END}")
+    print(f"📡 {C_BOLD}Source Reality Check:{C_END}")
+    print(f"  - Is Mock Source: {C_YELLOW}{dec['is_mock']}{C_END}")
+    print(f"  - Source Confidence: {C_YELLOW}{dec['source_confidence']}{C_END}")
+    print(f"  - URL status: {C_YELLOW}{dec['url_status']}{C_END}")
+    print(f"  - Verified source conclusion: {'Verified' if dec['source_verified'] else 'Unverified / Simulated'}")
+    
+    print(f"\n🛡 {C_BOLD}Brand Guardrail Status:{C_END}")
+    print(f"  - Passed Brand Guardrail: {'Yes' if dec['passed_brand_guardrail'] else 'No (Forbidden words detected and rewritten)'}")
+    if not dec["passed_brand_guardrail"]:
+        print(f"  - Original Metaphysical Topic: {C_RED}{dec['original_topic']}{C_END}")
+        print(f"  - Rewritten Brand-Compliant Topic: {C_GREEN}{dec['rewritten_topic']}{C_END}")
+        
+    print(f"\n💡 {C_BOLD}今天最值得寫的 Topic (最終推薦):{C_END} {C_GREEN}{dec['today_top_topic']}{C_END}")
     print(f"🎬 {C_BOLD}今天最適合產出的 Content Format:{C_END} {dec['today_top_format']}")
-    print(f"🛡 {C_BOLD}建議理由:{C_END} {dec['reason']}")
+    print(f"📝 {C_BOLD}今天最值得分析的 Content:{C_END} {dec['today_top_content']}")
     print(f"📈 {C_BOLD}Confidence Score:{C_END} {C_GREEN}{dec['confidence_score'] * 100}%{C_END}")
+    print(f"💬 {C_BOLD}建議理由:{C_END} {dec['reason']}")
     
     print(f"\n{C_BOLD}今日推薦 Topic Top 5:{C_END}")
     for item in dec["today_top_5"]:
-        print(f"  [{item['priority']}] Rank {item['rank']}: {item['topic']} (Conf: {item['confidence'] * 100}%)")
-        print(f"    - Reason: {item['reason']}")
+        status_str = f" [Passed]" if item["passed_guardrail"] else f" [Rewritten from: '{item['original_topic']}']"
+        print(f"  [{item['priority']}] Rank {item['rank']}: {C_GREEN}{item['topic']}{C_END}{C_YELLOW}{status_str}{C_END}")
         
     print(f"\n{C_BOLD}本月行銷 Campaign 主題:{C_END} {C_PURPLE}{dec['monthly_campaign']['theme']}{C_END}")
     for g in dec['monthly_campaign']['campaign_goals']:
@@ -332,14 +335,6 @@ def main():
     
     if len(sys.argv) < 2:
         print(f"{C_BOLD}{C_RED}Error: Please specify a command flag.{C_END}")
-        print("Usage:")
-        print("  python3 run_source_os.py --list-categories")
-        print("  python3 run_source_os.py --discover \"<Category Name>\"")
-        print("  python3 run_source_os.py --score-sources")
-        print("  python3 run_source_os.py --promote-sources")
-        print("  python3 run_source_os.py --list-sources")
-        print("  python3 run_source_os.py --run-daily")
-        print("  python3 run_source_os.py --daily-decision")
         sys.exit(1)
         
     flag = sys.argv[1]
@@ -348,7 +343,7 @@ def main():
         list_categories()
     elif flag == "--discover":
         if len(sys.argv) < 3:
-            print(f"{C_RED}Error: Please specify the category name. E.g. python3 run_source_os.py --discover \"Women's Growth\"{C_END}")
+            print(f"{C_RED}Error: Please specify category name.{C_END}")
             sys.exit(1)
         discover_sources(sys.argv[2])
     elif flag == "--score-sources":

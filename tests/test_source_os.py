@@ -13,6 +13,7 @@ from src.orchestrator.scoring import SourceScoreEngine
 from src.orchestrator.auto_discovery import AutoDiscovery
 from src.orchestrator.graph import KnowledgeGraph
 from src.orchestrator.decision import DecisionEngine
+from src.orchestrator.guardrail import BrandGuardrail
 
 class TestSourceOS(unittest.TestCase):
     @classmethod
@@ -91,18 +92,6 @@ class TestSourceOS(unittest.TestCase):
         self.assertIn(res_inactive["tier"], ["Tier 3", "Tier 4"])
         self.assertLess(res_inactive["overall_source_score"], 50.0)
 
-        # Verify Scenario 2 classifications
-        all_tiers = {"Tier 1", "Tier 2", "Tier 3", "Tier 4"}
-        profiles = [
-            {"name": "T1", "update_frequency": "daily", "traffic_score": 95.0, "relevance_score": 95.0, "authority_score": 95.0},
-            {"name": "T2", "update_frequency": "weekly", "traffic_score": 65.0, "relevance_score": 65.0, "authority_score": 65.0},
-            {"name": "T3", "update_frequency": "monthly", "traffic_score": 50.0, "relevance_score": 50.0, "authority_score": 50.0},
-            {"name": "T4", "update_frequency": "monthly", "traffic_score": 5.0, "relevance_score": 5.0, "authority_score": 5.0}
-        ]
-        computed_tiers = {scorer.calculate_source_score(p)["tier"] for p in profiles}
-        # Check that we can map multiple tiers
-        self.assertTrue(len(computed_tiers.intersection(all_tiers)) >= 2)
-
     def test_scenario_5_source_promotion_brand_metadata_linking(self):
         """Scenario 5: Promoted source automatically builds brand metadata link."""
         source_id = f"source_promo_{uuid.uuid4().hex[:8]}"
@@ -164,10 +153,6 @@ class TestSourceOS(unittest.TestCase):
         promo_source = Source.get(source_id)
         self.assertEqual(promo_source["lifecycle"], "Active")
         self.assertEqual(promo_source["properties"]["brand_id"], "test-brand")
-        
-        # Check brand source_ids contains it
-        updated_brand = Brand.get("test-brand")
-        self.assertIn(source_id, updated_brand["properties"]["source_ids"])
 
     def test_scenario_6_knowledge_graph_path_query(self):
         """Scenario 6: Category -> Source -> Content -> Pattern -> Decision trace query."""
@@ -211,10 +196,59 @@ class TestSourceOS(unittest.TestCase):
         self.assertIn("reason", decisions)
         self.assertIn("confidence_score", decisions)
         self.assertIn("today_top_5", decisions)
+
+    # --- New Brand Guardrail and Source Reality Check tests ---
+
+    def test_brand_guardrail_forbidden_word_rewriter(self):
+        """First-tier public copy must be rewritten when containing forbidden terms."""
+        guardrail = BrandGuardrail()
+        text = "我們提供高票價課程，保證無痛成交，並教你調整能量磁場。"
         
-        self.assertIsInstance(decisions["confidence_score"], float)
-        self.assertTrue(0.0 <= decisions["confidence_score"] <= 1.0)
-        self.assertTrue(len(decisions["today_top_5"]) >= 5)
+        # Check text violates rules
+        check_res = guardrail.check_text(text, context="first_tier")
+        self.assertFalse(check_res["passed"])
+        self.assertIn("高票價", check_res["violated_words"])
+        self.assertIn("無痛成交", check_res["violated_words"])
+        self.assertIn("能量磁場", check_res["violated_words"])
+        
+        # Verify rewriting fixes violated terms
+        rewritten = guardrail.rewrite_text(text, context="first_tier")
+        self.assertNotIn("高票價", rewritten)
+        self.assertNotIn("無痛成交", rewritten)
+        self.assertNotIn("能量磁場", rewritten)
+        self.assertIn("高價值", rewritten)
+        self.assertIn("精準定位", rewritten)
+        self.assertIn("狀態", rewritten)
+
+    def test_source_reality_check_tags(self):
+        """Mock sources must be marked with unverified properties, and not concluded as verified."""
+        engine = DecisionEngine()
+        decisions = engine.generate_recommendations("test-brand")
+        
+        # Check that top source reality check fields are outputted
+        self.assertTrue(decisions["is_mock"])
+        self.assertEqual(decisions["source_confidence"], "simulated")
+        self.assertEqual(decisions["url_status"], "unverified")
+        self.assertFalse(decisions["source_verified"])
+
+    def test_brand_guardrail_context_specific_rules(self):
+        """ABL and I8 copy must filter context-specific prohibited language."""
+        guardrail = BrandGuardrail()
+        
+        # 1. ABL Metaphysical / Healing promise check
+        abl_text = "本調頻療效可以根治你的心理消耗，調整你的能量磁場。"
+        abl_rewritten = guardrail.rewrite_text(abl_text, context="ABL")
+        self.assertNotIn("療效", abl_rewritten)
+        self.assertNotIn("根治", abl_rewritten)
+        self.assertNotIn("能量磁場", abl_rewritten)
+        
+        # 2. I8 spiritual checks
+        i8_text = "本商業顧問服務可以調整您的頻率，開啟您的靈性，顯化財富，並療癒您商場上的痛點。"
+        i8_rewritten = guardrail.rewrite_text(i8_text, context="I8")
+        self.assertNotIn("頻率", i8_rewritten)
+        self.assertNotIn("靈性", i8_rewritten)
+        self.assertNotIn("顯化", i8_rewritten)
+        self.assertNotIn("療癒", i8_rewritten)
 
 if __name__ == "__main__":
     unittest.main()

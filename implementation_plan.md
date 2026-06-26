@@ -1,64 +1,58 @@
-# Implementation Plan: Source-Centric Brand Intelligence OS
+# Implementation Plan: Brand Guardrail & Decision Correction
 
-This plan details the migration of Brand Intelligence OS from a brand-centric design to a **Source-Centric** model.
+This plan details the addition of a **Brand Guardrail** system and a **Source Reality Check** to the Brand Intelligence OS.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> The core entity of the system is now **Source**, and **Brand** is downgraded to metadata representing a collection of sources. All analytics, content extraction, and decision recommendations flow from the intelligence harvested from Sources.
-
-## Open Questions
-No open questions. The requirements are fully specified. We will proceed to mock API layers without external network requests, in accordance with the specifications.
+> * **Brand Guardrail**: All daily decisions, topics, and marketing suggestions will be scanned for forbidden words across Erick parent, NAS, ABL, and I8 sub-brands. First-tier public copy is strictly censored and automatically rewritten to comply.
+> * **Source Reality Check**: Discovered mock sources are explicitly tagged with `is_mock = true`, `source_confidence = "simulated"`, and `url_status = "unverified"`. Only verified sources (verified via search/API) can be treated as real source conclusions.
 
 ## Proposed Changes
 
-### Database & Models Layer
+### 1. Brand Guardrail Module
 
-#### [MODIFY] [models.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/models.py)
-* Update `Category` model to contain `category_id`, `name`, `description`, `keywords` (JSON list), `target_audience`, `region`, `language`, `priority`, `status`.
-* Update `Source` model to support all specified attributes (scores, urls, social fields, tiers, status, created_at, updated_at).
-* Update `Brand` model to act as metadata containing `brand_id`, `name`, `positioning`, `audience`, `products`, `tone`, `region`, `language`, `source_ids`, `status`.
+#### [NEW] [guardrail.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/guardrail.py)
+* Create `BrandGuardrail` class containing check and rewrite mappings for:
+  * **First-tier Public Copy**: Prohibits `能量磁場`, `信息場`, `頻率`, `調頻`, `高票價`, `無痛成交`. Rewrites them respectively to `狀態`/`承接力`, `內在狀態`, `狀態`, `調整狀態`, `高價值`, `精準定位`.
+  * **ABL**: Rewrites healing promises and metaphysical vocabulary to compliant ABL phrases: `狀態`, `穩定`, `支持`, `承接力`, `內在消耗`, `身心壓力`, `自我價值`.
+  * **NAS**: Prohibits `信息場`, `調頻`, `能量磁場`.
+  * **I8**: Prohibits `靈性`, `頻率`, `能量場`, `顯化`, `療癒`.
+  * **Erick Parent**: Reduces abstractness in public copy, allowing `關鍵因素`, `顯態/隱態`, `狀態`, `人生下半場`, `意識結構`, `隱形線索`.
 
 ---
 
-### Engine Layer
+### 2. Source Reality Check Integration
 
 #### [MODIFY] [discovery.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/discovery.py)
-* Refactor `SourceDiscoveryEngine` to yield at least 10 mock candidate sources for a category (supporting `"Women's Growth"` and others).
-* Include a list of future plugin registrations (e.g. `google_search`, `youtube_api`, `firecrawl`, etc.).
+* Update `SourceDiscoveryEngine` to assign properties `is_mock = true`, `source_confidence = "simulated"`, and `url_status = "unverified"` to all mock candidates.
 
-#### [MODIFY] [scoring.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/scoring.py)
-* Refactor `SourceScoreEngine` to score Authority, Traffic, SEO, Update Frequency, Content Quality, Community Activity, Commercial Value, Trust, Influence, and Relevance to Erick Ecosystem.
-* Calculate `overall_source_score`.
-* Integrate pluggable scoring plugins (`opportunity_scorer`, `gap_scorer`, `roi_scorer`, and future plugins).
-* Implement tier classification (Tiers 1-4).
-
-#### [NEW] [auto_discovery.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/auto_discovery.py)
-* Build the automatic discovery daily workflow: Read categories ➔ Find candidates ➔ Score ➔ Rank Tier ➔ Promote if score >= threshold ➔ Link brand metadata ➔ Emit `source_discovered` events ➔ Sync to Knowledge Graph.
-
-#### [MODIFY] [graph.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/graph.py)
-* Add a trace path method to verify Category ➔ Source ➔ Content ➔ Pattern ➔ Decision relation sequences.
-
-#### [MODIFY] [decision.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/decision.py)
-* Build decision recommendation output detailing top sources, top content, top topics, suitable formats, reasoning, and confidence scores.
-
-#### [NEW] [run_source_os.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/run_source_os.py)
-* CLI script wrapping the 7 command line tasks.
+#### [MODIFY] [models.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/models.py)
+* Ensure `Source.create` accepts and records `is_mock`, `source_confidence`, and `url_status` properties in the SQLite registry.
 
 ---
 
-### Verification Plan
+### 3. Decision Engine Updates
+
+#### [MODIFY] [decision.py](file:///Users/erickair/.gemini/antigravity/scratch/ai_content_factory/src/orchestrator/decision.py)
+* Integrate `BrandGuardrail` within `DecisionEngine.generate_recommendations`.
+* Filter recommended topics through the guardrail.
+* Include compliance checks in the recommendation dictionary:
+  * `source_is_mock` (bool)
+  * `source_verified` (bool)
+  * `passed_brand_guardrail` (bool)
+  * `original_topic` (str)
+  * `rewritten_topic` (str)
+* Replace sales-heavy metaphysical topics (e.g. "如何透過 ABL 能量磁場與價值階梯無痛成交高票價諮詢") with compliant, public-friendly topics (e.g. "中年女性為什麼明明很努力，卻還是覺得狀態接不住？" or "不是妳不夠努力，而是妳的狀態已經長期過載。").
+
+---
+
+### 4. Verification Plan
 
 #### Automated Tests
-* Create `tests/test_source_os.py` verifying all 7 Scenarios.
-* Run tests with: `python3 -m unittest tests/test_source_os.py`
-
-#### Manual Verification
-* Run CLI commands:
-  * `python3 run_source_os.py --list-categories`
-  * `python3 run_source_os.py --discover "Women's Growth"`
-  * `python3 run_source_os.py --score-sources`
-  * `python3 run_source_os.py --promote-sources`
-  * `python3 run_source_os.py --list-sources`
-  * `python3 run_source_os.py --run-daily`
-  * `python3 run_source_os.py --daily-decision`
+* Update `tests/test_source_os.py` with test cases verifying:
+  * Guardrail correctly rewrites forbidden vocabulary ("能量磁場", "高票價", "無痛成交").
+  * Mock URLs are flagged as unverified.
+  * Daily decisions display `source_confidence` and compliance fields.
+  * ABL and I8 copy contains no prohibited metaphysical words.
+* Run tests: `python3 -m unittest tests/test_source_os.py`

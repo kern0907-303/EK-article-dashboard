@@ -27,6 +27,7 @@ class SourceDiscoveryEngine:
         """
         Mock discovers at least 10 candidate sources based on a Category ID.
         Includes all source types and satisfies Scenarios 1, 3, and 4.
+        Ensures all mock sources are clearly flagged with Source Reality Check tags.
         """
         candidates = []
         clean_cat = category_id.lower().replace("'", "").replace(" ", "_")
@@ -173,7 +174,11 @@ class SourceDiscoveryEngine:
                 "relevance_score": item["relevance"],
                 "authority_score": item["authority"],
                 "country": "US",
-                "language": "en"
+                "language": "en",
+                # Source Reality Check fields
+                "is_mock": True,
+                "source_confidence": "simulated",
+                "url_status": "unverified"
             })
             
         return candidates

@@ -1,12 +1,13 @@
-# Task List: Source-Centric Implementation
+# Task List: Brand Guardrail & Decision Correction
 
-- `[x]` Refactor `src/orchestrator/models.py` with updated Category, Source, and Brand schemas.
-- `[x]` Refactor `src/orchestrator/discovery.py` with mock candidate source lists and plugin interface.
-- `[x]` Refactor `src/orchestrator/scoring.py` with updated scoring criteria, pluggable formulas, and tiering logic.
-- `[x]` Create `src/orchestrator/auto_discovery.py` implementing the automated discovery workflow.
-- `[x]` Update `src/orchestrator/graph.py` to enable querying semantic path relations.
-- `[x]` Refactor `src/orchestrator/decision.py` to output detailed daily decision suggestions.
-- `[x]` Create CLI tool `run_source_os.py` with the 7 required CLI options.
-- `[x]` Create Scenario tests in `tests/test_source_os.py`.
-- `[x]` Run and verify tests.
-- `[x]` Update/Create required documents.
+- `[ ]` Create `src/orchestrator/guardrail.py` containing rule-based brand keyword checks and rewrites.
+- `[ ]` Modify `src/orchestrator/discovery.py` to tag candidates with reality checks (`is_mock`, `source_confidence`, `url_status`).
+- `[ ]` Modify `src/orchestrator/models.py` to ensure Source properties store the reality check fields.
+- `[ ]` Modify `src/orchestrator/decision.py` to pass suggestions through the Brand Guardrail and output compliance states.
+- `[ ]` Update CLI tool `run_source_os.py` to support and display reality check fields and guardrail results.
+- `[ ]` Update `tests/test_source_os.py` with test cases covering guardrail validation and reality check tagging.
+- `[ ]` Verify tests pass.
+- `[ ]` Create and update required documents:
+  - `guardrail_implementation_summary.md`
+  - `updated_test_report.md`
+  - `corrected_daily_decision_sample.md`
