@@ -476,6 +476,9 @@ def main():
     elif flag == "--daily-intelligence-real":
         from src.orchestrator.data_acquisition import run_real_daily_decision
         run_real_daily_decision()
+    elif flag == "--daily-production-run":
+        from src.orchestrator.data_acquisition import run_daily_production_run
+        run_daily_production_run()
     elif flag == "--production-readiness-check":
         from src.orchestrator.data_acquisition import run_production_readiness_check
         run_production_readiness_check()
