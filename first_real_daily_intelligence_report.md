@@ -1,75 +1,74 @@
-# First Real Daily Intelligence Report
-
-Generated on: 2026-06-27 17:54:47
+# Daily Intelligence Report
+Generated on: 2026-06-27 19:33:09
 Data Quality Target: Level 2 Ingested Real Data (Relevance Filter Applied)
 
 ---
 
 ## 1. Data Quality Summary
 * **Total Checked Sources**: 102 (Level 1 Verified)
-* **Active Content Ingested**: 155 items (Level 2 Ingested)
-* **Eligible Content Ingested**: 37 items (Gates Passed)
+* **Active Content Ingested**: 78 items (Level 2 Ingested)
+* **Eligible Content Ingested**: 39 items (Gates Passed)
 * **Mock Data Exclusion**: Checked and confirmed that Level 0 data is isolated.
 
 ## 2. Ingested Content Analysis (Top 5 Worth Analyzing)
-* **#1: interviews with Derek Sivers**
-  - URL: https://sivers.org/i
-  - Word Count: 5582 words
-  - Source ID: source_real_100
-  - Source Name: Derek Sivers Blog
-* **#2: Board of Overseers - Harvard University**
-  - URL: https://www.harvard.edu/about/leadership-and-governance/board-of-overseers/
-  - Word Count: 2254 words
-  - Source ID: source_real_025
-  - Source Name: Harvard University
-* **#3: All American Patriotism&ndash; HarperCollins**
-  - URL: https://www.harpercollins.com/products/all-american-patriotism-rachel-campos-duffy
-  - Word Count: 2165 words
-  - Source ID: source_real_088
-  - Source Name: HarperCollins
-* **#4: eBook Deals | Simon &amp; Schuster**
-  - URL: https://www.simonandschuster.com/p/ebook-deals
-  - Word Count: 2060 words
-  - Source ID: source_real_089
-  - Source Name: Simon & Schuster
-* **#5: Math for Web Design - Paul McFedries**
-  - URL: https://www.manning.com/books/math-for-web-design
-  - Word Count: 1919 words
+* **#1: Download_on_the_App_Store_Badge_US-UK_RGB_blk_4SVG_092917**
+  - URL: https://www.ted.com/podcasts
+  - Word Count: 2927 words
+  - Source ID: source_real_052
+  - Source Name: TED
+* **#2: Grammarly Home**
+  - URL: https://www.grammarly.com/ai
+  - Word Count: 2110 words
+  - Source ID: source_real_070
+  - Source Name: Grammarly
+* **#3: Terms of Use | Stanford University**
+  - URL: https://www.stanford.edu/terms
+  - Word Count: 1891 words
+  - Source ID: source_real_024
+  - Source Name: Stanford University
+* **#4: Computer Science books  | Manning**
+  - URL: https://www.manning.com/catalog/other/computer-science
+  - Word Count: 1819 words
   - Source ID: source_real_079
   - Source Name: Manning
+* **#5: PreK–12 Customer Support | McGraw Hill**
+  - URL: https://www.mheducation.com/prek-12/support.html
+  - Word Count: 1805 words
+  - Source ID: source_real_085
+  - Source Name: McGraw Hill
 
 ## 3. Recommended Topics (V3 Decision Filter & Evidence Linkage Applied)
-* **Rank 1: 創業家的內在消耗管理**
+* **Rank 1: 建立穩定的創業支持體系**
   - Suggested Format: Facebook Post
-  - Supporting Content: content_real_7b6a1c54bf04, content_real_9ed591187112
-  - Supporting Sources: Derek Sivers Blog, Harvard University
-  - Extracted Pain: 創業者經常面臨內在消耗的問題，這個問題會影響到他們的穩定狀態與創業成功。
-  - Extracted Desire: 創業者渴望獲得支持和指導，尋求如何管理內在消耗以提升創業效果和生活質量。
-  - Call to Action (CTA): 預約 15 分鐘狀態調整支持電話，幫助您穩定狀態。
+  - Supporting Content: content_real_4edb1af3d467, content_real_f51c208788cf
+  - Supporting Sources: Grammarly, McGraw Hill
+  - Extracted Pain: Many female entrepreneurs face instability in their business journeys without support systems.
+  - Extracted Desire: Women entrepreneurs desire a stable support framework that helps them navigate their business challenges effectively.
+  - Call to Action (CTA): 預約 15 分鐘狀態調整支持電話
   - Draft Status: `pending_review` (No auto-publishing)
-* **Rank 2: 如何提升自我價值以支持創業**
+* **Rank 2: 提升自我價值以穩定創業**
   - Suggested Format: Reels Video Script
-  - Supporting Content: content_real_341281e434e9, content_real_0b40fe1dd6da
-  - Supporting Sources: HarperCollins, Manning
-  - Extracted Pain: 創業過程中的不確定性常常造成人們懷疑自己的自我價值。
-  - Extracted Desire: 女性創業者希望找到途徑提升自我價值，並在創業旅程中獲得更多自信與穩定。
-  - Call to Action (CTA): 立即預約 15 分鐘狀態調整支持電話，提升自我價值。
+  - Supporting Content: content_real_4edb1af3d467, content_real_e8e7a68fb76b
+  - Supporting Sources: Grammarly, Stanford University
+  - Extracted Pain: A lack of self-worth can lead to decision fatigue and instability in entrepreneurial roles.
+  - Extracted Desire: Women entrepreneurs are looking to enhance their self-worth to create a more substantial impact in their ventures.
+  - Call to Action (CTA): 預約 15 分鐘狀態調整支持電話
   - Draft Status: `pending_review` (No auto-publishing)
-* **Rank 3: 創業者的穩定與承接力**
+* **Rank 3: 創業者的內在狀態調整**
   - Suggested Format: Interactive Quiz
-  - Supporting Content: content_real_9ed591187112, content_real_0b40fe1dd6da
-  - Supporting Sources: Harvard University, Manning
-  - Extracted Pain: 許多創業者在面對挑戰時缺乏穩定性與承接力，導致其創業圈的結果不理想。
-  - Extracted Desire: 創業者希望獲得能讓她們在逆境中依然能保持穩定的工具和策略。
-  - Call to Action (CTA): 預約 15 分鐘狀態調整支持電話，增強您的穩定性與承接力。
+  - Supporting Content: content_real_32f8ab14c407, content_real_f51c208788cf
+  - Supporting Sources: Manning, McGraw Hill
+  - Extracted Pain: Entrepreneurs often struggle with managing their internal state, leading to decreased productivity.
+  - Extracted Desire: There is a strong desire for tools and strategies to adjust internal states, facilitating better focus and self-management.
+  - Call to Action (CTA): 預約 15 分鐘狀態調整支持電話
   - Draft Status: `pending_review` (No auto-publishing)
 
 ## 4. Rejected Candidates
-* **✖ 靈性成長的隱秘技巧**
-  - Rejection Reason: 這個話題與目標市場及產品不相關，且許多準則被禁止使用。
+* **✖ 靈性與宇宙連接的論述**
+  - Rejection Reason: This topic does not align with the practical and actionable focus needed for female entrepreneurs seeking business stability.
 
 ## 5. Token Usage & Cost Audit
-* **Prompt Tokens**: 2652
-* **Completion Tokens**: 897
-* **Total Estimated Tokens**: 3549
-* **Estimated API Cost**: $0.00094 USD
+* **Prompt Tokens**: 2502
+* **Completion Tokens**: 687
+* **Total Estimated Tokens**: 3189
+* **Estimated API Cost**: $0.00079 USD
