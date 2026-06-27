@@ -430,6 +430,29 @@ def main():
         run_daily_workflow()
     elif flag == "--daily-decision":
         print_daily_decision()
+    elif flag == "--seed-libraries":
+        from src.orchestrator.data_acquisition import seed_all_libraries
+        print(f"{C_BOLD}{C_PURPLE}Seeding 100 Sources, 1000 Patterns, and 100 Formulas into Registry...{C_END}")
+        seed_all_libraries()
+        print(f"{C_GREEN}✔ Seeding completed successfully!{C_END}")
+    elif flag == "--search-libraries":
+        filters = {}
+        for arg in sys.argv[2:]:
+            if "=" in arg:
+                k, v = arg.split("=", 1)
+                filters[k.strip()] = v.strip()
+        from src.orchestrator.data_acquisition import search_libraries
+        results = search_libraries(filters)
+        print(f"\n{C_BOLD}{C_CYAN}--- Library Search Results ({len(results)} Matches) ---{C_END}")
+        for r in results[:10]:
+            props = r["properties"]
+            print(f"\n* {C_BOLD}Pattern ID:{C_END} {r['id']} ({props.get('pattern_type')})")
+            print(f"  - Content: {C_GREEN}{props.get('content')}{C_END}")
+            print(f"  - Brand: {C_YELLOW}{props.get('brand')}{C_END} | Audience: {props.get('audience')}")
+            print(f"  - Pain: {props.get('pain')[:40]}...")
+            print(f"  - Offer: {props.get('offer')} | CTA: {props.get('cta')}")
+        if len(results) > 10:
+            print(f"\n... and {len(results) - 10} more matches.")
     else:
         print(f"{C_RED}Unknown command: {flag}{C_END}")
         sys.exit(1)

@@ -114,5 +114,31 @@ class TestSprint1Integration(unittest.TestCase):
             res_firecrawl = plugin.scrape("https://some-competitor-funnel.com")
             self.assertIn("Simulated", res_firecrawl)
 
+    def test_library_data_acquisition(self):
+        """Verify that seeding registers exactly 100 sources, 1000 patterns, and 100 formulas in SQLite."""
+        from src.orchestrator.data_acquisition import seed_all_libraries, search_libraries
+        from src.database import get_objects_by_type
+        
+        # Seed
+        seed_all_libraries()
+        
+        # Verify counts
+        sources = get_objects_by_type("Source")
+        patterns = get_objects_by_type("Pattern")
+        formulas = get_objects_by_type("Formula")
+        
+        # Asserts
+        self.assertTrue(len(sources) >= 100)
+        self.assertTrue(len(patterns) >= 1000)
+        self.assertTrue(len(formulas) >= 100)
+        
+        # Verify searchability
+        matches = search_libraries({"brand": "ABL"})
+        self.assertTrue(len(matches) > 0)
+        
+        # Verify specific filter
+        matches_cta = search_libraries({"brand": "ABL", "cta": "預約 15 分鐘狀態調整支持電話"})
+        self.assertTrue(len(matches_cta) > 0)
+
 if __name__ == "__main__":
     unittest.main()
