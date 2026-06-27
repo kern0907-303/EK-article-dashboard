@@ -54,4 +54,5 @@ storage/knowledge_base.md
 storage/handoff_*.md
 .env
 backups/
-operations/
+operations/daily/
+operations/logs/
