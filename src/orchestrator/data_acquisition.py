@@ -1175,6 +1175,438 @@ def fetch_real_content_eligible(limit_per_source=2):
             
     return total_fetched, failed_fetches
 
+def generate_daily_html_report(date_str, status, summary, rec_topics, top_5, rejected_topics, draft_assets, prompt_tokens, completion_tokens, total_tokens, cost, dq_summary, failed_sources, failed_api_calls, failed_fetches):
+    html = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日行銷情報與決策 - {date_str}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #090d16;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }}
+        .header-bg {{
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid #334155;
+            padding: 40px 20px;
+            text-align: center;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        h1 {{
+            margin: 0 0 10px 0;
+            font-size: 2.2em;
+            color: #38bdf8;
+        }}
+        .status-badge {{
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.95em;
+            margin-top: 10px;
+        }}
+        .status-badge.confirmed {{
+            background-color: #0369a1;
+            color: #e0f2fe;
+            border: 1px solid #0284c7;
+        }}
+        .status-badge.failed {{
+            background-color: #991b1b;
+            color: #fee2e2;
+            border: 1px solid #b91c1c;
+        }}
+        .section-card {{
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }}
+        h2 {{
+            color: #38bdf8;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 8px;
+            margin-top: 0;
+            font-size: 1.4em;
+        }}
+        .topic-card {{
+            background-color: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }}
+        .topic-title {{
+            font-weight: bold;
+            font-size: 1.15em;
+            color: #f8fafc;
+            margin-bottom: 10px;
+        }}
+        .topic-meta {{
+            font-size: 0.9em;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }}
+        .topic-meta strong {{
+            color: #cbd5e1;
+        }}
+        .content-card {{
+            border-left: 4px solid #0284c7;
+            padding-left: 12px;
+            margin-bottom: 16px;
+        }}
+        .content-title {{
+            font-weight: bold;
+            color: #f8fafc;
+        }}
+        .content-link {{
+            color: #38bdf8;
+            text-decoration: none;
+            font-size: 0.9em;
+        }}
+        .content-link:hover {{
+            text-decoration: underline;
+        }}
+        .cost-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 12px;
+        }}
+        .cost-item {{
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }}
+        .cost-value {{
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #f8fafc;
+        }}
+        .nav-links {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #334155;
+        }}
+        .nav-links a {{
+            color: #38bdf8;
+            text-decoration: none;
+            margin: 0 15px;
+        }}
+        .nav-links a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header-bg">
+        <h1>{date_str} 每日品牌策略情報</h1>
+        <div style="color: #94a3b8; font-size: 1.05em;">Brand Intelligence OS Dashboard</div>
+        <span class="status-badge {'confirmed' if status == 'DAILY_RUN_CONFIRMED' else 'failed'}">{status}</span>
+    </div>
+    
+    <div class="container">
+        <div class="section-card">
+            <h2>今日執行摘要</h2>
+            <p style="font-size: 1.1em; color: #f1f5f9; font-weight: 500; margin: 0;">{summary}</p>
+        </div>
+        
+        <div class="section-card">
+            <h2>今日 Top 3 建議主題</h2>
+"""
+    for idx, t in enumerate(rec_topics):
+        html += f"""
+            <div class="topic-card">
+                <div class="topic-title">Rank {idx+1}: {t['topic']}</div>
+                <div class="topic-meta"><strong>建議格式：</strong>{t['content_type']}</div>
+                <div class="topic-meta"><strong>痛點：</strong>{t.get('extracted_pain_points', '')}</div>
+                <div class="topic-meta"><strong>渴望：</strong>{t.get('extracted_desires', '')}</div>
+                <div class="topic-meta"><strong>CTA / Offer：</strong>{t.get('extracted_cta_or_offer', '')}</div>
+                <div class="topic-meta"><strong>推薦原因：</strong>{t.get('why_recommended', '')}</div>
+                <div class="topic-meta"><strong>佐證來源：</strong>{', '.join(t.get('supporting_source_names', []))}</div>
+            </div>
+        """
+        
+    html += f"""
+        </div>
+        
+        <div class="section-card">
+            <h2>今日 Top 5 值得研究內容</h2>
+"""
+    for idx, c in enumerate(top_5):
+        props = c["properties"]
+        html += f"""
+            <div class="content-card">
+                <div class="content-title">#{idx+1}: {props.get('title')}</div>
+                <div class="topic-meta" style="margin-bottom: 4px;">來源: {props.get('source_name')} | 字數: {props.get('word_count')} words</div>
+                <a href="{props.get('url')}" target="_blank" class="content-link">訪問原始連結 →</a>
+            </div>
+        """
+        
+    html += f"""
+        </div>
+        
+        <div class="section-card">
+            <h2>今日淘汰主題</h2>
+"""
+    for idx, r in enumerate(rejected_topics):
+        html += f"""
+            <div style="margin-bottom: 12px; border-left: 4px solid #da3633; padding-left: 12px;">
+                <div style="font-weight: bold; color: #f8fafc;">✖ {r['topic']}</div>
+                <div style="font-size: 0.9em; color: #94a3b8;">淘汰原因: {r['reason']}</div>
+            </div>
+        """
+        
+    html += f"""
+        </div>
+        
+        <div class="section-card">
+            <h2>今日草稿產出預覽</h2>
+"""
+    for idx, (path, topic) in enumerate(draft_assets):
+        html += f"""
+            <div style="margin-bottom: 16px; background: #0f172a; padding: 12px; border-radius: 6px;">
+                <div style="font-weight: bold; color: #f8fafc;">草稿 #{idx+1}: {topic}</div>
+                <div style="font-size: 0.9em; color: #94a3b8; margin-top: 4px;">檔案路徑: <code style="background: #1e293b; padding: 2px 4px; border-radius: 4px;">{path}</code> | 狀態: <span style="color: #38bdf8; font-weight: bold;">pending_review</span></div>
+            </div>
+        """
+        
+    html += f"""
+        </div>
+        
+        <div class="section-card">
+            <h2>運算成本與資源日誌</h2>
+            <div class="cost-grid">
+                <div class="cost-item">
+                    <div class="cost-value">${cost:.5f}</div>
+                    <div style="color: #94a3b8; font-size: 0.85em; margin-top: 4px;">估算 API 費用 (USD)</div>
+                </div>
+                <div class="cost-item">
+                    <div class="cost-value">{total_tokens}</div>
+                    <div style="color: #94a3b8; font-size: 0.85em; margin-top: 4px;">總消耗 Tokens</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; font-size: 0.9em; color: #94a3b8;">
+                • OpenAI 消耗: Prompt {prompt_tokens} / Completion {completion_tokens} (Total: {total_tokens})<br>
+                • Claude 消耗: 0 | Gemini 消耗: 0
+            </div>
+        </div>
+        
+        <div class="section-card">
+            <h2>資料品質與異常監控</h2>
+            <div style="font-size: 0.95em;">
+                <strong>資料品質分布：</strong><br>
+                • Level 0 (Mock): {dq_summary.get('l0', 0)} (完全隔離)<br>
+                • Level 1 (Verified): {dq_summary.get('l1', 0)} sources<br>
+                • Level 2 (Real Clean): {dq_summary.get('l2', 0)} articles<br>
+                <br>
+                <strong>今日異常摘要：</strong><br>
+                • 離線/不可達 Source: {len(failed_sources)}<br>
+                • API 呼叫失敗: {len(failed_api_calls)}<br>
+                • 內容抓取失敗: {len(failed_fetches)}
+            </div>
+        </div>
+        
+        <div class="nav-links">
+            <a href="../../index.html">← 返回決策總覽首頁</a>
+            <a href="../../daily/{date_str}/daily_morning_brief.md" target="_blank">查看原始 Markdown 歸檔</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return html
+
+def rebuild_dashboard_index():
+    import glob
+    import os
+    import re
+    from datetime import datetime
+    
+    daily_dirs = glob.glob("operations/site/daily/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]")
+    runs = []
+    
+    for d in daily_dirs:
+        date_str = os.path.basename(d)
+        brief_path = f"operations/daily/{date_str}/daily_morning_brief.md"
+        
+        status = "UNKNOWN"
+        topics = []
+        cost_str = "$0.00"
+        
+        if os.path.exists(brief_path):
+            with open(brief_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            for line in lines:
+                if "DAILY_RUN_CONFIRMED" in line:
+                    status = "DAILY_RUN_CONFIRMED"
+                elif "DAILY_RUN_FAILED" in line:
+                    status = "DAILY_RUN_FAILED"
+            
+            topic_parsing = False
+            for line in lines:
+                if "## 3. 今日 Top 3 建議主題" in line or "Top 3 Topics" in line:
+                    topic_parsing = True
+                    continue
+                if topic_parsing and line.startswith("## "):
+                    topic_parsing = False
+                if topic_parsing and line.strip().startswith("* **Rank"):
+                    parts = line.split(":", 1)
+                    if len(parts) > 1:
+                        topics.append(parts[1].strip())
+                elif topic_parsing and (line.strip().startswith("* **#") or line.strip().startswith("- **#")):
+                    parts = line.split(":", 1)
+                    if len(parts) > 1:
+                        topics.append(parts[1].strip())
+                        
+            for line in lines:
+                if "Estimated API Cost" in line or "estimated cost" in line or "今日成本" in line or "Cost" in line:
+                    cost_match = re.search(r'\$\s*([0-9\.]+)', line)
+                    if cost_match:
+                        cost_str = f"${cost_match.group(1)}"
+                        
+        runs.append({
+            "date": date_str,
+            "status": status,
+            "topics": topics,
+            "cost": cost_str,
+            "link": f"daily/{date_str}/index.html"
+        })
+        
+    runs.sort(key=lambda x: x["date"], reverse=True)
+    
+    html = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brand Intelligence OS Dashboard</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+        }}
+        h1 {{
+            color: #58a6ff;
+            border-bottom: 1px solid #21262d;
+            padding-bottom: 10px;
+        }}
+        .run-card {{
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: transform 0.2s;
+        }}
+        .run-card:hover {{
+            transform: scale(1.01);
+            border-color: #58a6ff;
+        }}
+        .header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .date {{
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #f0f6fc;
+        }}
+        .status {{
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }}
+        .status.confirmed {{
+            background-color: #1f6feb;
+            color: #f0f6fc;
+        }}
+        .status.failed {{
+            background-color: #da3633;
+            color: #f0f6fc;
+        }}
+        .topics-list {{
+            margin: 10px 0;
+            padding-left: 20px;
+            color: #8b949e;
+        }}
+        .footer-info {{
+            font-size: 0.9em;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+        }}
+        a {{
+            color: #58a6ff;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Brand Intelligence OS 每日決策總覽</h1>
+        <div style="margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
+            更新時間: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        </div>
+"""
+    for r in runs:
+        status_class = "confirmed" if r["status"] == "DAILY_RUN_CONFIRMED" else "failed"
+        html += f"""
+        <div class="run-card">
+            <div class="header">
+                <span class="date"><a href="{r['link']}">{r['date']} 決策報告</a></span>
+                <span class="status {status_class}">{r['status']}</span>
+            </div>
+            <ul class="topics-list">
+        """
+        for t in r["topics"]:
+            html += f"        <li>{t}</li>\n"
+        if not r["topics"]:
+            html += "        <li>無建議主題</li>\n"
+            
+        html += f"""
+            </ul>
+            <div class="footer-info">
+                <span>估算成本: {r['cost']}</span>
+                <a href="{r['link']}">查看完整報告 →</a>
+            </div>
+        </div>
+        """
+        
+    html += """
+    </div>
+</body>
+</html>
+"""
+    os.makedirs("operations/site", exist_ok=True)
+    with open("operations/site/index.html", "w", encoding="utf-8") as f:
+        f.write(html)
+
 def run_daily_production_run():
     """Performs the complete automated daily production run."""
     import os
@@ -1243,6 +1675,61 @@ DAILY_RUN_FAILED
             f.write(run_summary)
         with open(os.path.join(ops_dir, "daily_morning_brief.md"), "w", encoding="utf-8") as f:
             f.write(brief_md)
+            
+        # Generate Failed HTML for today
+        site_daily_dir = f"operations/site/daily/{today_str}"
+        os.makedirs(site_daily_dir, exist_ok=True)
+        failed_html = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日執行失敗 - {today_str}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 40px 20px;
+            text-align: center;
+        }}
+        .error-card {{
+            background: #161b22;
+            border: 1px solid #da3633;
+            border-radius: 6px;
+            padding: 30px;
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: left;
+        }}
+        h1 {{ color: #f85149; }}
+        ul {{ color: #8b949e; }}
+        a {{ color: #58a6ff; text-decoration: none; }}
+    </style>
+</head>
+<body>
+    <div class="error-card">
+        <h1>✖ 每日執行失敗 (DAILY_RUN_FAILED)</h1>
+        <p>系統 API 驗證未通過，無法執行 Daily Intelligence 運算。</p>
+        <strong>錯誤詳情：</strong>
+        <ul>
+        """
+        for err in smoke_errors:
+            failed_html += f"<li>{err}</li>\n"
+        failed_html += f"""
+        </ul>
+        <div style="margin-top: 20px; text-align: center;">
+            <a href="../../index.html">← 返回決策總覽首頁</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        with open(os.path.join(site_daily_dir, "index.html"), "w", encoding="utf-8") as f:
+            f.write(failed_html)
+            
+        rebuild_dashboard_index()
             
         subprocess.run(["python3", "scripts/send_telegram_report.py", today_str])
         print("Daily Production Run FAILED due to API connection failures.")
@@ -1643,6 +2130,40 @@ Generated on: {timestamp}
     brain_dir = "/Users/erickair/.gemini/antigravity/brain/3244dfbe-868b-437f-acd6-5d6e393dfd12"
     with open(os.path.join(brain_dir, "first_real_daily_intelligence_report.md"), "w", encoding="utf-8") as f:
         f.write(report_md)
+
+    # 6b. Generate HTML Web Dashboard Pages
+    site_daily_dir = f"operations/site/daily/{today_str}"
+    os.makedirs(site_daily_dir, exist_ok=True)
+    
+    summary_sentence = f"今日成功過濾出 {len(eligible_contents)} 篇符合策略的高價值內容，從中為 {brand} 品牌推薦 3 個行銷主題，並產出 {len(rec_topics)} 篇 pending_review 草稿。"
+    dq_summary_stats = {
+        "l0": len(patterns) + len(formulas),
+        "l1": len(sources),
+        "l2": len(contents)
+    }
+    
+    daily_html_content = generate_daily_html_report(
+        date_str=today_str,
+        status="DAILY_RUN_CONFIRMED",
+        summary=summary_sentence,
+        rec_topics=rec_topics,
+        top_5=top_5,
+        rejected_topics=rejected_topics,
+        draft_assets=generated_draft_paths,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        cost=cost,
+        dq_summary=dq_summary_stats,
+        failed_sources=failed_sources,
+        failed_api_calls=failed_api_calls,
+        failed_fetches=failed_fetches
+    )
+    
+    with open(os.path.join(site_daily_dir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(daily_html_content)
+        
+    rebuild_dashboard_index()
 
     # 7. Send Telegram Notification
     telegram_status = "SUCCESS"

@@ -85,15 +85,17 @@ def main():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     send_docs = os.environ.get("TELEGRAM_SEND_DOCUMENTS", "false").lower() == "true"
+    dashboard_base_url = os.environ.get("DASHBOARD_BASE_URL", "").strip().rstrip("/")
     
     # Safely print status
     print(f"TELEGRAM_BOT_TOKEN: {mask_token(bot_token)}")
     print(f"TELEGRAM_CHAT_ID: {chat_id if chat_id else 'None'}")
     print(f"TELEGRAM_SEND_DOCUMENTS: {send_docs}")
+    print(f"DASHBOARD_BASE_URL: {dashboard_base_url if dashboard_base_url else 'None'}")
     
     if not bot_token or not chat_id:
         print("TELEGRAM_SEND_FAILED: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in environment.")
-        sys.exit(0) # Non-blocking failure
+        sys.exit(0)
         
     today_str = sys.argv[1] if len(sys.argv) > 1 else datetime.now().strftime("%Y-%m-%d")
     ops_dir = f"operations/daily/{today_str}"
@@ -105,6 +107,7 @@ def main():
     status = "DAILY_RUN_FAILED"
     reason = "No run summary or brief found."
     topics = []
+    key_sources = []
     drafts_count = 0
     cost_str = "$0.00"
     
@@ -112,7 +115,6 @@ def main():
         with open(brief_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
             
-        # Parse Status
         for line in lines:
             if "DAILY_RUN_CONFIRMED" in line:
                 status = "DAILY_RUN_CONFIRMED"
@@ -131,15 +133,29 @@ def main():
                 parts = line.split(":", 1)
                 if len(parts) > 1:
                     topics.append(parts[1].strip())
-            elif topic_parsing and line.strip().startswith("* **#") or line.strip().startswith("- **#"):
-                # Handle possible alternative format
+            elif topic_parsing and (line.strip().startswith("* **#") or line.strip().startswith("- **#")):
                 parts = line.split(":", 1)
                 if len(parts) > 1:
                     topics.append(parts[1].strip())
                     
+        # Parse Sources
+        source_parsing = False
+        for line in lines:
+            if "## 4. 今日 Top 5 值得研究內容" in line or "Top 5" in line:
+                source_parsing = True
+                continue
+            if source_parsing and line.startswith("## "):
+                source_parsing = False
+            if source_parsing and "source:" in line:
+                parts = line.split("source:", 1)
+                if len(parts) > 1:
+                    src_name = parts[1].strip()
+                    if src_name not in key_sources:
+                        key_sources.append(src_name)
+                        
         # Parse Drafts Count
         for line in lines:
-            if "pending_review" in line:
+            if "pending_review" in line and "status:" in line:
                 drafts_count += 1
                 
         # Parse Cost
@@ -159,30 +175,43 @@ def main():
             else:
                 reason = "Unknown run failure occurred."
 
-    # 2. Format Telegram message text
+    # 2. Format Telegram message text (concise digest)
+    if dashboard_base_url:
+        dashboard_url = f"{dashboard_base_url}/daily/{today_str}/index.html"
+    else:
+        dashboard_url = f"operations/site/daily/{today_str}/index.html"
+        
     if status == "DAILY_RUN_CONFIRMED":
-        msg_text = f"""<b>Brand Intelligence OS</b>
-{today_str} 07:00 Daily Brief
+        msg_text = f"""<b>Brand Intelligence OS｜每日晨報</b>
+{today_str} 07:00
 
-<b>Status:</b>
+<b>狀態：</b>
 DAILY_RUN_CONFIRMED
 
-<b>Top 3 Topics:</b>
+<b>今日最值得寫：</b>
 """
         for idx, t in enumerate(topics[:3]):
             msg_text += f"{idx+1}. {t}\n"
         if not topics:
-            msg_text += "1. No topics recommended\n"
+            msg_text += "1. 無建議主題\n"
             
         msg_text += f"""
-<b>Drafts:</b>
-{drafts_count} pending_review drafts generated
+<b>今日重點來源：</b>
+"""
+        for src in key_sources[:3]:
+            msg_text += f"- {src}\n"
+        if not key_sources:
+            msg_text += "- 無來源數據\n"
+            
+        msg_text += f"""
+<b>今日產出：</b>
+{drafts_count} drafts pending_review
 
-<b>Cost:</b>
+<b>成本：</b>
 {cost_str} estimated
 
-<b>Report Folder:</b>
-<code>operations/daily/{today_str}/</code>"""
+<b>完整報告：</b>
+{dashboard_url}"""
     else:
         msg_text = f"""<b>Brand Intelligence OS</b>
 Daily Run Failed
@@ -196,7 +225,7 @@ Daily Run Failed
     # 3. Send text message
     try:
         send_telegram_message(bot_token, chat_id, msg_text)
-        print("Telegram text brief sent successfully.")
+        print("Telegram concise brief digest sent successfully.")
     except Exception as e:
         print(f"TELEGRAM_SEND_FAILED: Error sending message ({str(e)})")
         if os.path.exists(summary_path):
@@ -204,7 +233,7 @@ Daily Run Failed
                 f.write(f"\nTelegram Text Send Error: {str(e)}\n")
         return
         
-    # 4. Optionally send documents
+    # 4. Optionally send documents (default false)
     if status == "DAILY_RUN_CONFIRMED" and send_docs:
         docs_to_send = [
             "daily_morning_brief.md",
