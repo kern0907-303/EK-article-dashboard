@@ -1,36 +1,36 @@
 # First Real Daily Intelligence Report
 
-Generated on: 2026-06-27 10:31:47
+Generated on: 2026-06-27 10:36:19
 Data Quality Target: Level 2 Ingested Real Data
 
 ---
 
 ## 1. Data Quality Summary
-* **Total Checked Sources**: 148 (Level 1 Verified)
-* **Active Content Ingested**: 147 items (Level 2 Ingested)
+* **Total Checked Sources**: 260 (Level 1 Verified)
+* **Active Content Ingested**: 259 items (Level 2 Ingested)
 * **Mock Data Exclusion**: Checked and confirmed that all recommended topics are derived purely from verified Level 2 crawled articles.
 
 ## 2. Ingested Content Analysis (Top 5 Worth Analyzing)
-* **#1: Untitled Sub-page**
-  - URL: https://www.apress.com/spcom/min/modern_sprcom-cms-frontend_apress.css?r=0.111.0
-  - Word Count: 13990 words
-  - Source ID: source_real_080
-* **#2: Privacy Center**
-  - URL: https://www.mheducation.com/about-us/trust-center/privacy.html
-  - Word Count: 9033 words
-  - Source ID: source_real_085
-* **#3: Grammarly Home**
-  - URL: https://www.grammarly.com/terms/customer-business-agreement
-  - Word Count: 7336 words
-  - Source ID: source_real_070
-* **#4: Privacy Policy | Scholastic Inc**
-  - URL: https://www.scholastic.com/site/privacy.html#7
-  - Word Count: 5352 words
-  - Source ID: source_real_086
-* **#5: Coursera Plus**
-  - URL: https://www.coursera.org/professional-certificates/ibm-data-analyst
-  - Word Count: 3938 words
-  - Source ID: source_real_072
+* **#1: PHP: PHP 8 ChangeLog**
+  - URL: https://www.php.net/ChangeLog-8.php#8.3.30
+  - Word Count: 48276 words
+  - Source ID: source_real_005
+* **#2: How to Live - book by Derek Sivers**
+  - URL: https://sivers.org/h
+  - Word Count: 31067 words
+  - Source ID: source_real_100
+* **#3: books that reference Derek Sivers**
+  - URL: https://sivers.org/ref
+  - Word Count: 22990 words
+  - Source ID: source_real_100
+* **#4: Your Music and People - book by Derek Sivers**
+  - URL: https://sivers.org/m
+  - Word Count: 20495 words
+  - Source ID: source_real_100
+* **#5: Oxford 3000 and 5000 | OxfordLearnersDictionaries.com**
+  - URL: https://www.oxfordlearnersdictionaries.com/wordlists/oxford3000-5000
+  - Word Count: 18286 words
+  - Source ID: source_real_066
 
 ## 3. Recommended Topics (V3 Decision Filter Applied)
 * **Rank 1: 如何透過 ABL 承接力，解決創業者的日常精力內在消耗**
