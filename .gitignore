@@ -42,3 +42,16 @@ next-env.d.ts
 
 # npm cache
 .npm-cache/
+
+# Brand OS ignores
+__pycache__/
+*.pyc
+database/orchestrator.db
+storage/raw/
+storage/clean/
+storage/assets/
+storage/knowledge_base.md
+storage/handoff_*.md
+.env
+backups/
+operations/
