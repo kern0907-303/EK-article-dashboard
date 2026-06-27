@@ -1,36 +1,36 @@
 # First Real Daily Intelligence Report
 
-Generated on: 2026-06-27 17:16:10
+Generated on: 2026-06-27 17:35:02
 Data Quality Target: Level 2 Ingested Real Data
 
 ---
 
 ## 1. Data Quality Summary
-* **Total Checked Sources**: 156 (Level 1 Verified)
-* **Active Content Ingested**: 155 items (Level 2 Ingested)
+* **Total Checked Sources**: 150 (Level 1 Verified)
+* **Active Content Ingested**: 149 items (Level 2 Ingested)
 * **Mock Data Exclusion**: Checked and confirmed that all recommended topics are derived purely from verified Level 2 crawled articles.
 
 ## 2. Ingested Content Analysis (Top 5 Worth Analyzing)
-* **#1: Your Music and People - book by Derek Sivers**
-  - URL: https://sivers.org/m
-  - Word Count: 20495 words
-  - Source ID: source_real_100
-* **#2: Practical English Usage  | Your indispensable guide to English grammar and usage at Oxford Learner&apos;s Dictionaries**
-  - URL: https://www.oxfordlearnersdictionaries.com/grammar/practical-english-usage/
-  - Word Count: 13439 words
-  - Source ID: source_real_066
+* **#1: O'Reilly News - O'Reilly Media**
+  - URL: https://www.oreilly.com/press/
+  - Word Count: 43708 words
+  - Source ID: source_real_077
+* **#2: David Bach: Automatic Millionaire Money Secrets**
+  - URL: https://marieforleo.com/blog/david-bach-automatic-millionaire
+  - Word Count: 21211 words
+  - Source ID: source_promo_0b1146e6
 * **#3: Untitled Sub-page**
-  - URL: https://www.thesaurus.com/terms-and-privacy
-  - Word Count: 11145 words
-  - Source ID: source_real_068
-* **#4: Solar and Stellar Astrophysics**
-  - URL: https://www.arxiv.org/list/astro-ph.SR/recent
-  - Word Count: 4102 words
-  - Source ID: source_real_059
-* **#5: Naciones Unidas | Paz, dignidad e igualdad<BR>en un planeta sano**
-  - URL: https://www.un.org/es/
-  - Word Count: 3814 words
-  - Source ID: source_real_044
+  - URL: https://www.gnu.org/manual/blurbs.html
+  - Word Count: 16682 words
+  - Source ID: source_real_007
+* **#4: Terms &amp; Conditions | Nature Info**
+  - URL: https://www.nature.com/info/terms-and-conditions
+  - Word Count: 13338 words
+  - Source ID: source_real_055
+* **#5: EFF's Staff and Contributors | Electronic Frontier Foundation**
+  - URL: https://www.eff.org/about/staff
+  - Word Count: 12352 words
+  - Source ID: source_real_049
 
 ## 3. Recommended Topics (V3 Decision Filter Applied)
 * **Rank 1: 如何透過 ABL 承接力，解決創業者的日常精力內在消耗**

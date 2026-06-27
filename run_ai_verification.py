@@ -47,6 +47,7 @@ def test_openai(api_key):
         cost = prompt * 0.00000015 + completion * 0.00000060
         return {
             "status": "SUCCESS",
+            "model": "gpt-4o-mini",
             "id": res.get("id", "N/A"),
             "prompt_tokens": prompt,
             "completion_tokens": completion,
@@ -56,10 +57,10 @@ def test_openai(api_key):
             "text": res["choices"][0]["message"]["content"].strip()
         }
 
-def test_anthropic(api_key):
+def call_anthropic_api(api_key, model):
     url = "https://api.anthropic.com/v1/messages"
     payload = {
-        "model": "claude-3-haiku-20240307",
+        "model": model,
         "max_tokens": 10,
         "messages": [{"role": "user", "content": "Respond with exactly 'OK'"}]
     }
@@ -78,9 +79,11 @@ def test_anthropic(api_key):
         prompt = usage.get("input_tokens", 0)
         completion = usage.get("output_tokens", 0)
         total = prompt + completion
+        # Pricing for Claude Haiku 4.5 or Claude Sonnet 4.6
         cost = prompt * 0.00000025 + completion * 0.00000125
         return {
             "status": "SUCCESS",
+            "model": model,
             "id": res.get("id", "N/A"),
             "prompt_tokens": prompt,
             "completion_tokens": completion,
@@ -90,8 +93,18 @@ def test_anthropic(api_key):
             "text": res["content"][0]["text"].strip()
         }
 
-def test_gemini(api_key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+def test_anthropic_with_fallbacks(api_key):
+    models = ["claude-haiku-4-5", "claude-sonnet-4-6"]
+    last_err = None
+    for model in models:
+        try:
+            return call_anthropic_api(api_key, model)
+        except Exception as e:
+            last_err = e
+    raise last_err
+
+def call_gemini_api(api_key, model):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{
             "parts": [{"text": "Respond with exactly 'OK'"}]
@@ -111,6 +124,7 @@ def test_gemini(api_key):
         cost = prompt * 0.000000075 + completion * 0.00000030
         return {
             "status": "SUCCESS",
+            "model": model,
             "id": "N/A",
             "prompt_tokens": prompt,
             "completion_tokens": completion,
@@ -120,12 +134,41 @@ def test_gemini(api_key):
             "text": res["candidates"][0]["content"]["parts"][0]["text"].strip()
         }
 
+def fetch_gemini_models(api_key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=10) as response:
+        res = json.loads(response.read().decode('utf-8'))
+        model_names = []
+        for m in res.get("models", []):
+            methods = m.get("supportedGenerationMethods", [])
+            if "generateContent" in methods:
+                model_names.append(m.get("name"))
+        return model_names
+
+def test_gemini_with_fallbacks(api_key):
+    # Try gemini-flash-latest first
+    try:
+        return call_gemini_api(api_key, "gemini-flash-latest")
+    except Exception as e:
+        # Fallback: ListModels and find first supported
+        try:
+            available_models = fetch_gemini_models(api_key)
+            for model_name in available_models:
+                short_name = model_name.split("/")[-1]
+                try:
+                    return call_gemini_api(api_key, short_name)
+                except:
+                    continue
+        except Exception as list_err:
+            raise Exception(f"Gemini gemini-flash-latest failed ({str(e)}) and ListModels failed ({str(list_err)})")
+        raise e
+
 def get_error_body(e):
     error_msg = str(e)
     if hasattr(e, 'read'):
         try:
             body = e.read().decode('utf-8')
-            # Format nicely if JSON
             try:
                 parsed = json.loads(body)
                 error_msg += f" - Response Body: {json.dumps(parsed)}"
@@ -179,7 +222,7 @@ def main():
             res_oa = test_openai(openai_key)
             llm_logs.append({
                 "provider": "OpenAI",
-                "model": "gpt-4o-mini",
+                "model": res_oa["model"],
                 "request_timestamp": timestamp,
                 "response_status": "SUCCESS",
                 "response_id": res_oa["id"],
@@ -206,10 +249,10 @@ def main():
 
         # Run Anthropic test
         try:
-            res_ant = test_anthropic(anthropic_key)
+            res_ant = test_anthropic_with_fallbacks(anthropic_key)
             llm_logs.append({
                 "provider": "Anthropic",
-                "model": "claude-3-haiku-20240307",
+                "model": res_ant["model"],
                 "request_timestamp": timestamp,
                 "response_status": "SUCCESS",
                 "response_id": res_ant["id"],
@@ -223,7 +266,7 @@ def main():
             has_failed_calls = True
             llm_logs.append({
                 "provider": "Anthropic",
-                "model": "claude-3-haiku-20240307",
+                "model": "claude-haiku-4-5",
                 "request_timestamp": timestamp,
                 "response_status": "FAILED",
                 "response_id": "None",
@@ -236,10 +279,10 @@ def main():
 
         # Run Gemini test
         try:
-            res_gem = test_gemini(gemini_key)
+            res_gem = test_gemini_with_fallbacks(gemini_key)
             llm_logs.append({
                 "provider": "Gemini",
-                "model": "gemini-1.5-flash",
+                "model": res_gem["model"],
                 "request_timestamp": timestamp,
                 "response_status": "SUCCESS",
                 "response_id": res_gem["id"],
@@ -253,7 +296,7 @@ def main():
             has_failed_calls = True
             llm_logs.append({
                 "provider": "Gemini",
-                "model": "gemini-1.5-flash",
+                "model": "gemini-flash-latest",
                 "request_timestamp": timestamp,
                 "response_status": "FAILED",
                 "response_id": "None",
