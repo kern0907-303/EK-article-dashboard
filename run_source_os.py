@@ -473,6 +473,12 @@ def main():
     elif flag == "--data-quality-report":
         from src.orchestrator.data_acquisition import generate_data_quality_report
         generate_data_quality_report()
+    elif flag == "--daily-intelligence-real":
+        from src.orchestrator.data_acquisition import run_real_daily_decision
+        run_real_daily_decision()
+    elif flag == "--production-readiness-check":
+        from src.orchestrator.data_acquisition import run_production_readiness_check
+        run_production_readiness_check()
     else:
         print(f"{C_RED}Unknown command: {flag}{C_END}")
         sys.exit(1)
