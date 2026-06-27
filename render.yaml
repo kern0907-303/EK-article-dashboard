@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: ek-article-dashboard
+    env: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: AI_PROVIDER
+        value: anthropic
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://wbbnjasjyfuatkvnoogi.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: N8N_WEBHOOK_URL
+        value: https://erick303.app.n8n.cloud/webhook/insights-publish
+      - key: DATAFORSEO_API_LOGIN
+        value: kern0907@gmail.com
+      - key: DATAFORSEO_API_PASSWORD
+        sync: false
+      - key: SEMRUSH_API_KEY
+        sync: false
+      - key: META_AD_ACCOUNT_ID
+        sync: false
+      - key: META_MARKETING_ACCESS_TOKEN
+        sync: false
