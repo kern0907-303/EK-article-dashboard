@@ -1,36 +1,36 @@
 # First Real Daily Intelligence Report
 
-Generated on: 2026-06-27 12:41:52
+Generated on: 2026-06-27 17:16:10
 Data Quality Target: Level 2 Ingested Real Data
 
 ---
 
 ## 1. Data Quality Summary
-* **Total Checked Sources**: 153 (Level 1 Verified)
-* **Active Content Ingested**: 152 items (Level 2 Ingested)
+* **Total Checked Sources**: 156 (Level 1 Verified)
+* **Active Content Ingested**: 155 items (Level 2 Ingested)
 * **Mock Data Exclusion**: Checked and confirmed that all recommended topics are derived purely from verified Level 2 crawled articles.
 
 ## 2. Ingested Content Analysis (Top 5 Worth Analyzing)
-* **#1: PHP: PHP 8 ChangeLog**
-  - URL: https://www.php.net/ChangeLog-8.php#8.2.30
-  - Word Count: 48276 words
-  - Source ID: source_real_005
-* **#2: book notes by Derek Sivers**
-  - URL: https://sivers.org/book
-  - Word Count: 25807 words
+* **#1: Your Music and People - book by Derek Sivers**
+  - URL: https://sivers.org/m
+  - Word Count: 20495 words
   - Source ID: source_real_100
-* **#3: books that reference Derek Sivers**
-  - URL: https://sivers.org/ref
-  - Word Count: 22990 words
-  - Source ID: source_real_100
-* **#4: Oxford 3000 and 5000 | OxfordLearnersDictionaries.com**
-  - URL: https://www.oxfordlearnersdictionaries.com/wordlists/oxford3000-5000
-  - Word Count: 18286 words
+* **#2: Practical English Usage  | Your indispensable guide to English grammar and usage at Oxford Learner&apos;s Dictionaries**
+  - URL: https://www.oxfordlearnersdictionaries.com/grammar/practical-english-usage/
+  - Word Count: 13439 words
   - Source ID: source_real_066
-* **#5: Untitled Sub-page**
-  - URL: https://www.dictionary.com/terms-and-privacy
-  - Word Count: 11144 words
-  - Source ID: source_real_067
+* **#3: Untitled Sub-page**
+  - URL: https://www.thesaurus.com/terms-and-privacy
+  - Word Count: 11145 words
+  - Source ID: source_real_068
+* **#4: Solar and Stellar Astrophysics**
+  - URL: https://www.arxiv.org/list/astro-ph.SR/recent
+  - Word Count: 4102 words
+  - Source ID: source_real_059
+* **#5: Naciones Unidas | Paz, dignidad e igualdad<BR>en un planeta sano**
+  - URL: https://www.un.org/es/
+  - Word Count: 3814 words
+  - Source ID: source_real_044
 
 ## 3. Recommended Topics (V3 Decision Filter Applied)
 * **Rank 1: 如何透過 ABL 承接力，解決創業者的日常精力內在消耗**
