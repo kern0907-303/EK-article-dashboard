@@ -1,49 +1,157 @@
 import json
 import uuid
+import re
+import urllib.request
+import urllib.parse
+import urllib.error
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..database import save_object, add_relation, get_objects_by_type, get_object
+
+# A list of 100 extremely reliable, open websites/blogs that rarely block script crawlers
+REAL_DOMAINS = [
+    ("Wikipedia", "https://www.wikipedia.org", "Website", "education"),
+    ("Python Org", "https://www.python.org", "Blog", "technology"),
+    ("SQLite Org", "https://www.sqlite.org", "Website", "technology"),
+    ("W3C", "https://www.w3.org", "Website", "technology"),
+    ("PHP Net", "https://www.php.net", "Website", "technology"),
+    ("Apache Org", "https://www.apache.org", "Website", "technology"),
+    ("GNU Org", "https://www.gnu.org", "Website", "technology"),
+    ("IETF Org", "https://www.ietf.org", "Website", "technology"),
+    ("PostgreSQL Org", "https://www.postgresql.org", "Website", "technology"),
+    ("Kernel Org", "https://www.kernel.org", "Website", "technology"),
+    ("Debian Org", "https://www.debian.org", "Website", "technology"),
+    ("Ubuntu", "https://www.ubuntu.com", "Website", "technology"),
+    ("Nginx", "https://www.nginx.com", "Website", "technology"),
+    ("Docker", "https://www.docker.com", "Website", "technology"),
+    ("Git SCM", "https://www.git-scm.com", "Website", "technology"),
+    ("OpenSSL", "https://www.openssl.org", "Website", "technology"),
+    ("Curl", "https://www.curl.se", "Website", "technology"),
+    ("Wireshark", "https://www.wireshark.org", "Website", "technology"),
+    ("VideoLAN", "https://www.videolan.org", "Website", "technology"),
+    ("Mozilla", "https://www.mozilla.org", "Website", "technology"),
+    ("Internet Archive", "https://www.archive.org", "Website", "education"),
+    ("Project Gutenberg", "https://www.gutenberg.org", "Website", "education"),
+    ("MIT University", "https://www.mit.edu", "Website", "education"),
+    ("Stanford University", "https://www.stanford.edu", "Website", "education"),
+    ("Harvard University", "https://www.harvard.edu", "Website", "education"),
+    ("UC Berkeley", "https://www.berkeley.edu", "Website", "education"),
+    ("Cambridge University", "https://www.cam.ac.uk", "Website", "education"),
+    ("Oxford University", "https://www.ox.ac.uk", "Website", "education"),
+    ("UCLA University", "https://www.ucla.edu", "Website", "education"),
+    ("NASA", "https://www.nasa.gov", "Website", "science"),
+    ("Library of Congress", "https://www.loc.gov", "Website", "education"),
+    ("Weather Gov", "https://www.weather.gov", "Website", "science"),
+    ("US Census Bureau", "https://www.census.gov", "Website", "science"),
+    ("USGS", "https://www.usgs.gov", "Website", "science"),
+    ("NIH", "https://www.nih.gov", "Website", "science"),
+    ("FDA", "https://www.fda.gov", "Website", "science"),
+    ("CDC", "https://www.cdc.gov", "Website", "science"),
+    ("FCC", "https://www.fcc.gov", "Website", "science"),
+    ("SEC", "https://www.sec.gov", "Website", "science"),
+    ("EPA", "https://www.epa.gov", "Website", "science"),
+    ("World Bank", "https://www.worldbank.org", "Website", "business"),
+    ("IMF", "https://www.imf.org", "Website", "business"),
+    ("WHO", "https://www.who.int", "Website", "science"),
+    ("United Nations", "https://www.un.org", "Website", "news"),
+    ("WTO", "https://www.wto.org", "Website", "business"),
+    ("UNESCO", "https://www.unesco.org", "Website", "education"),
+    ("Red Cross", "https://www.redcross.org", "Website", "education"),
+    ("Amnesty International", "https://www.amnesty.org", "Website", "news"),
+    ("EFF", "https://www.eff.org", "Website", "technology"),
+    ("Free Software Foundation", "https://www.fsf.org", "Website", "technology"),
+    ("Creative Commons", "https://www.creativecommons.org", "Website", "education"),
+    ("TED", "https://www.ted.com", "Website", "education"),
+    ("ESA Space Agency", "https://www.esa.int", "Website", "science"),
+    ("CERN Laboratory", "https://www.cern.ch", "Website", "science"),
+    ("Nature Journal", "https://www.nature.com", "Blog", "science"),
+    ("Science Magazine", "https://www.science.org", "Blog", "science"),
+    ("IEEE Org", "https://www.ieee.org", "Website", "technology"),
+    ("ACM Org", "https://www.acm.org", "Website", "technology"),
+    ("arXiv", "https://www.arxiv.org", "Website", "science"),
+    ("PLOS One", "https://www.plos.org", "Website", "science"),
+    ("Springer Link", "https://www.springer.com", "Website", "science"),
+    ("Wiley Online", "https://www.wiley.com", "Website", "science"),
+    ("Elsevier", "https://www.elsevier.com", "Website", "science"),
+    ("Britannica", "https://www.britannica.com", "Website", "education"),
+    ("Merriam Webster", "https://www.merriam-webster.com", "Website", "education"),
+    ("Oxford Learners", "https://www.oxfordlearnersdictionaries.com", "Website", "education"),
+    ("Dictionary Com", "https://www.dictionary.com", "Website", "education"),
+    ("Thesaurus Com", "https://www.thesaurus.com", "Website", "education"),
+    ("Bartleby", "https://www.bartleby.com", "Website", "education"),
+    ("Grammarly", "https://www.grammarly.com", "Website", "education"),
+    ("Duolingo", "https://www.duolingo.com", "Website", "education"),
+    ("Coursera", "https://www.coursera.org", "Website", "education"),
+    ("edX", "https://www.edx.org", "Website", "education"),
+    ("Khan Academy", "https://www.khanacademy.org", "Website", "education"),
+    ("Udemy", "https://www.udemy.com", "Website", "education"),
+    ("Pluralsight", "https://www.pluralsight.com", "Website", "education"),
+    ("O'Reilly Media", "https://www.oreilly.com", "Website", "education"),
+    ("Packt Publishing", "https://www.packtpub.com", "Website", "education"),
+    ("Manning", "https://www.manning.com", "Website", "education"),
+    ("Apress", "https://www.apress.com", "Website", "education"),
+    ("Peachpit", "https://www.peachpit.com", "Website", "education"),
+    ("Pearson", "https://www.pearson.com", "Website", "education"),
+    ("Macmillan Learning", "https://www.macmillanlearning.com", "Website", "education"),
+    ("Cengage", "https://www.cengage.com", "Website", "education"),
+    ("McGraw Hill", "https://www.mheducation.com", "Website", "education"),
+    ("Scholastic", "https://www.scholastic.com", "Website", "education"),
+    ("Random House", "https://www.randomhouse.com", "Website", "education"),
+    ("HarperCollins", "https://www.harpercollins.com", "Website", "education"),
+    ("Simon & Schuster", "https://www.simonandschuster.com", "Website", "education"),
+    ("Hachette Book Group", "https://www.hachettebookgroup.com", "Website", "education"),
+    ("Penguin Random House", "https://www.penguinrandomhouse.com", "Website", "education"),
+    ("Bloomsbury", "https://www.bloomsbury.com", "Website", "education"),
+    ("Routledge", "https://www.routledge.com", "Website", "education"),
+    ("SAGE Publishing", "https://www.sagepub.com", "Website", "education"),
+    ("Intellect Books", "https://www.intellectbooks.com", "Website", "education"),
+    ("Woodhead Publishing", "https://www.woodheadpublishing.com", "Website", "education"),
+    ("CRC Press", "https://www.crcpress.com", "Website", "education"),
+    ("Brill Academic", "https://www.brill.com", "Website", "education"),
+    ("Seth Godin Blog", "https://sethgodin.com", "Blog", "marketing"),
+    ("Derek Sivers Blog", "https://sivers.org", "Blog", "personal_development")
+]
 
 def seed_all_libraries():
     """
     Seeds the SQLite database with the Data Acquisition Phase assets:
-    - 100 Verified Sources
-    - 100 Reusable Formulas (Russell Brunson, Alex Hormozi, Erick, NAS, ABL, I8)
-    - 1000 Extracted Patterns linked to Sources, Brands, Pains, Audiences, etc.
+    - 100 REAL Verified Sources
+    - 100 Reusable Formulas
+    - 1000 Extracted Patterns linked to Sources
     """
-    # 1. Define and seed 100 verified sources
+    # 1. Seed 100 real sources
     sources = []
-    core_names = [
-        ("Marie Forleo Blog", "https://marieforleo.com/blog", "Blog", "womens_growth"),
-        ("Tony Robbins Summit", "https://tonyrobbins.com", "Website", "leadership"),
-        ("Russell Brunson Funnels", "https://dotcomsecrets.com", "Sales Page", "marketing"),
-        ("Alex Hormozi Acquisition", "https://acquisition.com", "Blog", "business"),
-        ("Amy Porterfield Courses", "https://amyporterfield.com", "Podcast", "course_creator"),
-        ("Neil Patel Marketing", "https://neilpatel.com", "Blog", "marketing"),
-        ("Mindvalley Transformation", "https://mindvalley.com", "Website", "personal_development"),
-        ("GaryVee Social Media", "https://garyvaynerchuk.com", "Website", "media"),
-        ("Brené Brown Leadership", "https://brenebrown.com", "Podcast", "leadership"),
-        ("HubSpot Inbound Blog", "https://hubspot.com/blog", "Blog", "marketing")
-    ]
-
-    for idx in range(100):
-        core = core_names[idx % 10]
+    for idx, (name, url, stype, category) in enumerate(REAL_DOMAINS):
         source_id = f"source_real_{idx+1:03d}"
         brand_id = "test-brand" if idx % 3 == 0 else "ABL" if idx % 3 == 1 else "I8"
         
         props = {
-            "name": f"{core[0]} Series {idx // 10 + 1}",
-            "url": f"{core[1]}/{idx // 10 + 1}",
-            "source_type": core[2],
-            "category_id": core[3],
+            "name": name,
+            "url": url,
+            "source_type": stype,
+            "category_id": category,
             "brand_id": brand_id,
             "overall_source_score": 85.0 + (idx % 15),
             "tier": "Tier 1" if idx % 2 == 0 else "Tier 2",
             "is_mock": False,
-            "url_status": "verified"
+            "url_status": "unverified",
+            "data_quality_level": 0,
+            "verified": False,
+            "verification_status": "unverified",
+            "source_confidence": "failed",
+            "source_health": "Unknown",
+            "language": "en",
+            "country": "US",
+            "rss_url": f"{url}/rss" if "blog" in stype.lower() else None,
+            "youtube_channel": None,
+            "podcast": None,
+            "newsletter": None,
+            "last_checked_at": None
         }
         save_object(source_id, "Source", props, "Active", brand_id)
         sources.append({"id": source_id, "brand_id": brand_id})
 
-    # 2. Define and seed 100 reusable business formulas
+    # 2. Seed 100 reusable business formulas
     formulas = []
     frameworks = ["Russell Brunson", "Alex Hormozi", "Erick", "NAS", "ABL", "I8"]
     formula_templates = [
@@ -73,7 +181,7 @@ def seed_all_libraries():
         save_object(formula_id, "Formula", props, "Active", "system")
         formulas.append(formula_id)
 
-    # 3. Define and seed 1000 patterns
+    # 3. Seed 1000 patterns (Seeded/Mock status initially)
     pattern_types = ["Headline", "Hook", "Pain", "Desire", "Offer", "CTA", "Story", "Framework", "Guarantee", "Risk Reversal", "Pricing", "FAQ"]
     audiences = ["35~55 女性", "創業者", "企業主", "CEO", "個人品牌創作者", "自由職業者"]
     pains = [
@@ -108,7 +216,6 @@ def seed_all_libraries():
         src_id = src["id"]
         brand_id = src["brand_id"]
         
-        # Link 10 patterns per source (100 * 10 = 1000 patterns)
         for p_idx in range(10):
             p_type = pattern_types[(pattern_index - 1) % len(pattern_types)]
             aud = audiences[(pattern_index - 1) % len(audiences)]
@@ -155,24 +262,263 @@ def seed_all_libraries():
                 "cta": cta,
                 "topic": f"關於 {brand_id} 的核心應用研究",
                 "content_type": "Facebook" if pattern_index % 2 == 0 else "Reels",
-                "performance": {"ctr": round(4.5 + (pattern_index % 3)*0.1, 2), "conversion": round(1.5 + (pattern_index % 2)*0.2, 2)}
+                "performance": {"ctr": round(4.5 + (pattern_index % 3)*0.1, 2), "conversion": round(1.5 + (pattern_index % 2)*0.2, 2)},
+                # Explicit Quality Parameters for Seeding
+                "data_status": "seeded_mock",
+                "confidence": "simulated",
+                "verified": False,
+                "data_quality_level": 0
             }
             save_object(pattern_id, "Pattern", pattern_props, "Active", brand_id)
             
-            # Establish relational linkages in Knowledge Graph (Evidence Library)
             add_relation(pattern_id, src_id, "comes_from_source")
-            
-            # Map pattern to associated formula
             associated_formula_id = formulas[(pattern_index - 1) % 100]
             add_relation(pattern_id, associated_formula_id, "associated_formula")
             
             pattern_index += 1
 
+def check_url(url):
+    """Pings a URL and checks HTTP response status."""
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        )
+        # Using a 3-second timeout for quick execution
+        with urllib.request.urlopen(req, timeout=3) as response:
+            return response.status, "reachable"
+    except urllib.error.HTTPError as e:
+        # If server returns error, we still treated it as reachable if it resolved (e.g. 403 / 401)
+        if e.code < 500:
+            return e.code, "reachable"
+        return e.code, "unreachable"
+    except Exception:
+        return 0, "unreachable"
+
+def verify_sources():
+    """
+    Verifies all registered Source records in parallel.
+    Updates Source status and sets data_quality_level = 1.
+    """
+    sources = get_objects_by_type("Source")
+    print(f"Beginning verification of {len(sources)} sources...")
+    
+    verified_count = 0
+    unreachable_count = 0
+    
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {
+            executor.submit(check_url, s["properties"].get("url", "")): s 
+            for s in sources 
+            if s["properties"] and s["properties"].get("url")
+        }
+        for future in as_completed(futures):
+            s = futures[future]
+            sid = s["id"]
+            props = s["properties"]
+            
+            try:
+                status_code, status_type = future.result()
+            except Exception:
+                status_code, status_type = 0, "unreachable"
+                
+            props["last_checked_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            props["data_quality_level"] = 1
+            
+            if status_type == "reachable":
+                props["verified"] = True
+                props["verification_status"] = "reachable"
+                props["source_confidence"] = "verified"
+                props["source_health"] = "Healthy"
+                verified_count += 1
+            else:
+                props["verified"] = False
+                props["verification_status"] = "unreachable"
+                props["source_confidence"] = "failed"
+                props["source_health"] = "Offline"
+                unreachable_count += 1
+                
+            save_object(sid, "Source", props, s["lifecycle"], s["owner"])
+            
+    print(f"Verification complete: {verified_count} reachable, {unreachable_count} unreachable.")
+    return verified_count
+
+def clean_html(html_content):
+    """Strips tags and returns plain text."""
+    # Remove scripts, styles
+    html_content = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', html_content, flags=re.I)
+    html_content = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', html_content, flags=re.I)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', ' ', html_content)
+    # Normalize spacing
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def extract_links(html_content, base_url):
+    """Extracts internal links from base page html."""
+    links = []
+    parsed_base = urllib.parse.urlparse(base_url)
+    base_domain = parsed_base.netloc
+    
+    found_links = re.findall(r'href=["\'](https?://[^"\']+|/[^"\']+)["\']', html_content)
+    for l in found_links:
+        # Normalize relative path
+        if l.startswith('/'):
+            l = urllib.parse.urljoin(base_url, l)
+        
+        # Verify same domain
+        parsed_link = urllib.parse.urlparse(l)
+        if parsed_link.netloc == base_domain:
+            # Skip media and files
+            if not any(l.endswith(ext) for ext in ['.jpg', '.png', '.css', '.js', '.pdf', '.zip', '.gif', '.xml']):
+                links.append(l)
+                
+    return list(set(links))
+
+def fetch_content_for_source(source_id, url, limit):
+    """Fetches up to `limit` sub-page contents for a given source URL."""
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=4) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+            
+        sub_links = extract_links(html, url)
+        # Filter out homepage itself
+        sub_links = [l for l in sub_links if l.strip('/') != url.strip('/')]
+        
+        # Pull up to target limit
+        targets = sub_links[:limit]
+        fetched_items = []
+        
+        for sub_url in targets:
+            try:
+                sub_req = urllib.request.Request(
+                    sub_url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                with urllib.request.urlopen(sub_req, timeout=4) as sub_res:
+                    sub_html = sub_res.read().decode('utf-8', errors='ignore')
+                    
+                title_match = re.search(r'<title>(.*?)</title>', sub_html, re.I)
+                title = title_match.group(1).strip() if title_match else "Untitled Sub-page"
+                
+                clean_text = clean_html(sub_html)
+                word_count = len(clean_text.split())
+                
+                fetched_items.append({
+                    "title": title,
+                    "url": sub_url,
+                    "raw_text": sub_html[:15000], # Store preview
+                    "clean_text": clean_text[:8000],
+                    "word_count": word_count
+                })
+            except Exception:
+                continue
+                
+        return fetched_items
+    except Exception:
+        return []
+
+def fetch_real_content(limit_per_source=5):
+    """
+    Crawls sub-pages of verified Sources and saves Content objects in SQLite.
+    Establishes linkages (Source -> produces_content -> Content).
+    """
+    sources = get_objects_by_type("Source")
+    verified_sources = [s for s in sources if s["properties"].get("verified") is True]
+    
+    print(f"Found {len(verified_sources)} verified sources. Starting content crawler (limit={limit_per_source} per source)...")
+    total_fetched = 0
+    
+    for s in verified_sources:
+        sid = s["id"]
+        url = s["properties"]["url"]
+        owner = s["owner"]
+        
+        print(f"Crawling sub-pages for Source {s['properties']['name']} ({url})...")
+        items = fetch_content_for_source(sid, url, limit_per_source)
+        
+        for item in items:
+            content_id = f"content_real_{uuid.uuid4().hex[:12]}"
+            content_props = {
+                "source_id": sid,
+                "title": item["title"],
+                "url": item["url"],
+                "content_type": "article",
+                "published_at": datetime.now().strftime("%Y-%m-%d"),
+                "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "raw_text": item["raw_text"],
+                "clean_text": item["clean_text"],
+                "word_count": item["word_count"],
+                "language": "en",
+                "data_quality_level": 2,
+                "verified_source": True
+            }
+            save_object(content_id, "Content", content_props, "Active", owner)
+            add_relation(sid, content_id, "produces_content")
+            total_fetched += 1
+            
+            # Print feedback for progress tracking
+            if total_fetched % 10 == 0:
+                print(f"➔ Fetched {total_fetched} real content items...")
+                
+    print(f"Content Ingestion complete. Total real content records fetched: {total_fetched}")
+    return total_fetched
+
+def generate_data_quality_report():
+    """Computes stats and displays the data quality level audit report."""
+    sources = get_objects_by_type("Source")
+    patterns = get_objects_by_type("Pattern")
+    formulas = get_objects_by_type("Formula")
+    contents = get_objects_by_type("Content")
+    
+    # Calculate source quality details
+    reachable_sources = sum(1 for s in sources if s["properties"].get("verification_status") == "reachable")
+    unreachable_sources = sum(1 for s in sources if s["properties"].get("verification_status") == "unreachable")
+    unverified_sources = sum(1 for s in sources if s["properties"].get("verification_status") == "unverified")
+    
+    # Quality Levels count
+    l0_count = len(patterns) + len(formulas) + sum(1 for s in sources if s["properties"].get("data_quality_level", 0) == 0)
+    l1_count = sum(1 for s in sources if s["properties"].get("data_quality_level", 0) == 1)
+    l2_count = len(contents) # Content objects are Level 2
+    l3_count = 0
+    l4_count = 0
+    l5_count = 0
+    
+    print("\n=============================================")
+    print("        BRAND INTEL OS DATA QUALITY REPORT   ")
+    print("=============================================")
+    print(f"Total Sources registered: {len(sources)}")
+    print(f"  - Verified Reachable (Level 1): {reachable_sources}")
+    print(f"  - Unreachable / Offline: {unreachable_sources}")
+    print(f"  - Unchecked / Mock: {unverified_sources}")
+    print(f"Total Content Items ingested: {len(contents)}")
+    print(f"Total Patterns (Level 0 Mock): {len(patterns)}")
+    print(f"Total Formulas (Level 0 Mock): {len(formulas)}")
+    print("---------------------------------------------")
+    print("Quality Level Distribution:")
+    print(f"  - Level 0 (Mock / Generated): {l0_count}")
+    print(f"  - Level 1 (Source Verified):  {l1_count}")
+    print(f"  - Level 2 (Content Fetched):   {l2_count}")
+    print(f"  - Level 3 (Pattern Extracted): {l3_count}")
+    print(f"  - Level 4 (Formula Derived):   {l4_count}")
+    print(f"  - Level 5 (Evidence Backed):   {l5_count}")
+    print("=============================================")
+    
+    return {
+        "total_sources": len(sources),
+        "reachable_sources": reachable_sources,
+        "total_contents": len(contents),
+        "l0": l0_count,
+        "l1": l1_count,
+        "l2": l2_count
+    }
+
 def search_libraries(filters: dict) -> list:
-    """
-    Queries Pattern objects in the registry using filtering criteria.
-    Supported filters: brand, audience, pain, offer, cta, topic, platform, content_type
-    """
+    """Queries Pattern objects in the registry using filtering criteria."""
     patterns = get_objects_by_type("Pattern")
     results = []
     
@@ -184,14 +530,12 @@ def search_libraries(filters: dict) -> list:
                 continue
             prop_val = props.get(k)
             if prop_val is None:
-                # Handle mapping aliases
                 if k == "platform" and "content_type" in props:
                     prop_val = props["content_type"]
                 else:
                     match = False
                     break
             
-            # Substring case-insensitive match
             if isinstance(prop_val, str) and isinstance(v, str):
                 if v.lower() not in prop_val.lower():
                     match = False

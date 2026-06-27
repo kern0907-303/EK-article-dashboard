@@ -453,6 +453,26 @@ def main():
             print(f"  - Offer: {props.get('offer')} | CTA: {props.get('cta')}")
         if len(results) > 10:
             print(f"\n... and {len(results) - 10} more matches.")
+    elif flag == "--verify-sources":
+        from src.orchestrator.data_acquisition import verify_sources
+        print(f"{C_BOLD}{C_PURPLE}Verifying active source registry URLs...{C_END}")
+        verify_sources()
+        print(f"{C_GREEN}✔ Source verification completed!{C_END}")
+    elif flag == "--fetch-real-content":
+        limit = 5
+        if "--limit" in sys.argv:
+            try:
+                limit_idx = sys.argv.index("--limit")
+                limit = int(sys.argv[limit_idx + 1])
+            except Exception:
+                limit = 5
+        from src.orchestrator.data_acquisition import fetch_real_content
+        print(f"{C_BOLD}{C_PURPLE}Fetching real content from verified sources (Limit: {limit} per source)...{C_END}")
+        fetch_real_content(limit)
+        print(f"{C_GREEN}✔ Content fetching completed!{C_END}")
+    elif flag == "--data-quality-report":
+        from src.orchestrator.data_acquisition import generate_data_quality_report
+        generate_data_quality_report()
     else:
         print(f"{C_RED}Unknown command: {flag}{C_END}")
         sys.exit(1)
