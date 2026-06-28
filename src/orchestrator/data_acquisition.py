@@ -2185,6 +2185,13 @@ Generated on: {timestamp}
     with open(os.path.join(ops_dir, "run_summary.md"), "w", encoding="utf-8") as f:
         f.write(summary_content)
 
+    # 7b. Run optional deployment hook to auto-publish new dashboard static site
+    try:
+        print("Triggering deployment hook...")
+        subprocess.run(["/bin/bash", "scripts/deploy_daily_dashboard.sh"])
+    except Exception as e:
+        print(f"Deployment hook execution failed: {str(e)}")
+
     print("\n✔ Daily Production Run completed. All reports organized.")
     return True
 

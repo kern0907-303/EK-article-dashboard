@@ -2,6 +2,9 @@
 # Brand Intelligence OS - Daily Automated Run Script
 # Configured to run every morning at 07:00 local time
 
+# Ensure Homebrew and standard paths are loaded for launchd
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 # 1. cd into project root
 cd "$(dirname "$0")/.."
 

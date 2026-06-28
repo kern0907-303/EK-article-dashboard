@@ -1,17 +1,21 @@
 #!/bin/bash
-# Brand Intelligence OS - Dashboard Deployment Hook
-# Documented Placeholder Script
-# 
-# Use this script to upload operations/site/ directory content to your production 
-# static hosting provider (e.g. Render, Netlify, Vercel, or Cloudflare Pages).
-# 
-# Example CLI commands to host with Netlify:
-#   netlify deploy --dir=operations/site --prod
-# 
-# Example CLI commands for Cloudflare Pages:
-#   wrangler pages deploy operations/site --project-name=brand-os-dashboard
+# Brand Intelligence OS - Auto Publish Hook
+# This script automatically commits and pushes the updated operations/site/ files to GitHub.
 
-echo "=== Deployment hook triggered ==="
-echo "Note: No deployment upload destination configured yet. Edit scripts/deploy_daily_dashboard.sh to hook static site deployment."
-echo "Dashboard static files generated under: operations/site/"
+cd "$(dirname "$0")/.."
+
+# Load PATH to ensure git command is available in launchd
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+echo "=== Auto-publishing daily web dashboard ==="
+
+# Check if there are changes in operations/site
+if [[ -n $(git status --porcelain operations/site/) ]]; then
+    git add operations/site/
+    git commit -m "chore: auto-publish daily dashboard for $(date '+%Y-%m-%d')"
+    git push origin main
+    echo "=== Auto-publish completed successfully! ==="
+else
+    echo "No new dashboard changes to publish."
+fi
 exit 0
