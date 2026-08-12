@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
@@ -12,8 +12,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   WorkspaceData, subscribeToWorkspace, saveWorkspace, 
   SEOKeyword, AdDataItem, TheoAnalysis, ReachKillerItem
-} from "@/lib/firebase";
+} from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
+import { getProjectName } from "@/lib/projects-store";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
@@ -21,17 +22,7 @@ import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 
 const getBrandOrProjectName = (id: string): string => {
   if (id && id.startsWith("project_")) {
-    try {
-      const savedProjects = localStorage.getItem("google_sheets_projects");
-      if (savedProjects) {
-        const list = JSON.parse(savedProjects);
-        const p = list.find((item: any) => item.id === id);
-        if (p) return p.name;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return "階段專案";
+    return getProjectName(id);
   }
   const brand = BRANDS.find((b) => b.id === id);
   return brand ? brand.name : BRANDS[0].name;
@@ -157,6 +148,23 @@ interface WorkspaceBoardProps {
 
 type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines";
 
+/**
+ * getBrandTheme 每次呼叫都會配置一個全新的物件，導致任何吃 theme 的
+ * 子元件都無法靠參考比對跳過重繪。用 useMemo 讓同一個 brandId 共用同一份。
+ */
+export function useBrandTheme(brandId: string): BrandTheme {
+  return useMemo(() => getBrandTheme(brandId), [brandId]);
+}
+
+// Tab 列表是靜態的，放在模組層級避免每次 render 重建陣列
+const TABS = [
+  { id: "social", label: "社群文案", expert: "Maya", icon: FileText, color: "from-pink-500 to-rose-500", glow: "shadow-rose-500/10" },
+  { id: "architecture", label: "網頁架構", expert: "Leon", icon: Network, color: "from-sky-500 to-indigo-500", glow: "shadow-indigo-500/10" },
+  { id: "seo", label: "SEO關鍵字", expert: "Iris", icon: Search, color: "from-emerald-500 to-teal-500", glow: "shadow-emerald-500/10" },
+  { id: "ads", label: "廣告數據", expert: "Jack", icon: BarChart3, color: "from-purple-500 to-violet-500", glow: "shadow-violet-500/10" },
+  { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" }
+] as const;
+
 export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("social");
   const [data, setData] = useState<WorkspaceData>({
@@ -184,23 +192,16 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
     return () => unsubscribe();
   }, [activeBrandId]);
 
-  // Tab 列表設定
-  const tabs = [
-    { id: "social", label: "社群文案", expert: "Maya", icon: FileText, color: "from-pink-500 to-rose-500", glow: "shadow-rose-500/10" },
-    { id: "architecture", label: "網頁架構", expert: "Leon", icon: Network, color: "from-sky-500 to-indigo-500", glow: "shadow-indigo-500/10" },
-    { id: "seo", label: "SEO關鍵字", expert: "Iris", icon: Search, color: "from-emerald-500 to-teal-500", glow: "shadow-emerald-500/10" },
-    { id: "ads", label: "廣告數據", expert: "Jack", icon: BarChart3, color: "from-purple-500 to-violet-500", glow: "shadow-violet-500/10" },
-    { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" }
-  ];
+  // 整個 header 共用同一份 theme，不再於 map 迴圈內重複計算
+  const theme = useBrandTheme(activeBrandId);
 
   return (
     <div className="flex flex-col h-full bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Tabs Selector Header */}
       <div className="flex bg-slate-900/40 border-b border-slate-800/60 p-2 gap-1 overflow-x-auto">
-        {tabs.map((tab) => {
+        {TABS.map((tab) => {
           const TabIcon = tab.icon;
           const isActive = activeTab === tab.id;
-          const theme = getBrandTheme(activeBrandId);
           return (
             <button
               key={tab.id}
@@ -290,7 +291,7 @@ const getPlatformLimit = (p: string) => {
 };
 
 // ==================== 1. 社群文案分頁 (Maya) ====================
-function SocialTabContent({ 
+const SocialTabContent = memo(function SocialTabContent({ 
   brandId, 
   socialCopy, 
   socialCopyThreads,
@@ -315,7 +316,7 @@ function SocialTabContent({
   activePlatform?: string;
   seoKeywords?: any[];
 }) {
-  const theme = getBrandTheme(brandId);
+  const theme = useBrandTheme(brandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [val, setVal] = useState(socialCopy);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -1491,11 +1492,11 @@ function SocialTabContent({
       </div>
     </div>
   );
-}
+});
 
 // ==================== 2. 網頁架構分頁 (Leon) ====================
-function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
-  const theme = getBrandTheme(brandId);
+const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
+  const theme = useBrandTheme(brandId);
   const [val, setVal] = useState(architecture);
   const [isEditing, setIsEditing] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
@@ -1509,10 +1510,13 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
     setIsEditing(false);
   };
 
-  const isHtml = val.trim().startsWith("<") || val.includes("</div>") || val.includes("class=");
+  const isHtml = useMemo(
+    () => val.trim().startsWith("<") || val.includes("</div>") || val.includes("class="),
+    [val]
+  );
 
   // 解析縮排層級並渲染成視覺化網站樹狀結構 (Tree View)
-  const renderTreeView = (treeText: string) => {
+  const renderTreeView = useCallback((treeText: string) => {
     if (!treeText) return <p className="text-slate-550 italic">尚無網頁架構設計，請對左側 Erick 下達任務...</p>;
 
     const lines = treeText.split("\n");
@@ -1553,10 +1557,13 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
         })}
       </div>
     );
-  };
+  }, [theme]);
 
-  // 生成 Iframe 渲染的 srcDoc
-  const getIframeSrcDoc = () => {
+  // 樹狀圖只依賴文字內容與配色，快取避免每次 render 重跑整份縮排解析
+  const treeView = useMemo(() => renderTreeView(val), [val, renderTreeView]);
+
+  // 生成 Iframe 渲染的 srcDoc（只依賴 val，快取避免每次 render 重建整份 HTML 字串）
+  const iframeSrcDoc = useMemo(() => {
     return `
       <!DOCTYPE html>
       <html>
@@ -1577,7 +1584,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
         </body>
       </html>
     `;
-  };
+  }, [val]);
 
   return (
     <div className="flex flex-col min-h-full space-y-4">
@@ -1644,7 +1651,7 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
             viewMode === "preview" ? (
               <div className="flex-1 bg-slate-950/40 border border-slate-850/65 rounded-xl overflow-hidden p-1">
                 <iframe
-                  srcDoc={getIframeSrcDoc()}
+                  srcDoc={iframeSrcDoc}
                   title="Landing Page Preview"
                   className="w-full h-full border-0 rounded-lg"
                   sandbox="allow-scripts"
@@ -1657,17 +1664,17 @@ function ArchitectureTabContent({ brandId, architecture }: { brandId: string; ar
             )
           ) : (
             <div className="flex-1 p-5 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-y-auto font-mono">
-              {renderTreeView(val)}
+              {treeView}
             </div>
           )}
         </div>
       )}
     </div>
   );
-}
+});
 
 // ==================== 3. SEO關鍵字分頁 (Iris) ====================
-function SEOTabContent({ 
+const SEOTabContent = memo(function SEOTabContent({ 
   brandId, 
   keywords, 
   aeoSchema, 
@@ -1680,7 +1687,7 @@ function SEOTabContent({
   aeoFaq?: string; 
   aiProvider: string; 
 }) {
-  const theme = getBrandTheme(brandId);
+  const theme = useBrandTheme(brandId);
   const [newKeyword, setNewKeyword] = useState("");
   const [newVolume, setNewVolume] = useState("");
   const [newComp, setNewComp] = useState("低");
@@ -1986,11 +1993,11 @@ function SEOTabContent({
       </div>
     </div>
   );
-}
+});
 
 // ==================== 4. 廣告數據分頁 (Jack) ====================
-function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataItem[] }) {
-  const theme = getBrandTheme(brandId);
+const AdsTabContent = memo(function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataItem[] }) {
+  const theme = useBrandTheme(brandId);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editVal, setEditVal] = useState("");
   const [editChange, setEditChange] = useState("");
@@ -2112,17 +2119,17 @@ function AdsTabContent({ brandId, adData }: { brandId: string; adData: AdDataIte
       </div>
     </div>
   );
-}
+});
 
 // ==================== 5. 品牌大腦分頁 (Erick) ====================
-function GuidelinesTabContent({
+const GuidelinesTabContent = memo(function GuidelinesTabContent({
   brandId,
   brandGuidelines
 }: {
   brandId: string;
   brandGuidelines: string;
 }) {
-  const theme = getBrandTheme(brandId);
+  const theme = useBrandTheme(brandId);
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(brandGuidelines);
 
@@ -2280,4 +2287,4 @@ function GuidelinesTabContent({
       </div>
     </div>
   );
-}
+});

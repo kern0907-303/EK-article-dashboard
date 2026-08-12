@@ -1,4 +1,4 @@
-import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./firebase";
+import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";

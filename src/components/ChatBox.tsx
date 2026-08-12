@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
-import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/firebase";
+import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 
 interface ChatBoxProps {

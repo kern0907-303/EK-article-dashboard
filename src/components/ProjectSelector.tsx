@@ -5,7 +5,8 @@ import {
   ChevronDown, Settings, Plus, RefreshCw, Check, 
   Loader2, AlertCircle, HelpCircle, ExternalLink, Sheet, Folder 
 } from "lucide-react";
-import { saveWorkspace } from "@/lib/firebase";
+import { saveWorkspace } from "@/lib/storage";
+import { readProjects, writeProjects } from "@/lib/projects-store";
 
 export interface ProjectData {
   id: string;
@@ -113,20 +114,13 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
     setScriptUrl(savedUrl);
 
     // 載入本地快取的專案清單
-    const savedProjects = localStorage.getItem("google_sheets_projects");
-    if (savedProjects) {
-      try {
-        setProjects(JSON.parse(savedProjects));
-      } catch (e) {
-        console.error("Failed to parse projects cache", e);
-      }
-    }
+    setProjects(readProjects<ProjectData>());
   }, []);
 
-  // 2. 當專案載入/更新時重新整理 LocalStorage
+  // 2. 當專案載入/更新時寫回 LocalStorage 並廣播給其他元件
   const updateProjectsList = (newList: ProjectData[]) => {
     setProjects(newList);
-    localStorage.setItem("google_sheets_projects", JSON.stringify(newList));
+    writeProjects(newList);
   };
 
   // 3. 從試算表同步資料

@@ -6,6 +6,7 @@ import BrandSelector, { BRANDS } from "@/components/BrandSelector";
 import ProjectSelector from "@/components/ProjectSelector";
 import ChatBox from "@/components/ChatBox";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
+import { readProjects, subscribeToProjects } from "@/lib/projects-store";
 
 export default function DashboardPage() {
   const [activeBrandId, setActiveBrandId] = useState<string>("brand_a_i8");
@@ -22,30 +23,9 @@ export default function DashboardPage() {
       setAiProvider(saved);
     }
 
-    // Load projects cache initially
-    const savedProjects = localStorage.getItem("google_sheets_projects");
-    if (savedProjects) {
-      try {
-        setProjectsCache(JSON.parse(savedProjects));
-      } catch (e) {}
-    }
-
-    // Watch for local storage updates to sync projects listing
-    const handleStorageChange = () => {
-      const savedProjs = localStorage.getItem("google_sheets_projects");
-      if (savedProjs) {
-        try {
-          setProjectsCache(JSON.parse(savedProjs));
-        } catch (e) {}
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    const interval = setInterval(handleStorageChange, 2000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
+    // 初次載入專案清單，之後靠事件更新（不再輪詢）
+    setProjectsCache(readProjects());
+    return subscribeToProjects(setProjectsCache);
   }, []);
 
   const handleProviderChange = (newProvider: string) => {
