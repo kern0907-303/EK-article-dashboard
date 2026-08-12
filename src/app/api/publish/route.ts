@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inspectForPublish } from "@/lib/brand-guardrail";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, content, action, scheduleTime } = await req.json();
+    const { brandId, content, action, scheduleTime, force } = await req.json();
 
     if (!brandId || !content) {
       return NextResponse.json(
@@ -11,10 +12,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+    // 品牌紅線檢查，與 /api/publish-website 同一套規則
+    const guardrail = inspectForPublish(content, brandId);
+    if (!guardrail.passed && !force) {
+      return NextResponse.json(
+        {
+          error: "品牌紅線檢查未通過",
+          blocked: true,
+          violatedWords: guardrail.violatedWords,
+          context: guardrail.context,
+          suggestion: guardrail.suggestion,
+        },
+        { status: 422 }
+      );
+    }
+
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
     if (!n8nWebhookUrl) {
-      n8nWebhookUrl = "https://erick303.app.n8n.cloud/webhook/insights-publish";
+      // 先前這裡硬編碼了正式 webhook 作為 fallback，環境變數漏設時會靜默
+      // 打到線上流程，難以察覺。改為明確報錯。
+      return NextResponse.json(
+        { error: "未設定 N8N_WEBHOOK_URL 環境變數" },
+        { status: 500 }
+      );
     }
 
     if (n8nWebhookUrl === "mock") {

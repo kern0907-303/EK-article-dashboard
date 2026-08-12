@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inspectForPublish } from "@/lib/brand-guardrail";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, brandName, content, aeoSchema, aeoFaq } = await req.json();
+    const { brandId, brandName, content, aeoSchema, aeoFaq, force } = await req.json();
 
     if (!brandId || !content) {
       return NextResponse.json(
         { error: "Missing brandId or content" },
         { status: 400 }
+      );
+    }
+
+    // 品牌紅線檢查：ABL 的「療效／根治／治癒」等用詞在台灣可能觸法，
+    // 預設攔截；確認無誤要放行時由前端帶 force: true。
+    const guardrail = inspectForPublish(content, brandId);
+    if (!guardrail.passed && !force) {
+      return NextResponse.json(
+        {
+          error: "品牌紅線檢查未通過",
+          blocked: true,
+          violatedWords: guardrail.violatedWords,
+          context: guardrail.context,
+          suggestion: guardrail.suggestion,
+        },
+        { status: 422 }
       );
     }
 

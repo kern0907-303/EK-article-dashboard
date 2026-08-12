@@ -20,6 +20,31 @@ import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 
+interface GuardrailBlock {
+  violatedWords?: string[];
+  context?: string;
+  suggestion?: string | null;
+}
+
+/**
+ * 紅線攔截時的確認對話。列出違規詞與建議改寫，
+ * 回傳 true 表示使用者確認要照原文發布。
+ */
+const confirmGuardrail = (data: GuardrailBlock): boolean => {
+  const words = (data.violatedWords || []).join("、");
+  const lines = [
+    `⚠️ 品牌紅線檢查未通過（${data.context || "first_tier"}）`,
+    "",
+    `偵測到禁用詞：${words}`,
+    "",
+  ];
+  if (data.suggestion) {
+    lines.push("建議改寫版本：", data.suggestion, "");
+  }
+  lines.push("按「確定」仍要照原文發布，按「取消」回去修改。");
+  return window.confirm(lines.join("\n"));
+};
+
 const getBrandOrProjectName = (id: string): string => {
   if (id && id.startsWith("project_")) {
     return getProjectName(id);
@@ -675,12 +700,12 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
-  const handlePublishWebsite = async () => {
+  const handlePublishWebsite = async (force = false) => {
     if (isPublishingWebsite || !val) return;
     setIsPublishingWebsite(true);
     try {
       const brandName = getBrandOrProjectName(brandId);
-      
+
       const response = await fetch("/api/publish-website", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -689,11 +714,22 @@ const SocialTabContent = memo(function SocialTabContent({
           brandName,
           content: val,
           aeoSchema: aeoSchema || null,
-          aeoFaq: aeoFaq || null
+          aeoFaq: aeoFaq || null,
+          force
         })
       });
 
       const resData = await response.json();
+
+      // 紅線攔截：列出違規詞，由使用者決定改稿或確認放行
+      if (response.status === 422 && resData.blocked) {
+        setIsPublishingWebsite(false);
+        if (confirmGuardrail(resData)) {
+          return handlePublishWebsite(true);
+        }
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(resData.error || "發布至官網失敗");
       }
@@ -758,7 +794,7 @@ const SocialTabContent = memo(function SocialTabContent({
     saveWorkspace(brandId, { social_copy: val });
   };
 
-  const handlePublish = async (actionType: "now" | "schedule", targetTime?: string) => {
+  const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
     if (isPublishing || !val) return;
     setIsPublishing(true);
     setPubStatus("idle");
@@ -771,12 +807,24 @@ const SocialTabContent = memo(function SocialTabContent({
           brandId,
           content: val,
           action: actionType,
-          scheduleTime: targetTime || null
+          scheduleTime: targetTime || null,
+          force
         })
       });
 
+      const resData = await response.json().catch(() => ({}));
+
+      // 紅線攔截，與官網發布同一套規則
+      if (response.status === 422 && resData.blocked) {
+        setIsPublishing(false);
+        if (confirmGuardrail(resData)) {
+          return handlePublish(actionType, targetTime, true);
+        }
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error("發布失敗");
+        throw new Error(resData.error || "發布失敗");
       }
 
       setPubStatus("success");
@@ -1032,7 +1080,7 @@ const SocialTabContent = memo(function SocialTabContent({
                   <button
                     type="button"
                     disabled={isPublishingWebsite || isPublishing}
-                    onClick={handlePublishWebsite}
+                    onClick={() => handlePublishWebsite()}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-slate-850 text-slate-100 border border-blue-500/25 transition-all duration-300 cursor-pointer hover:shadow-lg hover:shadow-blue-500/15"
                   >
                     {isPublishingWebsite ? (

@@ -1,4 +1,5 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
+import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
@@ -711,38 +712,21 @@ ${irisPrompt}
   "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
 }`;
 
-    const isI8 = brandName.toLowerCase().includes("i8") || brandName.toLowerCase().includes("brand_a");
-    const isNas = brandName.toLowerCase().includes("nas") || brandName.toLowerCase().includes("brand_b");
-    const isAbl = brandName.toLowerCase().includes("abl") || brandName.toLowerCase().includes("brand_c");
+    // 2026-08 修正：原本這裡會要求 Maya 為每篇文章產出 DALL-E 3 生圖描述，
+    // 並嵌入 https://filedn.com/... 的 Markdown 圖片標籤（含各品牌的 imgLabel /
+    // imgSuffix / imgExample 設定）。
+    //
+    // 但下游的 n8n 工作流「Erick Dashboard Social Router」在 MapBrandToken
+    // 節點明確排除 filedn.com 網址：
+    //     if (!extractedUrl.includes('filedn.com') && ...) { imageUrl = extractedUrl; }
+    // 並用 regex 移除整個圖片標籤（cleanContent），改以文章標題的 hash 從各品牌
+    // 固定的 Unsplash 圖池挑圖。也就是說那段生圖描述從未被採用，只是在燒 token。
+    //
+    // 若日後在 n8n 補上生圖節點（接收描述 → 呼叫生圖 API → 上傳圖床 → 回填網址），
+    // 再把生圖指令加回來。詳見 docs/PIPELINE_FINDINGS_AND_PLAN.md。
+    const imgInstruction = `請在文章中提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆），作為官網 Insights 頁面的結構流程圖。
 
-    let imgLabel = "寫實攝影風格，個人成長與商業決策真人寫實畫面";
-    const timestampId = Math.random().toString(36).substring(2, 8);
-    let imgSuffix = `reflection-${timestampId}`;
-    let imgExample = "寫實攝影風格，照片。一位中年男子在寧靜簡約的北歐風書房中，神情專注地在筆記本上書寫，陽光透過窗戶灑在原木桌面上，身旁擺放著一杯咖啡與書籍，呈現溫暖沉靜且具有睿智洞察力的生活真實照片，禁止任何圖表或插圖";
-
-    if (isI8) {
-      imgLabel = "寫實攝影風格，企業主在真實商業或決策場景中的寫實畫面";
-      imgSuffix = `strategy-${timestampId}`;
-      imgExample = "寫實攝影風格，照片。一位專注的中小企業主在簡約高質感的商務會議室中，神情專注地看著平板電腦，背景有模糊的辦公室燈光，色調為沉穩的深藍色與冷灰色，展現專業與商場決策智慧的真實照片，禁止任何圖表或插圖";
-    } else if (isNas) {
-      imgLabel = "寫實攝影風格，真人探索天賦或關係的溫馨光影生活畫面";
-      imgSuffix = `discovery-${timestampId}`;
-      imgExample = "寫實攝影風格，照片。一位女子坐在清晨的溫馨客廳沙發上，雙手捧著溫熱的馬克杯，神情放鬆且充滿希望地望向窗外，溫暖柔和的陽光灑在她臉上，色調明亮柔和，展現自我發現與心靈療癒的寫實生活照片，禁止任何圖表或插圖";
-    } else if (isAbl) {
-      imgLabel = "寫實攝影風格，真人在放鬆、靜心或日常自我照顧的寫實溫暖畫面";
-      imgSuffix = `scenario-${timestampId}`;
-      imgExample = "寫實攝影風格，照片。一位女子在靜謐溫暖的臥室窗邊盤腿坐著，雙眼微閉進行冥想深呼吸，清晨柔和的晨光照亮她放鬆的神情，周圍有綠色植物，呈現極度放鬆與心靈安定的寫實生活照，禁止任何圖表或插圖";
-    }
-
-    const imgInstruction = `每一篇文章都必須在合適段落插入 Markdown 圖片標籤，格式為：\`![<你為本篇文章量身設計的詳細生圖描述>](https://filedn.com/your-id/website-assets/<你為本篇文章量身設計的獨特英文slug>-${imgSuffix}.png)\`.
-
-【重要生圖規則（FB 貼文專用真實圖片，與官網流程圖不同）】：
-1. 圖片網址字尾必須為 -${imgSuffix}.png。
-2. 你必須將 \`<你為本篇文章量身設計的獨特英文slug>\` 替換為與本篇貼文主題完全相關、且每次都不同的獨特英文 slug（例如：若主題是睡眠，可使用 \`abl-deep-sleep-healing\`）。絕對禁止保留 \`<slug>\` 或直接複製範例！
-3. 方括號中的 \`<你為本篇文章量身設計的詳細生圖描述>\` 是用於生成 FB 宣傳圖片的 DALL-E 3 提示詞，**必須是「真實人物（真人）在與文章概念相符的情境中」的寫實攝影風格照片描述**。描述中必須包含：人物主體（例如：一位中年男子、一位放鬆的女子）、寫實環境（如簡約會議室、溫暖臥室）、表情動作與光影色調。
-4. **絕對禁止**在圖片描述中包含 any 「流程圖、架構圖、文字說明、科技線條、幾何數字或插畫渲染」，FB 宣傳圖必須是純粹、高質感的真人寫實攝影照片！
-5. 【極度重要！強制隨機性】：這個生圖描述每次都必須根據貼文主題量身設計，你必須強制加入「高度隨機且特定的視覺細節」（例如：特定顏色的衣服、獨特的背景小物件、不同的視角、不同的光影時間點），確保每一次產出的圖片描述 100% 完全不同！絕對禁止使用千篇一律的「女子放鬆」、「男子沉思」等籠統描述，必須加入具體的動作與罕見的畫面細節。絕對禁止直接輸出 \`<${imgLabel}>\` 等字樣！這是後續 AI 生圖的唯一依據！
-6. 同時，在該圖片標籤下方，你仍須另外提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆）用作官網結構流程圖渲染，將官網的邏輯流程圖與 FB 的真人情境圖完全區分開。`;
+【重要】：不要自行插入任何 Markdown 圖片標籤（![...](...)）或圖片網址。社群貼文的配圖由發布流程自動處理，你寫的圖片網址不會被採用。`;
 
     let mayaPlatformRules = "";
     if (activePlatform === "threads") {
@@ -872,6 +856,16 @@ ${mayaPlatformRules}
     const keywordsStr = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
     const socialCopyStr = prevData?.social_copy || "";
 
+    // 轉換目標依品牌在信任漏斗中的位置決定，不再全部導向諮詢預約。
+    // 設定來源：src/data/brands/conversion.ts（單一事實來源）
+    const conversion = getBrandConversion(brandName);
+    const ctaStageGuidance =
+      conversion.stage === "entry"
+        ? "這是漏斗入口，讀者多半是第一次接觸品牌。CTA 的目標是「換取 email」，不是成交。文案要降低承諾感，強調免費、快速、無壓力，絕對不要出現「預約諮詢」「立即購買」這類高承諾字眼。"
+        : conversion.stage === "nurture"
+        ? "讀者已意識到自己卡住、正在找方法，但尚未準備好付費。CTA 的目標仍是「換取 email」並取得分眾資訊，文案要對準他的具體處境，讓他覺得這個工具正是為他設計的。"
+        : "讀者已建立信任、正在評估合作。這是唯一可以直接談諮詢與成交的層級，文案可以明確、有力，直接邀請預約。";
+
     // 步驟 3：呼叫設計總監 Leon 生成高轉換的 Landing Page 視覺 HTML (Tailwind)
     const leonStepPrompt = `你現在是設計總監 Leon。你的職責是規劃高點閱、高轉換的 Landing Page 網頁版塊架構與視覺配色風格。
     
@@ -895,7 +889,12 @@ ${socialCopyStr}
 2. **痛點共鳴區 (Problem Section)**：點出使用者正面臨的核心內耗與卡點。
 3. **關鍵對位區 (Solution Section)**：展示如何透過品牌服務進行對位（結合 ABL, NAS 或 I8 品牌核心）。
 4. **客戶見證/信任背書 (Social Proof & Testimonials)**：展示信任度。
-5. **行動呼籲區 (Call to Action - CTA)**：醒目的諮詢預約按鈕或測評按鈕（使用官網唯一合法連結：https://erickfirm.com/#contact）。
+5. **行動呼籲區 (Call to Action - CTA)**：
+   - 按鈕文字必須是：「${conversion.ctaLabel}」
+   - 按鈕連結必須是：${conversion.ctaUrl}
+   - 誘因說明（請據此撰寫 CTA 區塊的文案）：${conversion.leadMagnet}
+   - 【漏斗階段：${conversion.stage}】${ctaStageGuidance}
+   - 絕對禁止使用其他網址或自行更換 CTA 目標。
 6. **頁尾 (Footer)**。
 
 ### 輸出 HTML 規範：
