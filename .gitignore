@@ -43,6 +43,10 @@ next-env.d.ts
 # npm cache
 .npm-cache/
 
+# turbopack / 建置暫存
+.turbo/
+*.log
+
 # Brand OS ignores
 __pycache__/
 *.pyc
@@ -56,3 +60,6 @@ storage/handoff_*.md
 backups/
 operations/daily/
 operations/logs/
+
+# 範本檔要進版控（需置於所有 .env* 規則之後才會生效）
+!.env.local.example
