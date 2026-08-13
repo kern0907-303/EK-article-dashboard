@@ -81,7 +81,26 @@ def send_telegram_document(token, chat_id, filepath):
 
 def main():
     load_dotenv()
-    
+
+    # ------------------------------------------------------------------
+    # 2026-08：每日推播預設停用。
+    #
+    # 原因：連續 47 天的日報標題幾乎相同（創業者／女性／自我價值／內在消耗／
+    # 狀態穩定／承接力的排列組合）。因為 discovery.py 的候選來源是硬編碼
+    # mock，decision.py 實際上是把品牌設定檔（current_product /
+    # target_audience / current_campaign）交給 LLM 換句話說，形成封閉迴圈，
+    # 沒有任何外部訊號進入，也沒有時間軸可以判斷「什麼變熱了」。
+    #
+    # 話題發現改由 n8n 的「話題雷達」流程負責（每日蒐集累積、每週選題），
+    # 這裡先靜音以免持續產生雜訊。HTML 產出與 GitHub Pages 發布都保留不動，
+    # 只是不再主動推播到 Telegram。
+    #
+    # 要恢復推播：在 .env 設 BRANDOS_TELEGRAM_ENABLED=true
+    # ------------------------------------------------------------------
+    if os.environ.get("BRANDOS_TELEGRAM_ENABLED", "").lower() not in ("true", "1", "yes"):
+        print("TELEGRAM_DISABLED: 每日推播已停用（於 .env 設 BRANDOS_TELEGRAM_ENABLED=true 可恢復）")
+        return
+
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     send_docs = os.environ.get("TELEGRAM_SEND_DOCUMENTS", "false").lower() == "true"
