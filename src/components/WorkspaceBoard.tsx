@@ -6,7 +6,8 @@ import {
   Plus, Trash2, Eye, Edit2, Check,
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
   Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp,
-  Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal
+  Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -15,6 +16,9 @@ import {
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
 import { getProjectName } from "@/lib/projects-store";
+import { 
+  FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPageById, getFacebookPagesByIds 
+} from "@/lib/facebook-pages";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
@@ -352,6 +356,16 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [platform, setPlatform] = useState(activePlatform || "threads");
   const [isAdapting, setIsAdapting] = useState(false);
+  const [selectedTargetPages, setSelectedTargetPages] = useState<string[]>(() => [
+    getDefaultFacebookPage(brandId).id
+  ]);
+  const [showPageSelector, setShowPageSelector] = useState(false);
+
+  // 當切換品牌時，自動更新預設目標粉專
+  useEffect(() => {
+    const defaultPage = getDefaultFacebookPage(brandId);
+    setSelectedTargetPages([defaultPage.id]);
+  }, [brandId]);
 
   const getOtherPlatformCopy = () => {
     if (platform !== "facebook" && socialCopyFacebook?.trim()) return socialCopyFacebook;
@@ -401,12 +415,6 @@ const SocialTabContent = memo(function SocialTabContent({
                 <button className="hover:text-emerald-500 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><Repeat className="w-3.5 h-3.5" /></button>
                 <button className="hover:text-slate-200 transition-colors p-1 hover:bg-slate-900 rounded-full cursor-pointer"><Share2 className="w-3.5 h-3.5" /></button>
               </div>
-              
-              <div className="mt-2.5 flex items-center gap-1.5 text-[9px] text-slate-500 border-t border-slate-900/60 pt-2">
-                <span>96 則愛心</span>
-                <span>•</span>
-                <span>12 則回覆</span>
-              </div>
             </div>
           </div>
         </div>
@@ -426,7 +434,7 @@ const SocialTabContent = memo(function SocialTabContent({
                   <span className="font-bold text-xs text-slate-100 hover:underline cursor-pointer">{brandName}</span>
                 </div>
                 <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium">
-                  <span>剛剛</span>
+                  <span>貼文預覽</span>
                   <span>·</span>
                   <span className="text-[10px]" title="公開">🌐</span>
                 </div>
@@ -441,17 +449,7 @@ const SocialTabContent = memo(function SocialTabContent({
             {renderMarkdown(content)}
           </div>
           
-          <div className="mt-4 flex items-center justify-between text-[10px] text-slate-400 border-b border-[#2f3031] pb-2.5">
-            <div className="flex items-center gap-1">
-              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-[8px] text-white">👍</span>
-              <span className="font-medium hover:underline cursor-pointer">你與其他 148 人</span>
-            </div>
-            <div className="hover:underline cursor-pointer">
-              <span>28 次分享</span>
-            </div>
-          </div>
-          
-          <div className="mt-1 flex items-center justify-around text-slate-400 font-bold text-[11px] pt-1">
+          <div className="mt-4 pt-2 border-t border-[#2f3031] flex items-center justify-around text-slate-400 font-bold text-[11px]">
             <button className="flex items-center justify-center gap-1.5 py-1.5 hover:bg-[#242526] rounded-lg w-full transition hover:text-blue-500 cursor-pointer">
               <ThumbsUp className="w-3.5 h-3.5" />
               <span>讚</span>
@@ -483,7 +481,7 @@ const SocialTabContent = memo(function SocialTabContent({
               </div>
               <div className="flex items-center gap-1">
                 <span className="font-bold text-xs text-slate-100 hover:underline cursor-pointer">{brandName}</span>
-                <span className="w-3 h-3 bg-blue-500 text-[7px] text-white flex items-center justify-center rounded-full">✓</span>
+                <span className="w-3.5 h-3.5 bg-blue-500 text-[7px] text-white flex items-center justify-center rounded-full">✓</span>
               </div>
             </div>
             <button className="text-slate-400 hover:text-slate-200 p-1 rounded-full hover:bg-slate-950 transition cursor-pointer">
@@ -509,12 +507,10 @@ const SocialTabContent = memo(function SocialTabContent({
           </div>
           
           <div className="px-3 pb-4 space-y-1.5 text-xs">
-            <p className="font-bold text-slate-100">1,248 個讚</p>
             <div className="leading-relaxed text-slate-200 break-words select-text selection:bg-pink-500/20">
               <span className="font-bold text-slate-100 mr-2 hover:underline cursor-pointer">{brandName}</span>
               {renderMarkdown(content)}
             </div>
-            <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">12 小時前</p>
           </div>
         </div>
       );
@@ -753,7 +749,11 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handleSyndicateArticle = async (articleContent: string) => {
     if (isPublishing) return;
-    if (!confirm("確定要將此篇歷史文章直接發布至社群（N8N 分流與第一則留言連結）嗎？")) {
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const targetPageConfigs = getFacebookPagesByIds(targetIds);
+    const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
+
+    if (!confirm(`確定要將此篇歷史文章直接發布至社群【${pageNames}】（N8N 分流與第一則留言連結）嗎？`)) {
       return;
     }
     setIsPublishing(true);
@@ -764,6 +764,7 @@ const SocialTabContent = memo(function SocialTabContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brandId,
+          targetPages: targetIds,
           content: articleContent,
           action: "now",
           scheduleTime: null
@@ -775,11 +776,11 @@ const SocialTabContent = memo(function SocialTabContent({
       }
 
       setPubStatus("success");
-      alert("🎉 歷史文章社群補發成功！");
-    } catch (error) {
+      alert(`🎉 歷史文章已成功補發至【${pageNames}】！`);
+    } catch (error: any) {
       console.error("Publish error:", error);
       setPubStatus("error");
-      alert("❌ 發布失敗，請確認 n8n Webhook 設定");
+      alert(`❌ 發布失敗：${error?.message || "請確認 n8n Webhook 設定"}`);
     } finally {
       setIsPublishing(false);
       setTimeout(() => setPubStatus("idle"), 4000);
@@ -799,12 +800,17 @@ const SocialTabContent = memo(function SocialTabContent({
     setIsPublishing(true);
     setPubStatus("idle");
 
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const targetPageConfigs = getFacebookPagesByIds(targetIds);
+    const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
+
     try {
       const response = await fetch("/api/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brandId,
+          targetPages: targetIds,
           content: val,
           action: actionType,
           scheduleTime: targetTime || null,
@@ -828,11 +834,15 @@ const SocialTabContent = memo(function SocialTabContent({
       }
 
       setPubStatus("success");
-      alert(actionType === "now" ? "🎉 已發布至 Meta！" : `📅 已成功設定排程於：${new Date(targetTime!).toLocaleString()}！`);
-    } catch (error) {
+      alert(
+        actionType === "now"
+          ? `🎉 已成功發布至【${pageNames}】！`
+          : `📅 已成功設定排程於：${new Date(targetTime!).toLocaleString()}（目標：${pageNames}）！`
+      );
+    } catch (error: any) {
       console.error("Publish error:", error);
       setPubStatus("error");
-      alert("❌ 發布失敗，請確認 n8n Webhook 設定");
+      alert(`❌ 發布失敗：${error?.message || "請確認 n8n Webhook 設定"}`);
     } finally {
       setIsPublishing(false);
       setTimeout(() => setPubStatus("idle"), 4000);
@@ -1046,6 +1056,122 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
+          {/* 🎯 目標 Facebook 粉絲專頁選擇器 (Target Facebook Fan Page Selector) */}
+          {val && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPageSelector(!showPageSelector)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900/90 hover:bg-slate-850 text-slate-200 border border-slate-750 hover:border-slate-600 transition-all duration-200 cursor-pointer shadow-sm"
+                title="切換或多選發布目標 Facebook 粉絲專頁"
+              >
+                <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span className="text-slate-400 font-normal">目標粉專:</span>
+                <span className="font-bold text-slate-100 flex items-center gap-1">
+                  {selectedTargetPages.length === 1 ? (
+                    getFacebookPageById(selectedTargetPages[0])?.badge || "FB 粉專"
+                  ) : selectedTargetPages.length > 1 ? (
+                    <span className="bg-blue-500/20 text-blue-300 px-1.5 py-0.2 rounded border border-blue-500/30">
+                      {selectedTargetPages.length} 個粉專同步
+                    </span>
+                  ) : (
+                    <span className="text-rose-400">未選擇</span>
+                  )}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showPageSelector ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* 下拉選擇面板 */}
+              {showPageSelector && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowPageSelector(false)} />
+                  <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-80 bg-slate-950/95 border border-slate-800 rounded-xl shadow-2xl z-50 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-850">
+                      <div className="flex items-center gap-1.5">
+                        <Facebook className="w-4 h-4 text-blue-400" />
+                        <span className="text-xs font-bold text-slate-100">選擇發布 Facebook 粉絲專頁</span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">可多選發布</span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {FACEBOOK_PAGES.map((page) => {
+                        const isChecked = selectedTargetPages.includes(page.id);
+                        const isCurrentBrand = getDefaultFacebookPage(brandId).id === page.id;
+                        return (
+                          <div
+                            key={page.id}
+                            onClick={() => {
+                              setSelectedTargetPages((prev) => {
+                                if (prev.includes(page.id)) {
+                                  if (prev.length === 1) return prev; // 至少保留一個選擇
+                                  return prev.filter((id) => id !== page.id);
+                                } else {
+                                  return [...prev, page.id];
+                                }
+                              });
+                            }}
+                            className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${
+                              isChecked
+                                ? `${page.activeBgClass} ${page.activeBorderClass}`
+                                : "bg-slate-900/40 border-slate-800/80 hover:bg-slate-900 text-slate-400"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="mt-0.5 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0 cursor-pointer"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs font-bold ${isChecked ? "text-slate-100" : "text-slate-300"}`}>
+                                  {page.name}
+                                </span>
+                                {isCurrentBrand && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-semibold">
+                                    當前品牌
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-400 truncate mt-0.5">{page.pageName}</p>
+                              <p className="text-[9px] text-slate-500 truncate mt-0.5">{page.category}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 快捷操作列 */}
+                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-850 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTargetPages(FACEBOOK_PAGES.map((p) => p.id))}
+                        className="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                      >
+                        全選所有粉專
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTargetPages([getDefaultFacebookPage(brandId).id])}
+                        className="text-slate-400 hover:text-slate-200 font-semibold cursor-pointer"
+                      >
+                        僅選當前品牌
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowPageSelector(false)}
+                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold cursor-pointer transition"
+                      >
+                        完成
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Webhook Publish Action Buttons */}
           {val && (
             <div className="flex gap-1.5 mr-2 border-r border-slate-800 pr-2">
@@ -1109,7 +1235,13 @@ const SocialTabContent = memo(function SocialTabContent({
                     ) : (
                       <Send className="w-3 h-3 text-slate-950" />
                     )}
-                    {pubStatus === "success" ? "已發布至 Meta" : pubStatus === "error" ? "發布失敗" : "🚀 發布至 Meta"}
+                    {pubStatus === "success"
+                      ? "已發布至 Meta"
+                      : pubStatus === "error"
+                      ? "發布失敗"
+                      : selectedTargetPages.length === 1
+                      ? `🚀 發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
+                      : `🚀 發布至 Meta (${selectedTargetPages.length} 粉專)`}
                   </button>
 
                   <button

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
+import { FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPagesByIds } from "@/lib/facebook-pages";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, content, action, scheduleTime, force } = await req.json();
+    const { brandId, targetPages: rawTargetPages, content, action, scheduleTime, force } = await req.json();
 
     if (!brandId || !content) {
       return NextResponse.json(
@@ -12,7 +13,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 品牌紅線檢查，與 /api/publish-website 同一套規則
+    // 解析目標粉專：若前端未傳入，則自動以當前品牌預設粉專為主
+    let targetPageIds: string[] = [];
+    if (Array.isArray(rawTargetPages) && rawTargetPages.length > 0) {
+      targetPageIds = rawTargetPages;
+    } else if (typeof rawTargetPages === "string" && rawTargetPages.trim().length > 0) {
+      targetPageIds = [rawTargetPages.trim()];
+    } else {
+      const defaultPage = getDefaultFacebookPage(brandId);
+      targetPageIds = [defaultPage.id];
+    }
+
+    const targetPageConfigs = getFacebookPagesByIds(targetPageIds);
+    const targetPageDetails = targetPageConfigs.length > 0
+      ? targetPageConfigs.map((p) => ({
+          id: p.id,
+          name: p.name,
+          pageName: p.pageName,
+          brandKey: p.brandKey,
+          badge: p.badge,
+        }))
+      : [{
+          id: targetPageIds[0] || "fb_default",
+          name: "預設粉絲專頁",
+          pageName: "預設粉絲專頁",
+          brandKey: "erick",
+          badge: "預設粉專",
+        }];
+
+    // 品牌紅線檢查（以主品牌或目標粉專品牌為準）
     const guardrail = inspectForPublish(content, brandId);
     if (!guardrail.passed && !force) {
       return NextResponse.json(
@@ -30,8 +59,6 @@ export async function POST(req: NextRequest) {
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
     if (!n8nWebhookUrl) {
-      // 先前這裡硬編碼了正式 webhook 作為 fallback，環境變數漏設時會靜默
-      // 打到線上流程，難以察覺。改為明確報錯。
       return NextResponse.json(
         { error: "未設定 N8N_WEBHOOK_URL 環境變數" },
         { status: 500 }
@@ -42,29 +69,35 @@ export async function POST(req: NextRequest) {
       console.warn("N8N_WEBHOOK_URL is set to 'mock'. Simulating success in mock mode.");
       return NextResponse.json({
         success: true,
-        message: "N8N_WEBHOOK_URL is configured as 'mock'. Simulating success.",
+        message: "N8N_WEBHOOK_URL is configured as 'mock'. Simulating success across target fan pages.",
         simulated: true,
+        targetPages: targetPageIds,
+        targetPageDetails,
         data: {
           brandId,
+          targetPages: targetPageIds,
+          targetPageDetails,
           content,
-          action,
-          scheduleTime,
-          timestamp: Date.now()
-        }
+          action: action || "now",
+          scheduleTime: scheduleTime || null,
+          timestamp: Date.now(),
+        },
       });
     }
 
-    // 發送請求至 n8n Webhook
+    // 發送請求至 n8n Webhook（帶入完整的多粉專分流參數）
     const response = await fetch(n8nWebhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         brandId,
+        targetPages: targetPageIds,
+        targetPageDetails,
         content,
         action: action || "now",
         scheduleTime: scheduleTime || null,
-        timestamp: Date.now()
-      })
+        timestamp: Date.now(),
+      }),
     });
 
     if (!response.ok) {
@@ -81,7 +114,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: responseData
+      targetPages: targetPageIds,
+      targetPageDetails,
+      data: responseData,
     });
   } catch (error: any) {
     console.error("Error in /api/publish:", error);

@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, Brain, Compass, Sparkles, Activity, User, Check } from "lucide-react";
+import { ChevronDown, Brain, Compass, Sparkles, Activity, Check, Facebook } from "lucide-react";
 
 export interface Brand {
   id: string;
   name: string;
   desc: string;
+  fbPageName: string;
   icon: React.ComponentType<any>;
   colorClass: string;
   borderClass: string;
@@ -18,6 +19,7 @@ export const BRANDS: Brand[] = [
     id: "brand_a_i8", 
     name: "I8 (Initial 8 CO.)", 
     desc: "企業關鍵因素與決策校準", 
+    fbPageName: "I8 企業關鍵因素與決策校準",
     icon: Activity, 
     colorClass: "bg-indigo-500/10 text-indigo-400",
     borderClass: "border-indigo-500/20",
@@ -27,6 +29,7 @@ export const BRANDS: Brand[] = [
     id: "brand_b_nas", 
     name: "NAS (平衡空間)", 
     desc: "生命數字自我探索與關係理解", 
+    fbPageName: "NAS 平衡空間生命數字",
     icon: Compass, 
     colorClass: "bg-purple-500/10 text-purple-400",
     borderClass: "border-purple-500/20",
@@ -36,6 +39,7 @@ export const BRANDS: Brand[] = [
     id: "brand_c_abl", 
     name: "ABL (量子調頻)", 
     desc: "信息場狀態分析與能量調和", 
+    fbPageName: "ABL 信息場狀態分析與調和",
     icon: Sparkles, 
     colorClass: "bg-cyan-500/10 text-cyan-400",
     borderClass: "border-cyan-500/20",
@@ -45,6 +49,7 @@ export const BRANDS: Brand[] = [
     id: "personal_brand", 
     name: "Erick 個人品牌", 
     desc: "事業與人生關鍵因素諮詢", 
+    fbPageName: "Erick 事業與人生關鍵因素諮詢",
     icon: Brain, 
     colorClass: "bg-amber-500/10 text-amber-400",
     borderClass: "border-amber-500/20",
@@ -79,20 +84,24 @@ export default function BrandSelector({ activeBrandId, onChangeBrand }: BrandSel
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border bg-slate-900/60 hover:bg-slate-800/80 transition-all duration-300 backdrop-blur-md cursor-pointer ${activeBrand.borderClass}`}
       >
-        <div className="flex items-center gap-3 text-left">
-          <div className={`p-2 rounded-lg ${activeBrand.colorClass}`}>
+        <div className="flex items-center gap-3 text-left min-w-0">
+          <div className={`p-2 rounded-lg shrink-0 ${activeBrand.colorClass}`}>
             <ActiveIcon className="w-5 h-5" />
           </div>
-          <div>
-            <h4 className="font-bold text-slate-100 text-sm leading-tight">
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-slate-100 text-sm leading-tight truncate">
               {activeBrand.name}
             </h4>
-            <p className="text-xs text-slate-400 truncate max-w-[150px]">
+            <p className="text-xs text-slate-400 truncate max-w-[170px]">
               {activeBrand.desc}
             </p>
+            <div className="flex items-center gap-1 mt-1 text-[10px] text-blue-400 font-medium">
+              <Facebook className="w-3 h-3 text-blue-400 shrink-0" />
+              <span className="truncate">{activeBrand.fbPageName}</span>
+            </div>
           </div>
         </div>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
       {/* Dropdown List */}
@@ -117,21 +126,25 @@ export default function BrandSelector({ activeBrandId, onChangeBrand }: BrandSel
                       isSelected ? "bg-slate-800/40" : ""
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded-md ${brand.colorClass}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`p-1.5 rounded-md shrink-0 ${brand.colorClass}`}>
                         <BrandIcon className="w-4 h-4" />
                       </div>
-                      <div>
-                        <span className={`text-sm font-semibold block ${isSelected ? "text-slate-100" : "text-slate-300"}`}>
+                      <div className="min-w-0">
+                        <span className={`text-sm font-semibold block truncate ${isSelected ? "text-slate-100" : "text-slate-300"}`}>
                           {brand.name}
                         </span>
-                        <span className="text-xs text-slate-500 block">
+                        <span className="text-xs text-slate-500 block truncate">
                           {brand.desc}
+                        </span>
+                        <span className="text-[10px] text-blue-400/90 flex items-center gap-1 mt-0.5">
+                          <Facebook className="w-2.5 h-2.5" />
+                          <span className="truncate">{brand.fbPageName}</span>
                         </span>
                       </div>
                     </div>
                     {isSelected && (
-                      <Check className={`w-4 h-4 ${brand.textClass}`} />
+                      <Check className={`w-4 h-4 shrink-0 ${brand.textClass}`} />
                     )}
                   </button>
                 </li>
