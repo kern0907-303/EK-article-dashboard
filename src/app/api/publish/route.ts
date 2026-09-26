@@ -56,14 +56,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
-
-    if (!n8nWebhookUrl) {
-      return NextResponse.json(
-        { error: "未設定 N8N_WEBHOOK_URL 環境變數" },
-        { status: 500 }
-      );
-    }
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "https://erick303.app.n8n.cloud/webhook/insights-publish";
 
     if (n8nWebhookUrl === "mock") {
       console.warn("N8N_WEBHOOK_URL is set to 'mock'. Simulating success in mock mode.");

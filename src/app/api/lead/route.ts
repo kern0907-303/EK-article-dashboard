@@ -32,14 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "缺少測驗結果類型" }, { status: 400 });
     }
 
-    const webhookUrl = process.env.N8N_LEAD_WEBHOOK_URL;
-    if (!webhookUrl) {
-      console.error("[/api/lead] N8N_LEAD_WEBHOOK_URL 未設定，名單無法寫入");
-      return NextResponse.json(
-        { error: "名單服務尚未設定，請聯繫管理者" },
-        { status: 500 }
-      );
-    }
+    const webhookUrl = process.env.N8N_LEAD_WEBHOOK_URL || "https://erick303.app.n8n.cloud/webhook/brand-lead-capture";
 
     const payload = {
       name: (name || "").toString().trim().slice(0, 80) || "未留名",
