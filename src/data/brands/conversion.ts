@@ -60,11 +60,11 @@ export const BRAND_CONVERSIONS: Record<string, BrandConversion> = {
     brandId: "brand_a_i8",
     shortId: "i8",
     stage: "nurture",
-    ctaLabel: "免費做經營卡點自評",
+    ctaLabel: "做管理情境盤點",
     ctaUrl: "https://erickfirm.com/i8/diagnosis",
     leadMagnet:
-      "經營卡點自評，十題看出目前卡在定位、組織承載力還是決策節奏。留下 email 即可收到診斷結果。",
-    socialCommentText: "閱讀完整文章與動態分析圖表",
+      "管理情境盤點，協助整理目前反覆出現的協作、角色權責與決策節奏問題。留下 email 後可取得本次盤點摘要；這不是診斷報告或自動評分。",
+    socialCommentText: "閱讀完整文章與管理情境盤點表",
   },
 
   personal_brand: {

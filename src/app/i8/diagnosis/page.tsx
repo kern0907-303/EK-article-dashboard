@@ -3,9 +3,9 @@ import LeadQuiz from "@/components/LeadQuiz";
 import { QUIZZES } from "@/data/quizzes";
 
 export const metadata: Metadata = {
-  title: "你的公司卡在哪一層？| I8 企業決策校準",
+  title: "五題管理情境盤點｜I8 企業醫生｜企業決策校準",
   description:
-    "五題經營卡點自評。判斷瓶頸出在定位、組織承載力，還是決策節奏。",
+    "從組織協作、角色權責與管理節奏，整理企業反覆出現的管理情境，作為釐清優先順序的參考。",
 };
 
 export default function I8DiagnosisPage() {

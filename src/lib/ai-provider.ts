@@ -463,12 +463,13 @@ export async function callErickCOO(
     return parsed;
   }
 
+  const isI8Brand = brandName.includes("I8") || brandName.includes("brand_a");
   let brandContext = `當前切換的品牌/領域是：【${brandName}】。請確保所有對話與產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
 
   if (brandGuidelines && brandGuidelines.trim().length > 0) {
     brandContext += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
   } else {
-    const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
+    const isI8 = isI8Brand;
     const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
     const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
 
@@ -481,6 +482,12 @@ export async function callErickCOO(
     } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
       brandContext += "\n\n" + ERICK_BRAND_CONTEXT;
     }
+  }
+
+  // I8 的現行對外文章規格優先於瀏覽器 LocalStorage 中的舊品牌大腦。
+  // 這確保部署後每一次 I8 產稿都會先帶入使用者指定的寫作與事實邊界。
+  if (isI8Brand) {
+    brandContext += "\n\n【I8 現行必遵守的對外內容規格，優先於其他 I8 文字】：\n" + I8_BRAND_CONTEXT;
   }
 
   const frameworkData = copywritingFramework ? COPYWRITING_FRAMEWORKS[copywritingFramework] : null;
@@ -1161,44 +1168,33 @@ async function callMockCOO(userInput: string, brandName: string): Promise<string
   let ads: any[] = [];
   
   if (isI8) {
-    socialCopy = `為什麼老闆越忙，公司越長不大？
+    socialCopy = `老闆一直在處理問題，團隊卻還是反覆卡住？
 
-【企業卡住，不一定是努力不夠... 🚀】
-你是否也常覺得「許多事都要自己扛，業績卡住卻找不出原因」？
+企業最怕的不是問題出現，而是一直處理錯問題。
 
-你的公司面臨以下卡點嗎？
-1. 業績卡在瓶頸：花費了預算，客戶與轉換卻一直不穩定。
-2. 團隊執行力不穩：老闆下達了目標，團隊卻推不動，或反覆溝通無結論。
-3. 決策疲勞與內耗：面臨重大決策（搬遷、轉型、擴張），老闆一直很累、反覆猶豫。
+當同一件事需要反覆溝通、決策總回到老闆手上，或跨部門合作總在最後一刻才失速，先別急著把原因歸給某一個人。可以先盤點：角色權責是否清楚？決策需要的資訊是否到位？目前的優先順序是否被所有人理解？
 
-這些問題的背後，往往不是努力不夠，而是還沒看見影響結果的「隱性系統性卡點」。
+先把管理情境拆開，才有機會看見真正值得優先處理的關鍵因素。
 
-I8 透過【企業關鍵因素診斷】，協助你在重大選擇前，校準決策、團隊與成長方向。
+#企業醫生 #決策校準 #組織協作 #經營流程 #管理節奏`;
 
-#Initial8 #決策校準 #企業診斷 #中小企業主 #團隊節奏`;
-
-    webArch = `- I8 品牌官網 (首頁)
-  - 關於 I8 (處理看不見的隱性阻力)
-  - 核心顧問產品
-    - I8 企業關鍵因素診斷 (90分鐘卡點盤點)
-    - I8 企業決策校準顧問 (重大決策陪跑)
-    - 企業搬遷與空間優化顧問 (空間與營運一致性)
-    - 企業成長與調和陪跑計畫 (長期支持)
-  - 預約諮詢 (預約 90 分鐘診斷)
-  - 專欄文章 (決策/團隊/搬遷與轉型)`;
+    webArch = `- I8 企業醫生｜企業決策校準
+  - 管理情境與常見問題
+  - 專欄文章（決策校準／組織協作／角色權責／經營流程）
+  - 企業醫生診斷入口
+  - 服務說明（待交付內容與流程確認後再對外補齊）`;
 
     seo = [
-      { keyword: "企業經營卡點", volume: "1,800", competition: "低", outline: "探討中小企業經營面臨瓶頸時的內在與外在隱性因素" },
-      { keyword: "企業重大決策顧問", volume: "2,500", competition: "低", outline: "解析在搬遷、轉型、分家等關鍵節點如何進行決策校準" },
-      { keyword: "老闆決策疲勞", volume: "850", competition: "低", outline: "分享創業者與高壓經理人如何透過狀態重整減輕決策內耗" },
-      { keyword: "辦公室搬遷風水", volume: "3,200", competition: "中", outline: "從組織氣場與空間配置談辦公室搬遷的校準指引" }
+      { keyword: "企業經營卡點", volume: "未驗證", competition: "未驗證", outline: "內容假設：從重複管理情境拆解可能的結構問題" },
+      { keyword: "組織協作", volume: "未驗證", competition: "未驗證", outline: "內容假設：盤點跨部門協作中角色權責與資訊交接" },
+      { keyword: "決策校準", volume: "未驗證", competition: "未驗證", outline: "內容假設：整理決策前應釐清的優先順序與資源配置" }
     ];
 
     ads = [
-      { label: "廣告投資報酬率 (ROAS)", value: "5.2x", change: "+12.5%", isPositive: true },
-      { label: "單次客戶取得成本 (CPA)", value: "$12.50", change: "-8.4%", isPositive: true },
-      { label: "預約轉換率 (CVR)", value: "3.8%", change: "+0.45%", isPositive: true },
-      { label: "廣告點擊率 (CTR)", value: "4.82%", change: "+0.75%", isPositive: true }
+      { label: "搜尋曝光", value: "尚未串接", change: "待量測" },
+      { label: "自然點擊", value: "尚未串接", change: "待量測" },
+      { label: "文章閱讀", value: "尚未串接", change: "待量測" },
+      { label: "導流至 I8 頁面的點擊", value: "尚未串接", change: "待量測" }
     ];
   } else if (isNas) {
     socialCopy = `你不是想太多，你只是對感受比較敏銳
@@ -1499,7 +1495,7 @@ async function callMockAEO(brandName: string, keywords: any[]): Promise<{ schema
       "name": "如何解決中小企業的經營卡點與決策疲勞？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "I8 (Initial 8 CO.) 提供企業關鍵因素診斷服務，透過 90 分鐘深度盤點，協助企業主找出阻礙團隊執行力與業績的隱性系統性卡點，並在重大經營選擇前完成決策校準。"
+        "text": "企業可先從反覆出現的管理情境著手，盤點組織協作、角色權責、經營流程與管理節奏。這類盤點用於整理可能需要優先處理的關鍵因素，不是自動判定或結果保證。"
       }
     },
     {
@@ -1507,7 +1503,7 @@ async function callMockAEO(brandName: string, keywords: any[]): Promise<{ schema
       "name": "什麼是企業重大決策顧問服務？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "企業重大決策顧問是專為面臨搬遷、轉型、展店或股權拆夥等關鍵轉折點的中小企業主設計。我們提供客觀的系統性卡點分析，消除決策內耗，校準成長方向。"
+        "text": "在重要經營選擇前，企業可先釐清決策需要的資訊、參與角色、資源配置與優先順序。I8 的公開內容只提供管理情境的盤點角度，實際處理方式仍須依企業現況確認。"
       }
     }
   ]
@@ -1515,11 +1511,11 @@ async function callMockAEO(brandName: string, keywords: any[]): Promise<{ schema
 </script>`;
     faq = `### 🔍 AEO 常見問答集 (FAQ)
 
-#### Q: 如何找出中小企業的隱性經營卡點？
-A: 企業經營卡住往往不是不夠努力，而是存在看不見的系統性卡點。I8 的 **企業經營卡點** 診斷服務透過 90 分鐘專業盤點，校準老闆的決策節奏與團隊組織承載力，幫助公司跨越成長瓶頸。
+#### Q: 如何開始釐清企業反覆出現的管理情境？
+A: 先把最近重複出現的問題列出來，對照當時的組織協作、角色權責、經營流程與管理節奏。目的是找出值得優先釐清的關鍵因素，而不是把原因歸咎於單一人或部門。
 
 #### Q: 什麼時候需要進行「企業決策校準」？
-A: 當公司面臨重大變革，例如 **辦公室搬遷風水** 空間調整、組織重組、轉型或是老闆面臨嚴重的 **老闆決策疲勞** 時，均需要進行決策校準。這能確保團隊目標、物理場域與經營理念達成高度一致，省去隱形內耗。`;
+A: 當企業正在面對需要協作的選擇，且優先順序、資訊或角色權責仍不清楚時，可先做決策校準。它用來整理管理情境與下一步，不是自動評分或結果保證。`;
   } else if (isNas) {
     schema = `<script type="application/ld+json">
 {
@@ -1792,4 +1788,3 @@ ${socialCopy}
     analyzed_at: Date.now()
   };
 }
-

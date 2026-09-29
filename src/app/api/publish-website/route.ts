@@ -12,10 +12,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 品牌紅線檢查：ABL 的「療效／根治／治癒」等用詞在台灣可能觸法，
-    // 預設攔截；確認無誤要放行時由前端帶 force: true。
+    // I8 的對外內容紅線不可由前端 force 略過；其他品牌沿用既有覆核流程。
     const guardrail = inspectForPublish(content, brandId);
-    if (!guardrail.passed && !force) {
+    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",

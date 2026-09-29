@@ -10,35 +10,28 @@ import type { WorkspaceData, ChatMessage } from "@/lib/storage";
 export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
   brand_a_i8: {
     brand_guidelines: I8_BRAND_CONTEXT,
-    social_copy: `I8 核心主張
+    social_copy: `企業最怕的不是問題出現，而是一直處理錯問題。
 
-【企業卡住，不一定是努力不夠... 🚀】
-你是否也常覺得「很多事都要自己扛，業績卡住卻找不出原因」？
+當同一件事反覆溝通、決策總回到老闆手上，或跨部門合作總在最後一刻失速，先別急著把責任放在某一個人身上。
 
-為什麼你的公司需要「I8 決策校準」？
-- 看見隱性阻力：找出團隊執行力不穩、決策反覆的「系統性卡點」。
-- 校準成長方向：重塑老闆決策狀態、空間與經營目標的一致性。
+可以先盤點：角色權責是否清楚？決策需要的資訊是否到位？目前的優先順序是否被所有人理解？
 
-#Initial8 #企業關鍵因素診斷 #決策校準 #團隊調和`,
-    web_architecture: `- I8 品牌首頁
-  - 關於 I8 (處理看不見的隱性阻力)
-  - 核心顧問產品
-    - I8 企業關鍵因素診斷 (入門診斷)
-    - I8 企業決策校準顧問 (重大決策支持)
-    - 企業搬遷與空間優化顧問 (專案空間校準)
-    - 企業成長與調和陪跑計畫 (長期支持)
-  - 預約諮詢 (90分鐘診斷)`,
+#企業醫生 #決策校準 #組織協作 #經營流程 #管理節奏`,
+    web_architecture: `- I8 企業醫生｜企業決策校準
+  - 管理情境與常見問題
+  - 專欄文章（決策校準／組織協作／角色權責／經營流程）
+  - 企業醫生診斷入口
+  - 服務說明（待交付內容與流程確認後再對外補齊）`,
     seo_keywords: [
-      { keyword: "企業經營卡點", volume: "1,800", competition: "低", outline: "探討中小企業經營面臨瓶詢時的內在與外在隱性因素" },
-      { keyword: "企業重大決策顧問", volume: "2,500", competition: "低", outline: "解析在搬遷、轉型、分家等關鍵節點如何進行決策校準" },
-      { keyword: "老闆決策疲勞", volume: "850", competition: "低", outline: "分享創業者與高壓經理人如何透過狀態重整減輕決策內耗" },
-      { keyword: "辦公室搬遷風水", volume: "3,200", competition: "中", outline: "從組織氣場與空間配置談辦公室搬遷的校準指引" }
+      { keyword: "企業經營卡點", volume: "未驗證", competition: "未驗證", outline: "內容假設：從重複管理情境拆解可能的結構問題" },
+      { keyword: "組織協作", volume: "未驗證", competition: "未驗證", outline: "內容假設：盤點跨部門協作中角色權責與資訊交接" },
+      { keyword: "決策校準", volume: "未驗證", competition: "未驗證", outline: "內容假設：整理決策前應釐清的優先順序與資源配置" }
     ],
     ad_data: [
-      { label: "診斷諮詢預約數", value: "48 組", change: "+18.5%", isPositive: true },
-      { label: "廣告點擊率 (CTR)", value: "4.82%", change: "+0.75%", isPositive: true },
-      { label: "單次點擊成本 (CPC)", value: "$0.52", change: "-8.4%", isPositive: true },
-      { label: "廣告總花費 (Spend)", value: "$850", change: "-5.0%", isPositive: true }
+      { label: "搜尋曝光", value: "尚未串接", change: "待量測" },
+      { label: "自然點擊", value: "尚未串接", change: "待量測" },
+      { label: "文章閱讀", value: "尚未串接", change: "待量測" },
+      { label: "導流至 I8 頁面的點擊", value: "尚未串接", change: "待量測" }
     ]
   },
   brand_b_nas: {

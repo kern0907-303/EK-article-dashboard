@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
 
     // 品牌紅線檢查（以主品牌或目標粉專品牌為準）
     const guardrail = inspectForPublish(content, brandId);
-    if (!guardrail.passed && !force) {
+    // I8 的對外內容紅線不可由前端 force 略過；其他品牌沿用既有覆核流程。
+    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",

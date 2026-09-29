@@ -28,6 +28,7 @@ export default function LeadQuiz({ config }: { config: QuizConfig }) {
   const total = config.questions.length;
   const question = config.questions[current];
   const a = config.accent;
+  const isI8ManagementCheck = config.shortId === "i8";
 
   const choose = (optionIndex: number) => {
     const next = { ...answers, [question.id]: optionIndex };
@@ -79,7 +80,9 @@ export default function LeadQuiz({ config }: { config: QuizConfig }) {
     } catch (err: any) {
       // 名單送出失敗時仍讓使用者看到結果，避免白做一場；後端會記錄錯誤
       console.error("Lead submit error:", err);
-      setError("結果已為你產生，但通知信寄送失敗，請稍後再試或直接聯繫我們。");
+      setError(isI8ManagementCheck
+        ? "盤點摘要已在此頁顯示，但通知信寄送失敗，請稍後再試。"
+        : "結果已為你產生，但通知信寄送失敗，請稍後再試或直接聯繫我們。");
       setPhase("done");
     } finally {
       setSubmitting(false);
@@ -168,7 +171,7 @@ export default function LeadQuiz({ config }: { config: QuizConfig }) {
               <span className="text-sm font-bold">作答完成</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold leading-tight mb-4">
-              你的結果已經產生了
+              {isI8ManagementCheck ? "你的管理情境盤點已完成" : "你的結果已經產生了"}
             </h2>
             <p className="text-base text-slate-300 leading-relaxed mb-8">
               {conversion.leadMagnet}
@@ -191,7 +194,7 @@ export default function LeadQuiz({ config }: { config: QuizConfig }) {
 
               <div>
                 <label htmlFor="lead-email" className="block text-xs font-bold text-slate-400 mb-2">
-                  結果寄到哪個信箱？
+                  {isI8ManagementCheck ? "盤點摘要寄到哪個信箱？" : "結果寄到哪個信箱？"}
                 </label>
                 <input
                   id="lead-email"
@@ -232,21 +235,26 @@ export default function LeadQuiz({ config }: { config: QuizConfig }) {
         {/* ---------------------------------------------------- 結果 */}
         {phase === "done" && (
           <section>
-            <p className={`text-sm font-bold ${a.text} mb-3`}>你的結果</p>
+            <p className={`text-sm font-bold ${a.text} mb-3`}>
+              {isI8ManagementCheck ? "盤點摘要" : "你的結果"}
+            </p>
             <h2 className="text-2xl sm:text-3xl font-extrabold leading-tight mb-6">
               {result.title}
             </h2>
             <p className="text-base text-slate-300 leading-relaxed mb-6">{result.body}</p>
 
             <div className={`px-5 py-4 rounded-xl bg-slate-900/60 border ${a.border} mb-8`}>
-              <p className="text-xs font-bold text-slate-400 mb-2">下一步建議</p>
+              <p className="text-xs font-bold text-slate-400 mb-2">
+                {isI8ManagementCheck ? "可先做的盤點" : "下一步建議"}
+              </p>
               <p className="text-sm text-slate-200 leading-relaxed">{result.nextStep}</p>
             </div>
 
             {error && <p className="text-sm text-amber-400 mb-6">{error}</p>}
 
             <p className="text-sm text-slate-400 mb-6">
-              完整版已經寄到 <span className="text-slate-200 font-semibold">{email}</span>，
+              {isI8ManagementCheck ? "本次盤點摘要已寄到" : "完整版已經寄到"}
+              {" "}<span className="text-slate-200 font-semibold">{email}</span>，
               如果沒收到請看一下垃圾信件匣。
             </p>
 
