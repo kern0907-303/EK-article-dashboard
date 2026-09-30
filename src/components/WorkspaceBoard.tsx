@@ -23,6 +23,12 @@ import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
+import PublishQueuePanel from "./PublishQueuePanel";
+import type { QueueItem } from "@/lib/publish-queue";
+
+// 沒有 API 憑證、無法排程的粉專（與 src/lib/publish-queue.ts 的 UNSCHEDULABLE_PAGE_IDS 保持一致；
+// 那個檔案含伺服器端金鑰讀取，不能在 client 元件裡當值 import，所以這裡另存一份常數）
+const UNSCHEDULABLE_PAGE_IDS_CLIENT = ["fb_erick"];
 
 interface GuardrailBlock {
   violatedWords?: string[];
@@ -47,6 +53,12 @@ const confirmGuardrail = (data: GuardrailBlock): boolean => {
   }
   lines.push("按「確定」仍要照原文發布，按「取消」回去修改。");
   return window.confirm(lines.join("\n"));
+};
+
+/** 轉成 <input type="datetime-local"> 需要的當地時間字串（YYYY-MM-DDTHH:mm） */
+const toLocalInputValue = (d: Date): string => {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
 const getBrandOrProjectName = (id: string): string => {
@@ -361,6 +373,13 @@ const SocialTabContent = memo(function SocialTabContent({
   ]);
   const [showPageSelector, setShowPageSelector] = useState(false);
 
+  // 排程佇列狀態
+  const [publishedArticle, setPublishedArticle] = useState<{ id: string; content: string } | null>(null);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [queueEnabled, setQueueEnabled] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
   // 當切換品牌時，自動更新預設目標粉專
   useEffect(() => {
     const defaultPage = getDefaultFacebookPage(brandId);
@@ -676,6 +695,44 @@ const SocialTabContent = memo(function SocialTabContent({
     fetchHistory();
   }, [brandId]);
 
+  const fetchQueue = async () => {
+    setIsLoadingQueue(true);
+    try {
+      const response = await fetch(`/api/publish-queue?brandId=${encodeURIComponent(brandId)}`, { cache: "no-store" });
+      const resData = await response.json();
+      setQueueEnabled(!!resData.enabled);
+      setQueueItems(Array.isArray(resData.data) ? resData.data : []);
+      setQueueError(resData.success ? null : resData.error || "讀取排程失敗");
+    } catch (err: any) {
+      setQueueEnabled(false);
+      setQueueError(err?.message || "讀取排程失敗");
+    } finally {
+      setIsLoadingQueue(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQueue();
+    const timer = setInterval(fetchQueue, 60000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
+
+  const handleCancelQueue = async (id: string) => {
+    try {
+      const response = await fetch("/api/publish-queue", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "cancel" }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(resData.error || "取消失敗");
+      await fetchQueue();
+    } catch (err: any) {
+      alert(`❌ 取消排程失敗：${err?.message || "未知錯誤"}`);
+      fetchQueue();
+    }
+  };
   const handleCopyCleanText = async () => {
     try {
       // 1. 移除所有的 Mermaid 代碼區塊 (包括 ```mermaid ... ```)
@@ -728,6 +785,11 @@ const SocialTabContent = memo(function SocialTabContent({
 
       if (!response.ok) {
         throw new Error(resData.error || "發布至官網失敗");
+      }
+
+      const newArticleId = Array.isArray(resData.data) ? resData.data[0]?.id : resData.data?.id;
+      if (newArticleId !== undefined && newArticleId !== null) {
+        setPublishedArticle({ id: String(newArticleId), content: val });
       }
 
       alert("🎉 文章已成功同步至官網 Supabase 資料庫！");
@@ -793,6 +855,123 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handleSave = () => {
     saveWorkspace(brandId, { social_copy: val });
+  };
+
+  /**
+   * 排程前確保文章已上架官網並取得 articleId（決策：排程當下就上架）。
+   * 若目前內容已經上架過（且沒有再改動）就直接沿用，避免重複上架同一篇。
+   * 回傳 null 表示使用者取消或失敗（訊息已處理）。
+   */
+  const ensureArticleId = async (force = false): Promise<string | null> => {
+    if (publishedArticle && publishedArticle.content === val) {
+      return publishedArticle.id;
+    }
+
+    const response = await fetch("/api/publish-website", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brandId,
+        brandName: getBrandOrProjectName(brandId),
+        content: val,
+        aeoSchema: aeoSchema || null,
+        aeoFaq: aeoFaq || null,
+        force
+      })
+    });
+    const resData = await response.json().catch(() => ({}));
+
+    if (response.status === 422 && resData.blocked) {
+      if (confirmGuardrail(resData)) {
+        return ensureArticleId(true);
+      }
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(resData.error || "發布至官網失敗");
+    }
+
+    const newId = Array.isArray(resData.data) ? resData.data[0]?.id : resData.data?.id;
+    if (newId === undefined || newId === null) {
+      throw new Error("官網已寫入，但沒有取得文章 id，無法排程");
+    }
+    setPublishedArticle({ id: String(newId), content: val });
+    fetchHistory();
+    return String(newId);
+  };
+
+  const handleSchedule = async (targetTime: string, force = false) => {
+    if (isScheduling || isPublishing || !val || !targetTime) return;
+
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const blockedPages = targetIds.filter((id) => UNSCHEDULABLE_PAGE_IDS_CLIENT.includes(id));
+    if (blockedPages.length > 0) {
+      const names = getFacebookPagesByIds(blockedPages).map((p) => p.badge).join("、");
+      alert(`❌ ${names} 目前沒有 API 憑證，無法排程，請先取消勾選。`);
+      return;
+    }
+
+    // datetime-local 的值是瀏覽器所在時區的當地時間，轉成 UTC ISO 再送出
+    const when = new Date(targetTime);
+    if (Number.isNaN(when.getTime())) {
+      alert("❌ 排程時間格式不正確");
+      return;
+    }
+    if (when.getTime() - Date.now() < 5 * 60 * 1000) {
+      alert("❌ 排程時間至少要晚於現在 5 分鐘");
+      return;
+    }
+
+    const pageNames = getFacebookPagesByIds(targetIds).map((p) => p.badge).join("、") || "FB 粉絲專頁";
+    const whenText = when.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false });
+    if (
+      !force &&
+      !window.confirm(
+        `排程會「現在」先把文章上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
+      )
+    ) {
+      return;
+    }
+
+    setIsScheduling(true);
+    try {
+      const articleId = await ensureArticleId();
+      if (!articleId) return;
+
+      const response = await fetch("/api/publish-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          targetPages: targetIds,
+          content: val,
+          articleId,
+          scheduledAt: when.toISOString(),
+          force
+        })
+      });
+      const resData = await response.json().catch(() => ({}));
+
+      if (response.status === 422 && resData.blocked) {
+        if (confirmGuardrail(resData)) {
+          return await handleSchedule(targetTime, true);
+        }
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(resData.error || "排程失敗");
+      }
+
+      alert(`📅 已排程於 ${whenText}（台北時間）發到【${pageNames}】。文章已先上架官網，可在下方「排程清單」查看狀態或取消。`);
+      setShowDatePicker(false);
+      setScheduleTime("");
+      fetchQueue();
+    } catch (error: any) {
+      console.error("Schedule error:", error);
+      alert(`❌ 排程失敗：${error?.message || "未知錯誤"}`);
+    } finally {
+      setIsScheduling(false);
+    }
   };
 
   const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
@@ -1179,20 +1358,20 @@ const SocialTabContent = memo(function SocialTabContent({
                 <div className="flex items-center gap-1.5 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
                   <input
                     type="datetime-local"
+                    min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
                     className="bg-transparent text-[10px] text-slate-200 focus:outline-none focus:ring-0 cursor-pointer border-0 p-0 w-32"
                     required
                   />
                   <button
-                    disabled={isPublishing || !scheduleTime}
+                    disabled={isScheduling || !scheduleTime}
                     onClick={() => {
-                      handlePublish("schedule", scheduleTime);
-                      setShowDatePicker(false);
+                      handleSchedule(scheduleTime);
                     }}
                     className={`px-2 py-0.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} disabled:bg-slate-800 disabled:text-slate-500 text-[9px] font-bold rounded cursor-pointer transition`}
                   >
-                    確定
+                    {isScheduling ? "排程中..." : "確定"}
                   </button>
                   <button
                     onClick={() => setShowDatePicker(false)}
@@ -1244,14 +1423,22 @@ const SocialTabContent = memo(function SocialTabContent({
                       : `🚀 發布至 Meta (${selectedTargetPages.length} 粉專)`}
                   </button>
 
-                  {/* 階段 0：n8n 尚未實作延後發布，按下去會立刻發文，先停用直到 publish_queue 完成 */}
                   <button
-                    disabled
-                    title="排程功能開發中：目前 n8n 不支援延後發布，避免誤發已先停用"
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed"
+                    disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
+                    onClick={() => setShowDatePicker(true)}
+                    title={
+                      queueEnabled
+                        ? "排程：現在先上架官網，時間到再自動發到勾選的粉專"
+                        : "排程尚未啟用（等 n8n 排程執行器上線後開啟）"
+                    }
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all duration-300 ${
+                      queueEnabled
+                        ? "bg-slate-900 hover:bg-slate-850 text-slate-350 border-slate-800 cursor-pointer"
+                        : "bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed"
+                    }`}
                   >
-                    <Calendar className="w-3 h-3 text-slate-600" />
-                    📅 排程（開發中）
+                    <Calendar className={`w-3 h-3 ${queueEnabled ? "text-slate-400" : "text-slate-600"}`} />
+                    {queueEnabled ? "📅 排程" : "📅 排程（尚未啟用）"}
                   </button>
                 </>
               )}
@@ -1671,6 +1858,16 @@ const SocialTabContent = memo(function SocialTabContent({
           </div>
         )}
       </div>
+
+      {/* 📅 排程清單 (publish_queue) */}
+      <PublishQueuePanel
+        items={queueItems}
+        enabled={queueEnabled}
+        error={queueError}
+        isLoading={isLoadingQueue}
+        onRefresh={fetchQueue}
+        onCancel={handleCancelQueue}
+      />
     </div>
   );
 });
