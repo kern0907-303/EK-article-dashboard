@@ -1244,13 +1244,14 @@ const SocialTabContent = memo(function SocialTabContent({
                       : `🚀 發布至 Meta (${selectedTargetPages.length} 粉專)`}
                   </button>
 
+                  {/* 階段 0：n8n 尚未實作延後發布，按下去會立刻發文，先停用直到 publish_queue 完成 */}
                   <button
-                    disabled={isPublishingWebsite || isPublishing}
-                    onClick={() => setShowDatePicker(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 hover:bg-slate-850 text-slate-350 border border-slate-800 transition-all duration-300 cursor-pointer"
+                    disabled
+                    title="排程功能開發中：目前 n8n 不支援延後發布，避免誤發已先停用"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed"
                   >
-                    <Calendar className="w-3 h-3 text-slate-400" />
-                    📅 排程
+                    <Calendar className="w-3 h-3 text-slate-600" />
+                    📅 排程（開發中）
                   </button>
                 </>
               )}

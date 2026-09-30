@@ -8,6 +8,8 @@
 
 ## 一、整體流程
 
+> 下圖描述的 n8n 週期流程（雷達、計分、復盤）存在於 n8n 與 Google Sheet，無法從本 repo 驗證；2026-09-30 只實際驗證過「發文」分支。
+
 ```mermaid
 flowchart TD
     A["每日 07:30<br/>話題雷達蒐集"] --> B["Google Sheet<br/>話題雷達（含時間軸）"]
@@ -15,7 +17,7 @@ flowchart TD
     C --> D["Google Sheet<br/>選題情報"]
     D --> E["每週一 09:00<br/>Erick COO → Maya/Iris → Leon/Jack"]
     E --> F["紅線檢查<br/>/api/guardrail/check"]
-    F --> G["Google Sheet<br/>文案草稿（含 AI 生圖）"]
+    F --> G["Google Sheet<br/>文案草稿"]
     G --> H["人工審核後發布"]
     H --> I["名單捕捉<br/>三品牌測驗頁"]
     I --> J["每週日 20:00<br/>復盤：名單成效 → 品牌權重"]
@@ -30,13 +32,15 @@ flowchart TD
 
 **前端與 API**：Next.js 16 / React 19 / Tailwind v4 / TypeScript，部署於 Render。
 
-**資料層**：`src/lib/storage.ts` 走 LocalStorage（看板與對話），Supabase 存已發布文章（`insights_articles`）與 AI 生圖（Storage bucket `article-images`）。
+**資料層**：`src/lib/storage.ts` 走 LocalStorage（看板與對話），Supabase 只存已發布文章（表 `insights_articles`，以 PostgREST 直接 fetch，沒有使用 Supabase SDK）。目前**沒有**任何 AI 生圖、也沒有 Storage bucket 的程式碼。
 
 > 早期版本使用 Firebase Firestore，但六個 `NEXT_PUBLIC_FIREBASE_*` 從未設定，該分支永遠不會執行，卻讓整包 SDK 進了 client bundle。2026-08 已完整移除，詳見 `docs/SYSTEM_AUDIT_2026-08.md`。
 
-**自動化**：n8n（`erick303.app.n8n.cloud`），所有金鑰以 credential 儲存並限制網域。
+**自動化**：n8n（`erick303.app.n8n.cloud`），所有金鑰以 credential 儲存並限制網域。發文走 webhook `insights-publish`。**目前 n8n 不支援排程**，收到什麼就立刻發，所以儀表板的「排程」按鈕已停用，`/api/publish` 對 `action: "schedule"` 回 501。
 
-**AI**：Anthropic Claude（Erick COO 與各專家、話題聚類）、OpenAI `gpt-image-1`（配圖）。
+**AI**：Anthropic Claude（Erick COO 與各專家、話題聚類）。`AI_PROVIDER` 為主要供應商，失敗時會依序降級到其他有效金鑰的供應商。配圖**尚未實作**（規劃使用 OpenAI `gpt-image-1`）。
+
+> Python Brand Intelligence OS 與 Next.js 儀表板**沒有任何互通**，也不在 Render 部署範圍內，是另外在本機執行的獨立系統。根目錄的大量 `*.md` 報告屬於該系統的歷史紀錄。`brand-guardrail.ts` 與 `guardrail.py` 的規則已經不同（I8 詞表不同），實際生效的是 TypeScript 版。
 
 ---
 
@@ -60,7 +64,7 @@ ABL 禁「療效、根治、包治、治癒」，這類醫療效能宣稱在台�
 
 違規時 `/api/publish` 與 `/api/publish-website` 回 422 並附上建議改寫，前端跳出確認對話框；要照原文發布須明確帶 `force: true`。`/api/guardrail/check` 是純檢查端點，供 n8n 在生成後、寫入草稿前使用。
 
-規則移植自 Python 側的 `src/orchestrator/guardrail.py`，兩邊修改請同步。
+規則移植自 Python 側的 `src/orchestrator/guardrail.py`，之後兩邊已分歧。**TypeScript 版才是發布路徑上實際生效的規則**（I8 詞表較長，且 I8 不可用 `force` 略過）。
 
 ---
 
@@ -94,7 +98,6 @@ ABL 禁「療效、根治、包治、治癒」，這類醫療效能宣稱在台�
 ## 七、快速開始
 
 ```bash
-cd "/Volumes/4T/Frontend Dashboard"
 npm install
 npm run dev
 ```

@@ -13,6 +13,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 2026-09 階段 0：n8n 發文流程目前不讀取 scheduleTime，收到「排程」請求會立刻發文，
+    // 使用者卻會看到「已排程」的成功訊息。排程機制（publish_queue）完成前，
+    // 一律拒絕 schedule，避免預期在未來發出的貼文被立刻發布。
+    if (action === "schedule") {
+      return NextResponse.json(
+        {
+          error: "排程功能尚未啟用（n8n 端尚未實作延後發布），為避免貼文被立刻發出，已拒絕此請求。",
+          notImplemented: true,
+        },
+        { status: 501 }
+      );
+    }
+
     // 解析目標粉專：若前端未傳入，則自動以當前品牌預設粉專為主
     let targetPageIds: string[] = [];
     if (Array.isArray(rawTargetPages) && rawTargetPages.length > 0) {
@@ -57,7 +70,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "https://erick303.app.n8n.cloud/webhook/insights-publish";
+    // 不再以硬編碼網址當 fallback：環境變數漏設時應明確失敗，而不是靜默打到正式 webhook。
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+    if (!n8nWebhookUrl) {
+      return NextResponse.json(
+        { error: "後台未設定 N8N_WEBHOOK_URL，無法發布" },
+        { status: 500 }
+      );
+    }
 
     if (n8nWebhookUrl === "mock") {
       console.warn("N8N_WEBHOOK_URL is set to 'mock'. Simulating success in mock mode.");

@@ -138,7 +138,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         content: result.content
       });
 
-      // 5. 若有子任務 subPrompts 或是 mockData，啟動非同步專家生成，避免 Netlify 10秒超時限制
+      // 5. 若有子任務 subPrompts 或是 mockData，啟動非同步專家生成，避免單次請求過長超時（部署在 Render）
       if (result.dispatchData && result.dispatchData.subPrompts) {
         const subPrompts = result.dispatchData.subPrompts;
 
