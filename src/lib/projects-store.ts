@@ -58,3 +58,60 @@ export function subscribeToProjects<T = any>(callback: (projects: T[]) => void):
     window.removeEventListener("storage", storageHandler);
   };
 }
+
+// ---------------------------------------------------------------------------
+// 專案「隸屬品牌」
+//
+// 階段專案必須隸屬 I8 / NAS / ABL / Erick 其中之一，決定：
+//   1. 發文時預設的 Facebook 粉專
+//   2. 文章上官網時的品牌分類（insights_articles.brand_id）
+//   3. 品牌紅線檢查與配色主題
+//   4. AI 生成時一併繼承所屬品牌的品牌規則
+//
+// 另存成獨立的對照表（專案 id → 品牌 id），而不是塞進專案物件，
+// 因為專案清單會被 Google Sheet 同步整份覆蓋，塞進去會被洗掉。
+// ---------------------------------------------------------------------------
+
+export const PROJECT_PARENT_KEY = "project_parent_brands";
+
+export const PARENT_BRAND_OPTIONS: { id: string; label: string }[] = [
+  { id: "brand_a_i8", label: "I8（企業顧問）" },
+  { id: "brand_b_nas", label: "NAS（生命靈數）" },
+  { id: "brand_c_abl", label: "ABL（信息場調頻）" },
+  { id: "personal_brand", label: "Erick（個人品牌）" },
+];
+
+function readParentMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PROJECT_PARENT_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 取得專案的所屬品牌 id；尚未設定回傳 null */
+export function getProjectParentBrand(projectId: string): string | null {
+  const v = readParentMap()[projectId];
+  return PARENT_BRAND_OPTIONS.some((o) => o.id === v) ? v : null;
+}
+
+/** 設定專案的所屬品牌，並廣播讓畫面更新 */
+export function setProjectParentBrand(projectId: string, brandId: string): void {
+  if (typeof window === "undefined") return;
+  const map = readParentMap();
+  map[projectId] = brandId;
+  localStorage.setItem(PROJECT_PARENT_KEY, JSON.stringify(map));
+  window.dispatchEvent(new Event(PROJECTS_UPDATED_EVENT));
+}
+
+/**
+ * 發文、粉專、主題用的「有效品牌 id」：
+ * 一般品牌回傳自己；專案回傳所屬品牌；專案尚未設定所屬品牌回傳 null。
+ */
+export function resolveEffectiveBrandId(id: string): string | null {
+  if (!id || !id.startsWith("project_")) return id;
+  return getProjectParentBrand(id);
+}

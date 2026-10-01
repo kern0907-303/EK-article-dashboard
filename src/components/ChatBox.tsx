@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
+import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 
@@ -28,6 +29,33 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     });
     return () => unsubscribe();
   }, [activeBrandId]);
+
+  // 階段專案繼承所屬品牌的品牌規則：先放品牌規則，再接專案自己的補充規範
+  const [parentGuidelines, setParentGuidelines] = useState("");
+  useEffect(() => {
+    let unsubWs: (() => void) | null = null;
+    const bind = () => {
+      unsubWs?.();
+      unsubWs = null;
+      setParentGuidelines("");
+      if (!activeBrandId.startsWith("project_")) return;
+      const parent = resolveEffectiveBrandId(activeBrandId);
+      if (!parent) return;
+      unsubWs = subscribeToWorkspace(parent, (w) => {
+        setParentGuidelines(w?.brand_guidelines || "");
+      });
+    };
+    bind();
+    const unsubProjects = subscribeToProjects(bind);
+    return () => {
+      unsubWs?.();
+      unsubProjects();
+    };
+  }, [activeBrandId]);
+  const mergedGuidelines =
+    parentGuidelines && brandGuidelines
+      ? `${parentGuidelines}\n\n【本專案補充規範（優先於上述通用規則）】\n${brandGuidelines}`
+      : parentGuidelines || brandGuidelines;
 
   const [activePlat, setActivePlat] = useState("threads");
   const [activeFramework, setActiveFramework] = useState("default");
@@ -113,7 +141,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           history: updatedHistory,
           brandName: activeBrandName,
           aiProvider: aiProvider,
-          brandGuidelines,
+          brandGuidelines: mergedGuidelines,
           platform: activePlat,
           copywritingFramework: activeFramework
         })
@@ -173,7 +201,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   subPrompts,
                   brandName: activeBrandName,
                   aiProvider,
-                  brandGuidelines,
+                  brandGuidelines: mergedGuidelines,
                   platform: activePlat
                 })
               });
@@ -222,7 +250,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   subPrompts,
                   brandName: activeBrandName,
                   aiProvider,
-                  brandGuidelines,
+                  brandGuidelines: mergedGuidelines,
                   prevData
                 })
               });

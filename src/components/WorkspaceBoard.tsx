@@ -15,7 +15,8 @@ import {
   SEOKeyword, AdDataItem, TheoAnalysis, ReachKillerItem
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
-import { getProjectName } from "@/lib/projects-store";
+import SchedulePicker from "@/components/SchedulePicker";
+import { getProjectName, resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { 
   FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPageById, getFacebookPagesByIds 
 } from "@/lib/facebook-pages";
@@ -53,12 +54,6 @@ const confirmGuardrail = (data: GuardrailBlock): boolean => {
   }
   lines.push("按「確定」仍要照原文發布，按「取消」回去修改。");
   return window.confirm(lines.join("\n"));
-};
-
-/** 轉成 <input type="datetime-local"> 需要的當地時間字串（YYYY-MM-DDTHH:mm） */
-const toLocalInputValue = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
 const getBrandOrProjectName = (id: string): string => {
@@ -208,6 +203,15 @@ const TABS = [
 
 export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("social");
+  // 側邊欄點專家 → 切到對應分頁
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const t = (e as CustomEvent<string>).detail;
+      if (TABS.some((x) => x.id === t)) setActiveTab(t as TabType);
+    };
+    window.addEventListener("ek-switch-tab", handler);
+    return () => window.removeEventListener("ek-switch-tab", handler);
+  }, []);
   const [data, setData] = useState<WorkspaceData>({
     social_copy: "",
     web_architecture: "",
@@ -360,7 +364,24 @@ const SocialTabContent = memo(function SocialTabContent({
   seoKeywords?: any[];
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }) {
-  const theme = useBrandTheme(brandId);
+  // 發文／粉專／官網分類／主題一律用「有效品牌」：一般品牌是自己，階段專案是所屬品牌
+  const [parentTick, setParentTick] = useState(0);
+  useEffect(() => subscribeToProjects(() => setParentTick((n) => n + 1)), []);
+  const resolvedParent = useMemo(
+    () => resolveEffectiveBrandId(brandId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [brandId, parentTick]
+  );
+  const pubBrandId = resolvedParent || brandId;
+  const projectNeedsParent = brandId.startsWith("project_") && !resolvedParent;
+  const requireParentBrand = (): boolean => {
+    if (projectNeedsParent) {
+      alert("⚠️ 此階段專案還沒有選擇「所屬品牌」，請先到左側專案區選擇（I8／NAS／ABL／Erick），才能發文或上官網。");
+      return false;
+    }
+    return true;
+  };
+  const theme = useBrandTheme(pubBrandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [val, setVal] = useState(socialCopy);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -390,7 +411,7 @@ const SocialTabContent = memo(function SocialTabContent({
     : "生成時間不明（舊文案）";
   const [isAdapting, setIsAdapting] = useState(false);
   const [selectedTargetPages, setSelectedTargetPages] = useState<string[]>(() => [
-    getDefaultFacebookPage(brandId).id
+    getDefaultFacebookPage(pubBrandId).id
   ]);
   const [showPageSelector, setShowPageSelector] = useState(false);
 
@@ -403,9 +424,9 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isScheduling, setIsScheduling] = useState(false);
   // 當切換品牌時，自動更新預設目標粉專
   useEffect(() => {
-    const defaultPage = getDefaultFacebookPage(brandId);
+    const defaultPage = getDefaultFacebookPage(pubBrandId);
     setSelectedTargetPages([defaultPage.id]);
-  }, [brandId]);
+  }, [pubBrandId]);
 
   const getOtherPlatformCopy = () => {
     if (platform !== "facebook" && socialCopyFacebook?.trim()) return socialCopyFacebook;
@@ -700,7 +721,7 @@ const SocialTabContent = memo(function SocialTabContent({
   const fetchHistory = async () => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(`/api/articles?brandId=${brandId}`);
+      const response = await fetch(`/api/articles?brandId=${pubBrandId}`);
       if (response.ok) {
         const resData = await response.json();
         if (resData.success && Array.isArray(resData.data)) {
@@ -716,12 +737,12 @@ const SocialTabContent = memo(function SocialTabContent({
 
   useEffect(() => {
     fetchHistory();
-  }, [brandId]);
+  }, [pubBrandId]);
 
   const fetchQueue = async () => {
     setIsLoadingQueue(true);
     try {
-      const response = await fetch(`/api/publish-queue?brandId=${encodeURIComponent(brandId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/publish-queue?brandId=${encodeURIComponent(pubBrandId)}`, { cache: "no-store" });
       const resData = await response.json();
       setQueueEnabled(!!resData.enabled);
       setQueueItems(Array.isArray(resData.data) ? resData.data : []);
@@ -739,7 +760,7 @@ const SocialTabContent = memo(function SocialTabContent({
     const timer = setInterval(fetchQueue, 60000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
+  }, [pubBrandId]);
 
   const handleCancelQueue = async (id: string) => {
     try {
@@ -777,6 +798,7 @@ const SocialTabContent = memo(function SocialTabContent({
   };
 
   const handlePublishWebsite = async (force = false) => {
+    if (!requireParentBrand()) return;
     if (isPublishingWebsite || !val) return;
     setIsPublishingWebsite(true);
     try {
@@ -786,7 +808,7 @@ const SocialTabContent = memo(function SocialTabContent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId,
+          brandId: pubBrandId,
           brandName,
           content: val,
           aeoSchema: aeoSchema || null,
@@ -833,8 +855,9 @@ const SocialTabContent = memo(function SocialTabContent({
   };
 
   const handleSyndicateArticle = async (articleContent: string) => {
+    if (!requireParentBrand()) return;
     if (isPublishing) return;
-    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(pubBrandId).id];
     const targetPageConfigs = getFacebookPagesByIds(targetIds);
     const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
 
@@ -848,7 +871,7 @@ const SocialTabContent = memo(function SocialTabContent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId,
+          brandId: pubBrandId,
           targetPages: targetIds,
           content: articleContent,
           action: "now",
@@ -894,7 +917,7 @@ const SocialTabContent = memo(function SocialTabContent({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        brandId,
+        brandId: pubBrandId,
         brandName: getBrandOrProjectName(brandId),
         content: val,
         aeoSchema: aeoSchema || null,
@@ -924,9 +947,10 @@ const SocialTabContent = memo(function SocialTabContent({
   };
 
   const handleSchedule = async (targetTime: string, force = false) => {
+    if (!requireParentBrand()) return;
     if (isScheduling || isPublishing || !val || !targetTime) return;
 
-    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(pubBrandId).id];
     const blockedPages = targetIds.filter((id) => UNSCHEDULABLE_PAGE_IDS_CLIENT.includes(id));
     if (blockedPages.length > 0) {
       const names = getFacebookPagesByIds(blockedPages).map((p) => p.badge).join("、");
@@ -965,7 +989,7 @@ const SocialTabContent = memo(function SocialTabContent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId,
+          brandId: pubBrandId,
           targetPages: targetIds,
           content: val,
           articleId,
@@ -998,11 +1022,12 @@ const SocialTabContent = memo(function SocialTabContent({
   };
 
   const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
+    if (!requireParentBrand()) return;
     if (isPublishing || !val) return;
     setIsPublishing(true);
     setPubStatus("idle");
 
-    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(brandId).id];
+    const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(pubBrandId).id];
     const targetPageConfigs = getFacebookPagesByIds(targetIds);
     const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
 
@@ -1011,7 +1036,7 @@ const SocialTabContent = memo(function SocialTabContent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId,
+          brandId: pubBrandId,
           targetPages: targetIds,
           content: val,
           action: actionType,
@@ -1299,7 +1324,7 @@ const SocialTabContent = memo(function SocialTabContent({
                     <div className="space-y-1.5 max-h-64 overflow-y-auto">
                       {FACEBOOK_PAGES.map((page) => {
                         const isChecked = selectedTargetPages.includes(page.id);
-                        const isCurrentBrand = getDefaultFacebookPage(brandId).id === page.id;
+                        const isCurrentBrand = getDefaultFacebookPage(pubBrandId).id === page.id;
                         return (
                           <div
                             key={page.id}
@@ -1355,7 +1380,7 @@ const SocialTabContent = memo(function SocialTabContent({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSelectedTargetPages([getDefaultFacebookPage(brandId).id])}
+                        onClick={() => setSelectedTargetPages([getDefaultFacebookPage(pubBrandId).id])}
                         className="text-slate-400 hover:text-slate-200 font-semibold cursor-pointer"
                       >
                         僅選當前品牌
@@ -1379,13 +1404,10 @@ const SocialTabContent = memo(function SocialTabContent({
             <div className="flex gap-1.5 mr-2 border-r border-slate-800 pr-2">
               {showDatePicker ? (
                 <div className="flex items-center gap-1.5 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <input
-                    type="datetime-local"
-                    min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
+                  <SchedulePicker
                     value={scheduleTime}
-                    onChange={(e) => setScheduleTime(e.target.value)}
-                    className="bg-transparent text-[10px] text-slate-200 focus:outline-none focus:ring-0 cursor-pointer border-0 p-0 w-32"
-                    required
+                    onChange={setScheduleTime}
+                    accentClass={theme.primaryBg}
                   />
                   <button
                     disabled={isScheduling || !scheduleTime}

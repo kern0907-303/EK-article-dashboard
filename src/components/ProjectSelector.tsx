@@ -6,7 +6,10 @@ import {
   Loader2, AlertCircle, HelpCircle, ExternalLink, Sheet, Folder 
 } from "lucide-react";
 import { saveWorkspace } from "@/lib/storage";
-import { readProjects, writeProjects } from "@/lib/projects-store";
+import {
+  readProjects, writeProjects, PARENT_BRAND_OPTIONS,
+  getProjectParentBrand, setProjectParentBrand, subscribeToProjects
+} from "@/lib/projects-store";
 
 export interface ProjectData {
   id: string;
@@ -102,6 +105,9 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
   const [newProjId, setNewProjId] = useState("");
   const [newProjName, setNewProjName] = useState("");
   const [newProjGuidelines, setNewProjGuidelines] = useState("");
+  const [newProjParent, setNewProjParent] = useState("");
+  const [, setParentTick] = useState(0);
+  useEffect(() => subscribeToProjects(() => setParentTick((n) => n + 1)), []);
 
   // 狀態通知
   const [isLoading, setIsLoading] = useState(false);
@@ -237,6 +243,10 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
       alert("請填寫所有必要欄位");
       return;
     }
+    if (!newProjParent) {
+      alert("請選擇此專案的「所屬品牌」");
+      return;
+    }
 
     const cleanId = `project_${newProjId.trim().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
@@ -261,6 +271,9 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
     setIsLoading(true);
 
     try {
+      // 0. 記錄所屬品牌（獨立對照表，不會被 Google Sheet 同步洗掉）
+      setProjectParentBrand(cleanId, newProjParent);
+
       // 1. 同步到工作區
       await syncProjectToWorkspace(newProject);
 
@@ -293,6 +306,7 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
       setNewProjId("");
       setNewProjName("");
       setNewProjGuidelines("");
+      setNewProjParent("");
       setShowAddForm(false);
       onChangeProject(cleanId);
       
@@ -370,12 +384,35 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
                 {activeProject ? activeProject.name : "請選擇執行專案"}
               </h4>
               <p className="text-xs text-slate-400 truncate max-w-[150px]">
-                {activeProject ? activeProject.id.replace("project_", "") : "尚未選取任何專案"}
+                {activeProject
+                  ? `${activeProject.id.replace("project_", "")} · ${
+                      PARENT_BRAND_OPTIONS.find((o) => o.id === getProjectParentBrand(activeProject.id))?.label.split("（")[0] || "未選品牌"
+                    }`
+                  : "尚未選取任何專案"}
               </p>
             </div>
           </div>
           <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
         </button>
+
+        {/* 舊專案尚未設定所屬品牌：要求補選一次 */}
+        {activeProject && !getProjectParentBrand(activeProject.id) && (
+          <div className="mt-2 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 space-y-2">
+            <p className="text-[11px] font-bold text-amber-300">
+              此專案還沒有「所屬品牌」，補選後才能發文與上官網
+            </p>
+            <select
+              defaultValue=""
+              onChange={(e) => e.target.value && setProjectParentBrand(activeProject.id, e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-slate-950 border border-amber-500/30 rounded-lg text-slate-100 focus:outline-none cursor-pointer"
+            >
+              <option value="">請選擇所屬品牌…</option>
+              {PARENT_BRAND_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Dropdown List */}
         {isOpen && (
@@ -557,6 +594,21 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
               placeholder="e.g. 618年中促銷文案專案"
               className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/40"
             />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-slate-400 block">所屬品牌（必選：決定發文粉專、官網分類與品牌規則）</label>
+            <select
+              required
+              value={newProjParent}
+              onChange={(e) => setNewProjParent(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500/40 cursor-pointer"
+            >
+              <option value="">請選擇所屬品牌…</option>
+              {PARENT_BRAND_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-1">

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import ExpertTeamList from "@/components/ExpertTeamList";
 import { Bot, Sparkles, Radio, Cpu, Network, Menu, X } from "lucide-react";
 import BrandSelector, { BRANDS } from "@/components/BrandSelector";
 import ProjectSelector from "@/components/ProjectSelector";
@@ -196,43 +197,7 @@ export default function DashboardPage() {
                   <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                     直轄 AI 專家團隊
                   </h4>
-                  <ul className="space-y-2 text-xs">
-                    <li className="flex items-center justify-between text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                        Maya (社群行銷)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">文案發布</span>
-                    </li>
-                    <li className="flex items-center justify-between text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Theo (流量預測)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">病毒分數</span>
-                    </li>
-                    <li className="flex items-center justify-between text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                        Leon (系統架構)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">網頁路由</span>
-                    </li>
-                    <li className="flex items-center justify-between text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Iris (SEO 專家)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">關鍵字庫</span>
-                    </li>
-                    <li className="flex items-center justify-between text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                        Jack (廣告數據)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">指標漏斗</span>
-                    </li>
-                  </ul>
+                  <ExpertTeamList onPick={() => { setIsDrawerOpen(false); setActiveTab("board"); }} />
                 </div>
               </div>
             </div>
@@ -353,43 +318,7 @@ export default function DashboardPage() {
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                   直轄 AI 專家團隊
                 </h4>
-                <ul className="space-y-2 text-xs">
-                  <li className="flex items-center justify-between text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      Maya (社群行銷)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">文案發布</span>
-                  </li>
-                  <li className="flex items-center justify-between text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                      Theo (流量預測)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">病毒分數</span>
-                  </li>
-                  <li className="flex items-center justify-between text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                      Leon (系統架構)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">網頁路由</span>
-                  </li>
-                  <li className="flex items-center justify-between text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Iris (SEO 專家)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">關鍵字庫</span>
-                  </li>
-                  <li className="flex items-center justify-between text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                      Jack (廣告數據)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">指標漏斗</span>
-                  </li>
-                </ul>
+                <ExpertTeamList onPick={() => setActiveTab("board")} />
               </div>
             </div>
           </div>
