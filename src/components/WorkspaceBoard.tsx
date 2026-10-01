@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  WorkspaceData, subscribeToWorkspace, saveWorkspace, 
+  WorkspaceData, subscribeToWorkspace, saveWorkspace, getMergedBrandGuidelines, 
   SEOKeyword, AdDataItem, TheoAnalysis, ReachKillerItem
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
@@ -622,6 +622,7 @@ const SocialTabContent = memo(function SocialTabContent({
           brandName,
           aiProvider,
           platform,
+          brandGuidelines: getMergedBrandGuidelines(brandId),
           prevData: { 
             social_copy: sourceCopy,
             seo_keywords: seoKeywords 
@@ -2596,35 +2597,11 @@ const SEOTabContent = memo(function SEOTabContent({
           <div className="flex items-center gap-2">
             <Sparkles className={`w-4 h-4 ${theme.primaryColor} animate-pulse`} />
             <div>
-              <h4 className="text-xs font-bold text-slate-200">AEO/SEO 智慧優化器 (Iris 強化)</h4>
-              <p className="text-[10px] text-slate-400">一鍵生成 FAQ 結構化資料與 Answer Engine 優化問答集，鎖定 AI 搜尋引用源</p>
+              <h4 className="text-xs font-bold text-slate-200">將隨文章存入官網的問答與結構化資料</h4>
+              <p className="text-[10px] text-slate-400">由上方「文章優化器」按「套用」後產生，按「發布至官網」時會一起存入，官網會自動顯示問答並放入結構化資料，不需手動複製貼上。</p>
             </div>
           </div>
           
-          <button
-            type="button"
-            onClick={handleGenerateAeo}
-            disabled={isGeneratingAeo || !keywords || keywords.length === 0}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              isGeneratingAeo 
-                ? "bg-slate-800 text-slate-400 cursor-not-allowed" 
-                : !keywords || keywords.length === 0
-                ? "bg-slate-900/50 text-slate-500 border border-slate-850 cursor-not-allowed"
-                : `${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} hover:shadow-lg hover:${theme.glowShadow}`
-            }`}
-          >
-            {isGeneratingAeo ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                正在生成中...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5" />
-                一鍵生成 AEO/SEO 優化代碼
-              </>
-            )}
-          </button>
         </div>
 
         {isGeneratingAeo && (

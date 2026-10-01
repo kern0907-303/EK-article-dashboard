@@ -35,9 +35,9 @@ export interface SeoOptimization {
   is_local_check: boolean;
 }
 
-/** FAQ 轉純文字：Q1：問題 / A1：回答，題與題之間空一行 */
+/** FAQ 轉純文字：「Q：問題」「A：回答」成對，題與題之間空一行（格式需與官網 build-static-pages.js 的解析規則一致） */
 export function faqToPlainText(faq: SeoFaqItem[]): string {
-  return faq.map((f, i) => `Q${i + 1}：${f.q.trim()}\nA${i + 1}：${f.a.trim()}`).join("\n\n");
+  return faq.map((f) => `Q：${f.q.trim()}\nA：${f.a.trim()}`).join("\n\n");
 }
 
 /**

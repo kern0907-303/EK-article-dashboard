@@ -1,4 +1,5 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
+import { stripMarkdown } from "@/lib/plain-text";
 import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
@@ -570,7 +571,8 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
     return {
       content: "",
       dispatchData: {
-        social_copy: result.social_copy || ""
+        // 改寫結果一律清成純文字（AI 偶爾仍會帶出 ** ## 等符號，Facebook / Threads / IG 都不吃）
+        social_copy: stripMarkdown(result.social_copy || "")
       }
     };
   }
@@ -716,7 +718,7 @@ ${irisPrompt}
       }
     ]
   },
-  "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（純文字，不要任何 Markdown 符號（不可出現 ** ## - 等），格式例如：Q1：問題？換行 A1：回答）"
+  "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（純文字，不要任何 Markdown 符號（不可出現 ** ## - 等），格式例如：Q：問題？換行 A：回答，Q 與 A 後面一律不加數字）"
 }`;
 
     // 2026-08 修正：原本這裡會要求 Maya 為每篇文章產出 DALL-E 3 生圖描述，
@@ -1417,7 +1419,7 @@ ${keywords.map((k: any) => `- ${k.keyword} (搜尋量: ${k.volume}, 競爭度: $
 
 請生成以下兩項資產：
 1. **JSON-LD 結構化資料**：一個包含 FAQPage 類型的結構化資料程式碼區塊（使用 <script type="application/ld+json"> 包含，提供符合 schema.org 標準的 FAQ 問答資訊，以幫助 ChatGPT Search/Gemini/Perplexity 引用）。
-2. **AEO 常見問答集 (FAQ)**：設計 3 個最符合回答引擎（AEO）直接採用特徵的問答對。問答必須直接、清晰、結構化。純文字格式，不可出現任何 Markdown 符號（不可出現 ** ## - 等），每題格式為「Q1：問題」換行「A1：回答」，題與題之間空一行，並融入以上關鍵字大綱。
+2. **AEO 常見問答集 (FAQ)**：設計 3 個最符合回答引擎（AEO）直接採用特徵的問答對。問答必須直接、清晰、結構化。純文字格式，不可出現任何 Markdown 符號（不可出現 ** ## - 等），每題格式為「Q：問題」換行「A：回答」（Q 與 A 後面不加數字），題與題之間空一行，並融入以上關鍵字大綱。
 
 請以一個符合 JSON 格式的代碼區塊輸出，且以 \`\`\`json 開始，以 \`\`\` 結束。
 

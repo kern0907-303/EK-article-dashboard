@@ -203,6 +203,7 @@ function syncPlatformFields(current: WorkspaceData, updatedFields: Partial<Works
 
 /** 更新部分看板欄位，並在階段專案模式下同步回 Google Sheet */
 import { stripMarkdown } from "@/lib/plain-text";
+import { resolveEffectiveBrandId } from "@/lib/projects-store";
 
 export async function saveWorkspace(
   brandId: string,
@@ -281,4 +282,21 @@ async function syncProjectToSheet(brandId: string, workspace: WorkspaceData): Pr
   } catch (err) {
     console.error("Network error syncing workspace to Google Sheet:", err);
   }
+}
+
+
+/**
+ * 取得送給 AI 的品牌規則：一般品牌是自己的品牌大腦；
+ * 階段專案是「所屬品牌的品牌規則」＋「專案自己的補充規範」。
+ */
+export function getMergedBrandGuidelines(brandId: string): string {
+  if (typeof window === "undefined") return "";
+  const own = readOrSeed(WORKSPACE_KEY(brandId), () => seedWorkspace(brandId))?.brand_guidelines || "";
+  if (!brandId.startsWith("project_")) return own;
+  const parentId = resolveEffectiveBrandId(brandId);
+  const parent = parentId
+    ? readOrSeed(WORKSPACE_KEY(parentId), () => seedWorkspace(parentId))?.brand_guidelines || ""
+    : "";
+  if (parent && own) return `${parent}\n\n【本專案補充規範（優先於上述通用規則）】\n${own}`;
+  return parent || own;
 }
