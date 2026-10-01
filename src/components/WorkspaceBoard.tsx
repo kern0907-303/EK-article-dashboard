@@ -622,6 +622,7 @@ const SocialTabContent = memo(function SocialTabContent({
           brandName,
           aiProvider,
           platform,
+          copywritingFramework: (() => { try { return localStorage.getItem("ek_active_framework") || "default"; } catch { return "default"; } })(),
           brandGuidelines: getMergedBrandGuidelines(brandId),
           prevData: { 
             social_copy: sourceCopy,

@@ -66,7 +66,21 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       : parentGuidelines || brandGuidelines;
 
   const [activePlat, setActivePlat] = useState("threads");
-  const [activeFramework, setActiveFramework] = useState("default");
+  const [activeFramework, setActiveFramework] = useState<string>("default");
+  const [frameworkLoaded, setFrameworkLoaded] = useState(false);
+  // 載入上次的框架選擇（放在 effect 內避免伺服器端渲染不一致）
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("ek_active_framework");
+      if (saved && COPYWRITING_FRAMEWORKS[saved]) setActiveFramework(saved);
+    } catch {}
+    setFrameworkLoaded(true);
+  }, []);
+  // 框架選擇存起來，讓社群文案頁的平台改寫也能讀到同一個選擇
+  useEffect(() => {
+    if (!frameworkLoaded) return;
+    try { localStorage.setItem("ek_active_framework", activeFramework); } catch {}
+  }, [activeFramework, frameworkLoaded]);
 
   // 訂閱當前品牌的看板資料以獲取品牌說明與平台設定
   useEffect(() => {
@@ -220,7 +234,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   brandName: activeBrandName,
                   aiProvider,
                   brandGuidelines: mergedGuidelines,
-                  platform: activePlat
+                  platform: activePlat,
+                  copywritingFramework: activeFramework
                 })
               });
               if (res.ok) {
@@ -457,6 +472,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               {progress.stage === 3 && "③ Leon 設計網頁、Jack 估算廣告中"}
               {progress.stage === 4 && `✓ ${progress.note}`}
               {progress.stage === -1 && `⚠ ${progress.note}`}
+              {progress.stage >= 1 && progress.stage <= 3 && activeFramework !== "default" && (
+                <span className="ml-2 font-normal text-sky-300">
+                  套用框架：{COPYWRITING_FRAMEWORKS[activeFramework]?.name}
+                </span>
+              )}
               {progress.stage >= 1 && progress.stage <= 3 && (
                 <span className="ml-2 font-normal text-slate-400" data-tick={tick}>
                   已進行 {Math.max(0, Math.round((Date.now() - progress.startedAt) / 1000))} 秒
