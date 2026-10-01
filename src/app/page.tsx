@@ -110,7 +110,7 @@ export default function DashboardPage() {
           />
           {/* Drawer container */}
           <div
-            className="fixed inset-y-0 left-0 z-50 w-72 bg-slate-950/95 border-r border-slate-800 p-5 lg:hidden flex flex-col justify-between transition-transform duration-300 ease-in-out transform translate-x-0"
+            className="fixed inset-y-0 left-0 z-50 w-72 bg-slate-950/95 border-r border-slate-800 p-5 lg:hidden flex flex-col justify-between overflow-y-auto transition-transform duration-300 ease-in-out transform translate-x-0"
           >
             <div className="space-y-6 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
@@ -250,7 +250,7 @@ export default function DashboardPage() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col lg:flex-row p-4 sm:p-6 gap-4 sm:gap-6 overflow-hidden">
         {/* Left Column (Brand Switcher & Profile Card) - Hidden on mobile, shown on desktop */}
-        <div className="hidden lg:flex lg:w-1/4 xl:w-1/5 flex flex-col justify-between h-full bg-slate-900/20 border border-slate-800/60 p-5 rounded-2xl backdrop-blur-md shrink-0">
+        <div className="hidden lg:flex lg:w-1/4 xl:w-1/5 flex flex-col gap-6 h-full min-h-0 overflow-y-auto bg-slate-900/20 border border-slate-800/60 p-5 rounded-2xl backdrop-blur-md shrink-0">
           <div className="space-y-6">
             {/* Mode Toggle (Segmented Control) */}
             <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl p-1 flex">
@@ -324,7 +324,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Sidebar Footer */}
-          <div className="space-y-2">
+          <div className="space-y-2 mt-auto">
             <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-400 bg-slate-950/30 border border-slate-850 rounded-xl">
               <Network className="w-3.5 h-3.5 text-slate-500" />
               <div className="truncate">
@@ -339,7 +339,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Center Column (ChatBox) */}
-        <div className={`flex-1 lg:w-2/5 h-full flex flex-col ${activeTab === "chat" ? "flex" : "hidden lg:flex"}`}>
+        <div className={`flex-1 lg:w-2/5 h-full min-h-0 flex flex-col ${activeTab === "chat" ? "flex" : "hidden lg:flex"}`}>
           <ChatBox 
             activeBrandId={resolvedBrandId} 
             activeBrandName={activeBrandName} 
@@ -348,7 +348,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Right Column (WorkspaceBoard) */}
-        <div className={`flex-1 lg:w-2/5 h-full flex flex-col ${activeTab === "board" ? "flex" : "hidden lg:flex"}`}>
+        <div className={`flex-1 lg:w-2/5 h-full min-h-0 flex flex-col ${activeTab === "board" ? "flex" : "hidden lg:flex"}`}>
           <WorkspaceBoard 
             activeBrandId={resolvedBrandId} 
             aiProvider={aiProvider}

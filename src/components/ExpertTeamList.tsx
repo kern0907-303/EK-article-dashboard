@@ -28,10 +28,10 @@ export default function ExpertTeamList({ onPick }: { onPick?: () => void }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-[10px] text-slate-500 leading-relaxed">
-        怎麼用：在中間對話框對 Erick 營運長下指令，他會同時派工給下面幾位，結果各自出現在右側對應分頁。點專家名字可直接跳到他的分頁。
+      <p className="text-[10px] text-slate-500 leading-snug">
+        在中間對話框對 Erick 下指令，他派工給大家；點名字跳到分頁。
       </p>
-      <ul className="space-y-1.5 text-xs">
+      <ul className="space-y-0.5 text-xs">
         {EXPERTS.map((e) => (
           <li key={e.name}>
             <button
@@ -46,7 +46,6 @@ export default function ExpertTeamList({ onPick }: { onPick?: () => void }) {
               </span>
               <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">{e.tag}</span>
             </button>
-            <p className="px-2 text-[9px] text-slate-600 leading-snug">{e.how}</p>
           </li>
         ))}
       </ul>
