@@ -17,6 +17,14 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  // 進度：0 待命、1 營運長拆解、2 Maya/Iris、3 Leon/Jack、4 完成、-1 未觸發/失敗
+  const [progress, setProgress] = useState<{ stage: number; startedAt: number; note: string }>({ stage: 0, startedAt: 0, note: "" });
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (progress.stage < 1 || progress.stage > 3) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [progress.stage]);
   const [brandGuidelines, setBrandGuidelines] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -97,6 +105,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     }
     setIsGenerating(false);
     setIsLoading(false);
+    setProgress({ stage: 0, startedAt: 0, note: "" });
     
     // 將預覽狀態重設
     await saveWorkspace(activeBrandId, {
@@ -115,6 +124,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     setInputValue("");
     setIsLoading(true);
     setIsGenerating(false);
+    setProgress({ stage: 1, startedAt: Date.now(), note: "" });
 
     // 初始化 AbortController
     abortControllerRef.current = new AbortController();
@@ -167,12 +177,18 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       });
 
       // 5. 若有子任務 subPrompts 或是 mockData，啟動非同步專家生成，避免單次請求過長超時（部署在 Render）
+      if (!(result.dispatchData && result.dispatchData.subPrompts)) {
+        const msg = "這次營運長只回覆了對話，沒有派工給專家，所以右邊內容沒有更新。請把指令說得更明確（例如「請 Maya 寫一篇……」）後重送。";
+        setProgress((p) => ({ ...p, stage: -1, note: msg }));
+        await saveChatMessage(activeBrandId, { role: "assistant", content: `【系統狀態】${msg}` });
+      }
       if (result.dispatchData && result.dispatchData.subPrompts) {
         const subPrompts = result.dispatchData.subPrompts;
 
         // 如果是 mockData 模式，直接一次性更新，省去後續請求
         if (subPrompts.mockData) {
           await saveWorkspace(activeBrandId, subPrompts.mockData, { generated: true });
+          setProgress((p) => ({ ...p, stage: 4, note: "完成（模擬模式）" }));
         } else {
           // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
           await saveWorkspace(activeBrandId, {
@@ -189,7 +205,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           });
 
           // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
+          let anyFailed = false;
           const runMayaIris = async () => {
+            setProgress((p) => ({ ...p, stage: 2 }));
             try {
               const res = await fetch("/api/chat", {
                 method: "POST",
@@ -229,6 +247,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 return;
               }
               console.error("Background Maya & Iris generation failed:", e);
+              anyFailed = true;
               await saveWorkspace(activeBrandId, {
                 social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
                 seo_keywords: [
@@ -239,6 +258,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           };
 
           const runLeonJack = async (prevData?: any) => {
+            setProgress((p) => ({ ...p, stage: 3 }));
             try {
               const res = await fetch("/api/chat", {
                 method: "POST",
@@ -277,6 +297,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 return;
               }
               console.error("Background Leon & Jack generation failed:", e);
+              anyFailed = true;
               await saveWorkspace(activeBrandId, {
                 web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
                 ad_data: [
@@ -296,6 +317,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             } finally {
               if (!signal.aborted) {
                 setIsGenerating(false);
+                setProgress((p) => anyFailed
+                  ? { ...p, stage: -1, note: "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
+                  : { ...p, stage: 4, note: "全部完成" });
               }
             }
           };
@@ -308,6 +332,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         return;
       }
       console.error("Chat error:", error);
+      setProgress((p) => ({ ...p, stage: -1, note: `營運長處理失敗：${error.message || "未知異常"}` }));
       await saveChatMessage(activeBrandId, {
         role: "assistant",
         content: `【營運回報】系統處理指令時發生錯誤：${error.message || "未知異常"}。請確認您的 API 金鑰設定。`
@@ -422,20 +447,50 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Cancel Panel */}
-      {(isLoading || isGenerating) && (
-        <div className="mx-4 mb-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="flex items-center gap-2 text-xs text-amber-400 font-bold">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            {isLoading ? "營運長 Erick 正在指派中..." : "專家團隊正在並行分析與生成中..."}
+      {/* 進度與狀態面板 */}
+      {progress.stage !== 0 && (
+        <div className={`mx-4 mb-2 p-3 rounded-xl border ${progress.stage === -1 ? "bg-red-500/10 border-red-500/30" : progress.stage === 4 ? "bg-emerald-500/10 border-emerald-500/30" : "bg-amber-500/10 border-amber-500/20"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className={`text-xs font-bold ${progress.stage === -1 ? "text-red-300" : progress.stage === 4 ? "text-emerald-300" : "text-amber-400"}`}>
+              {progress.stage === 1 && "① 營運長拆解任務中"}
+              {progress.stage === 2 && "② Maya 寫社群文案、Iris 規劃 SEO 中"}
+              {progress.stage === 3 && "③ Leon 設計網頁、Jack 估算廣告中"}
+              {progress.stage === 4 && `✓ ${progress.note}`}
+              {progress.stage === -1 && `⚠ ${progress.note}`}
+              {progress.stage >= 1 && progress.stage <= 3 && (
+                <span className="ml-2 font-normal text-slate-400" data-tick={tick}>
+                  已進行 {Math.max(0, Math.round((Date.now() - progress.startedAt) / 1000))} 秒
+                </span>
+              )}
+            </div>
+            {progress.stage >= 1 && progress.stage <= 3 ? (
+              <button
+                type="button"
+                onClick={handleCancelGeneration}
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold rounded-lg cursor-pointer transition-colors shrink-0"
+              >
+                取消生成
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setProgress({ stage: 0, startedAt: 0, note: "" })}
+                className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer shrink-0"
+              >
+                關閉
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={handleCancelGeneration}
-            className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold rounded-lg cursor-pointer transition-colors"
-          >
-            取消生成
-          </button>
+          {progress.stage >= 1 && progress.stage <= 3 && (
+            <>
+              <div className="mt-2 h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${progress.stage * 30}%` }} />
+              </div>
+              <div className="mt-1.5 text-[10px] text-slate-400">
+                通常 30 到 90 秒。免費主機閒置後第一次可能多等約 50 秒。出錯時這裡會變紅並說明原因。
+              </div>
+            </>
+          )}
         </div>
       )}
 

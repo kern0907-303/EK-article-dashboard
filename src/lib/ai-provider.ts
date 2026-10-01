@@ -665,7 +665,18 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
     }
 
     if (!subPrompts) {
-      return parseCOOOutput(erickOutput);
+      const fallbackParsed = parseCOOOutput(erickOutput);
+      console.warn(`[callErickCOO] 營運長回覆未附可用的 sub_prompts（長度 ${erickOutput.length}），前 200 字：${erickOutput.slice(0, 200).replace(/\s+/g, " ")}`);
+      // 營運長口頭說要派工、卻漏了 JSON：用使用者原始指令代替，讓專家照常生成
+      const lastUserText = history[history.length - 1]?.content || "";
+      if (stage === "coo" && !fallbackParsed.dispatchData && lastUserText && /Maya|Leon|Iris|Jack/.test(erickOutput)) {
+        console.warn("[callErickCOO] 啟用備援：以使用者原始指令派給四位專家");
+        return {
+          content: fallbackParsed.content,
+          dispatchData: { subPrompts: { maya: lastUserText, iris: lastUserText, leon: lastUserText, jack: lastUserText }, fallback: true }
+        };
+      }
+      return fallbackParsed;
     }
 
     if (stage === "coo") {
