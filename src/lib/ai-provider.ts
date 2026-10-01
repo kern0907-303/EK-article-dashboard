@@ -141,7 +141,8 @@ function extractJSON(text: string): string | null {
 }
 
 function robustJSONParse(text: string): any {
-  const clean = text.trim();
+  // 先去掉開頭的 ```json 與結尾的 ```（即使只有開頭沒有結尾也處理）
+  const clean = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
   
   // 1. 優先嘗試解析 Markdown 中的 json 區塊
   const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
@@ -191,7 +192,8 @@ async function runQueryWithFallback(
   prompt: string,
   config: AIProviderConfig,
   jsonMode?: boolean,
-  preferredProvider?: "openai" | "gemini" | "anthropic"
+  preferredProvider?: "openai" | "gemini" | "anthropic",
+  opts?: { maxTokens?: number; timeoutMs?: number }
 ): Promise<string> {
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
@@ -230,7 +232,7 @@ async function runQueryWithFallback(
       } else if (provider === "openai") {
         return await callOpenAI([{ role: "user", content: prompt }], config, jsonMode);
       } else if (provider === "anthropic") {
-        return await callAnthropic([{ role: "user", content: prompt }], config);
+        return await callAnthropic([{ role: "user", content: prompt }], config, opts);
       }
     } catch (err: any) {
       console.error(`[runQueryWithFallback] ${provider} failed:`, err);
@@ -1099,7 +1101,7 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
 }
 
 // 3. Anthropic 實作
-async function callAnthropic(messages: any[], config: AIProviderConfig): Promise<string> {
+async function callAnthropic(messages: any[], config: AIProviderConfig, opts?: { maxTokens?: number; timeoutMs?: number }): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing ANTHROPIC_API_KEY");
 
@@ -1123,10 +1125,10 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
       model: model,
       system: systemInstruction,
       messages: anthropicMessages,
-      max_tokens: 4000,
+      max_tokens: opts?.maxTokens || 4000,
       temperature: 0.7
     }),
-    signal: getTimeoutSignal(60000)
+    signal: getTimeoutSignal(opts?.timeoutMs || 60000)
   });
 
   if (!response.ok) {
@@ -1135,6 +1137,9 @@ async function callAnthropic(messages: any[], config: AIProviderConfig): Promise
   }
 
   const json = await response.json();
+  if (json.stop_reason === "max_tokens") {
+    throw new Error(`AI 回覆被長度上限截斷（上限 ${opts?.maxTokens || 4000} tokens），內容不完整`);
+  }
   return json.content?.[0]?.text || "";
 }
 
@@ -1882,7 +1887,7 @@ ${content}
 }
 checks 請涵蓋 SEO、AEO、GEO 各至少 2 項；faq 3 到 5 題。`;
 
-  const response = await runQueryWithFallback(prompt, config, true, "anthropic");
+  const response = await runQueryWithFallback(prompt, config, true, "anthropic", { maxTokens: 16000, timeoutMs: 100000 });
   const r = robustJSONParse(response);
   const num = (v: any) => (typeof v === "number" ? Math.max(0, Math.min(100, Math.round(v))) : 0);
 
