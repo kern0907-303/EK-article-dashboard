@@ -287,6 +287,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 aiProvider={aiProvider}
                 activePlatform={data.active_platform}
                 seoKeywords={data.seo_keywords}
+                copyMeta={data.social_copy_meta}
               />
             )}
             {activeTab === "architecture" && (
@@ -343,7 +344,8 @@ const SocialTabContent = memo(function SocialTabContent({
   theoAnalysis,
   aiProvider,
   activePlatform,
-  seoKeywords
+  seoKeywords,
+  copyMeta
 }: { 
   brandId: string; 
   socialCopy: string; 
@@ -356,6 +358,7 @@ const SocialTabContent = memo(function SocialTabContent({
   aiProvider: string;
   activePlatform?: string;
   seoKeywords?: any[];
+  copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }) {
   const theme = useBrandTheme(brandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
@@ -367,6 +370,24 @@ const SocialTabContent = memo(function SocialTabContent({
   const [scheduleTime, setScheduleTime] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [platform, setPlatform] = useState(activePlatform || "threads");
+  const fmtTaipei = (t?: number) =>
+    t
+      ? new Date(t).toLocaleString("zh-TW", {
+          timeZone: "Asia/Taipei",
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+      : "";
+  const metaNow = copyMeta?.[activePlatform || platform];
+  const copyTimeLabel = metaNow?.generated_at || metaNow?.edited_at
+    ? [
+        metaNow?.generated_at ? `生成於 ${fmtTaipei(metaNow.generated_at)}` : "",
+        metaNow?.edited_at ? `編輯於 ${fmtTaipei(metaNow.edited_at)}` : "",
+      ].filter(Boolean).join(" ・ ")
+    : "生成時間不明（舊文案）";
   const [isAdapting, setIsAdapting] = useState(false);
   const [selectedTargetPages, setSelectedTargetPages] = useState<string[]>(() => [
     getDefaultFacebookPage(brandId).id
@@ -454,6 +475,8 @@ const SocialTabContent = memo(function SocialTabContent({
                 </div>
                 <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium">
                   <span>貼文預覽</span>
+                  <span>·</span>
+                  <span title="文案時間（台北時間）">{copyTimeLabel}</span>
                   <span>·</span>
                   <span className="text-[10px]" title="公開">🌐</span>
                 </div>
@@ -580,7 +603,7 @@ const SocialTabContent = memo(function SocialTabContent({
       if (responseData.dispatchData && responseData.dispatchData.social_copy) {
         const newCopy = responseData.dispatchData.social_copy;
         setVal(newCopy);
-        await saveWorkspace(brandId, { social_copy: newCopy });
+        await saveWorkspace(brandId, { social_copy: newCopy }, { generated: true });
       } else {
         throw new Error("轉化資料格式不正確");
       }

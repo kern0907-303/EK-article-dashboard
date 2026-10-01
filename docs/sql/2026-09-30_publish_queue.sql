@@ -1,4 +1,5 @@
--- 排程佇列：Dashboard 寫入，n8n「Publish Queue Runner」每 5 分鐘撈到期的發出。
+-- 排程佇列：Dashboard 寫入；Supabase 每分鐘檢查到期項目（見 2026-10-01_publish_queue_dispatch.sql），
+-- 有到期才呼叫 n8n「Publish Queue Runner」發出，沒有到期就完全不呼叫 n8n。
 -- 在 Supabase SQL Editor 執行一次即可（可重複執行）。
 --
 -- 存取方式：只有 service_role（Dashboard 後端與 n8n credential）會讀寫，

@@ -36,7 +36,7 @@ flowchart TD
 
 > 早期版本使用 Firebase Firestore，但六個 `NEXT_PUBLIC_FIREBASE_*` 從未設定，該分支永遠不會執行，卻讓整包 SDK 進了 client bundle。2026-08 已完整移除，詳見 `docs/SYSTEM_AUDIT_2026-08.md`。
 
-**自動化**：n8n（`erick303.app.n8n.cloud`），所有金鑰以 credential 儲存並限制網域。發文走 webhook `insights-publish`。**n8n 的發文 webhook 本身不支援延後**，收到什麼就立刻發，所以 `/api/publish` 對 `action: "schedule"` 一律回 501。排程改走 Supabase 表 `publish_queue`（建表 SQL 見 `docs/sql/2026-09-30_publish_queue.sql`）：儀表板 `/api/publish-queue` 負責建立、列表、取消；由另一條 n8n「排程執行器」workflow 每 5 分鐘撈出到期的 `pending` 列並發到各粉專。環境變數 `PUBLISH_QUEUE_ENABLED=true` 才會開啟儀表板的排程按鈕，須等 n8n 執行器上線並測試後再設定。排程當下網站文章即上架；`fb_erick`（個人頁面）不可排程；勾選 `test_mode` 的排程以 `published=false` 演練，不會公開。
+**自動化**：n8n（`erick303.app.n8n.cloud`），所有金鑰以 credential 儲存並限制網域。發文走 webhook `insights-publish`。**n8n 的發文 webhook 本身不支援延後**，收到什麼就立刻發，所以 `/api/publish` 對 `action: "schedule"` 一律回 501。排程改走 Supabase 表 `publish_queue`（建表 SQL 見 `docs/sql/2026-09-30_publish_queue.sql`）：儀表板 `/api/publish-queue` 負責建立、列表、取消；Supabase 內建的 pg_cron 每分鐘檢查一次（不消耗 n8n 額度），只有真的有到期項目才呼叫 n8n「Publish Queue Runner」workflow，由它發到各粉專並把結果寫回（派發 SQL 見 `docs/sql/2026-10-01_publish_queue_dispatch.sql`；n8n 觸發網址存在 Supabase Vault，不進版控）。環境變數 `PUBLISH_QUEUE_ENABLED=true` 才會開啟儀表板的排程按鈕，須等 n8n 執行器上線並測試後再設定。排程當下網站文章即上架；`fb_erick`（個人頁面）不可排程；勾選 `test_mode` 的排程以 `published=false` 演練，不會公開。
 
 **AI**：Anthropic Claude（Erick COO 與各專家、話題聚類）。`AI_PROVIDER` 為主要供應商，失敗時會依序降級到其他有效金鑰的供應商。配圖**尚未實作**（規劃使用 OpenAI `gpt-image-1`）。
 

@@ -144,7 +144,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
         // 如果是 mockData 模式，直接一次性更新，省去後續請求
         if (subPrompts.mockData) {
-          await saveWorkspace(activeBrandId, subPrompts.mockData);
+          await saveWorkspace(activeBrandId, subPrompts.mockData, { generated: true });
         } else {
           // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
           await saveWorkspace(activeBrandId, {
@@ -180,7 +180,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               if (res.ok) {
                 const data = await res.json();
                 if (data.dispatchData) {
-                  await saveWorkspace(activeBrandId, data.dispatchData);
+                  await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
                   return data.dispatchData;
                 } else {
                   throw new Error("專家回傳資料格式不正確");
@@ -229,7 +229,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               if (res.ok) {
                 const data = await res.json();
                 if (data.dispatchData) {
-                  await saveWorkspace(activeBrandId, data.dispatchData);
+                  await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
                 } else {
                   throw new Error("專家回傳資料格式不正確");
                 }

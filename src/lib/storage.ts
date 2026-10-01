@@ -84,6 +84,8 @@ export interface WorkspaceData {
   theo_analysis_facebook?: TheoAnalysis;
   theo_analysis_instagram?: TheoAnalysis;
   active_platform?: string;
+  /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */
+  social_copy_meta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }
 
 // --- LocalStorage Mock Event Emitter for Local Real-Time Sync ---
@@ -200,12 +202,35 @@ function syncPlatformFields(current: WorkspaceData, updatedFields: Partial<Works
 }
 
 /** 更新部分看板欄位，並在階段專案模式下同步回 Google Sheet */
-export async function saveWorkspace(brandId: string, updatedFields: Partial<WorkspaceData>): Promise<void> {
+export async function saveWorkspace(
+  brandId: string,
+  updatedFields: Partial<WorkspaceData>,
+  opts?: { generated?: boolean }
+): Promise<void> {
   const storageKey = WORKSPACE_KEY(brandId);
   const current = readOrSeed(storageKey, () => seedWorkspace(brandId));
 
   const syncedFields = syncPlatformFields(current, updatedFields);
   const finalData = { ...current, ...syncedFields };
+
+  // 記錄社群文案時間：只在真的寫入文案內容時記錄（切換平台、「生成中／失敗」提示不算）
+  const newCopy = updatedFields.social_copy;
+  const isRealCopy =
+    typeof newCopy === "string" &&
+    newCopy.trim() !== "" &&
+    !newCopy.startsWith("⏳") &&
+    !newCopy.startsWith("❌") &&
+    !newCopy.startsWith("⚠️") &&
+    updatedFields.active_platform === undefined;
+  if (isRealCopy && newCopy !== current.social_copy) {
+    const plat = finalData.active_platform || "threads";
+    const meta = { ...(current.social_copy_meta || {}) };
+    const now = Date.now();
+    meta[plat] = opts?.generated
+      ? { generated_at: now }
+      : { ...(meta[plat] || {}), edited_at: now };
+    finalData.social_copy_meta = meta;
+  }
   if (syncedFields.theo_analysis === undefined) {
     delete (finalData as any).theo_analysis;
   }

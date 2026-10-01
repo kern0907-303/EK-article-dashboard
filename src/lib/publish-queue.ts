@@ -29,7 +29,7 @@ export interface QueueItem {
   sent_at: string | null;
 }
 
-/** 排程時間必須至少晚於現在 5 分鐘（runner 每 5 分鐘掃一次），最遠 30 天 */
+/** 排程時間必須至少晚於現在 5 分鐘（留給取消、修改與派發的緩衝），最遠 30 天 */
 export const QUEUE_MIN_LEAD_MS = 5 * 60 * 1000;
 export const QUEUE_MAX_LEAD_MS = 30 * 24 * 60 * 60 * 1000;
 
