@@ -202,6 +202,8 @@ function syncPlatformFields(current: WorkspaceData, updatedFields: Partial<Works
 }
 
 /** 更新部分看板欄位，並在階段專案模式下同步回 Google Sheet */
+import { stripMarkdown } from "@/lib/plain-text";
+
 export async function saveWorkspace(
   brandId: string,
   updatedFields: Partial<WorkspaceData>,
@@ -209,6 +211,11 @@ export async function saveWorkspace(
 ): Promise<void> {
   const storageKey = WORKSPACE_KEY(brandId);
   const current = readOrSeed(storageKey, () => seedWorkspace(brandId));
+
+  // AEO 問答集一律存成純文字（官網 FAQ 區與 Facebook 都不吃 Markdown 符號）
+  if (typeof updatedFields.aeo_faq === "string") {
+    updatedFields = { ...updatedFields, aeo_faq: stripMarkdown(updatedFields.aeo_faq) };
+  }
 
   const syncedFields = syncPlatformFields(current, updatedFields);
   const finalData = { ...current, ...syncedFields };

@@ -716,7 +716,7 @@ ${irisPrompt}
       }
     ]
   },
-  "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（以 Markdown 的 Q&A 樣式呈現，例如：**Q1：問題？**\\n**A1：回答**）"
+  "aeo_faq": "針對 AEO 設計的 FAQ 問答集。請針對文章中的核心議題與規劃的關鍵字，寫出 2-3 個問答對（純文字，不要任何 Markdown 符號（不可出現 ** ## - 等），格式例如：Q1：問題？換行 A1：回答）"
 }`;
 
     // 2026-08 修正：原本這裡會要求 Maya 為每篇文章產出 DALL-E 3 生圖描述，
@@ -1417,14 +1417,14 @@ ${keywords.map((k: any) => `- ${k.keyword} (搜尋量: ${k.volume}, 競爭度: $
 
 請生成以下兩項資產：
 1. **JSON-LD 結構化資料**：一個包含 FAQPage 類型的結構化資料程式碼區塊（使用 <script type="application/ld+json"> 包含，提供符合 schema.org 標準的 FAQ 問答資訊，以幫助 ChatGPT Search/Gemini/Perplexity 引用）。
-2. **AEO 常見問答集 (FAQ)**：設計 3 個最符合回答引擎（AEO）直接採用特徵的問答對。問答必須直接、清晰、結構化（使用 Markdown 的 ### Q: 與 A: 格式排版，並融入以上關鍵字大綱）。
+2. **AEO 常見問答集 (FAQ)**：設計 3 個最符合回答引擎（AEO）直接採用特徵的問答對。問答必須直接、清晰、結構化。純文字格式，不可出現任何 Markdown 符號（不可出現 ** ## - 等），每題格式為「Q1：問題」換行「A1：回答」，題與題之間空一行，並融入以上關鍵字大綱。
 
 請以一個符合 JSON 格式的代碼區塊輸出，且以 \`\`\`json 開始，以 \`\`\` 結束。
 
 JSON 格式要求如下：
 {
   "schemaMarkup": "JSON-LD Schema 原始碼內容",
-  "aeoFaq": "Markdown 格式的 AEO 常見問答集內容"
+  "aeoFaq": "純文字格式的 AEO 常見問答集內容（無 Markdown 符號）"
 }
 請確保 JSON 語法完全正確。`;
 
@@ -1786,5 +1786,102 @@ ${socialCopy}
     explanation: result.explanation || "經評估此貼文結構符合演算法規範，建議定期排程發布以獲取最大曝光量。",
     reach_killers: Array.isArray(result.reach_killers) ? result.reach_killers : [],
     analyzed_at: Date.now()
+  };
+}
+
+
+/**
+ * 文章優化器（Iris）：針對一篇文章同時做 SEO / AEO（回答引擎）/ GEO（生成式 AI 搜尋）檢查，
+ * 並產出可直接套用的優化版本。
+ * 鐵則：不得編造數據、案例、來源或頭銜；不得改變作者原意與語氣；一律純文字、無 Markdown 符號。
+ */
+export async function callSeoOptimizer(
+  content: string,
+  brandName: string,
+  keywords: Array<{ keyword: string }>,
+  overrideProvider?: string
+): Promise<Omit<import("@/lib/seo-optimizer").SeoOptimization, "guardrail_violations">> {
+  const config = getAIConfig();
+  const provider = overrideProvider || config.provider;
+  config.provider = provider;
+
+  const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const firstLine = (lines[0] || "").replace(/^#+\s*/, "");
+
+  if (provider === "mock") {
+    const len = content.replace(/\s/g, "").length;
+    const hasQuestion = /[?？]/.test(content);
+    const paragraphs = content.split(/\n\s*\n/).filter(Boolean).length;
+    const checks = [
+      { area: "seo" as const, item: "標題長度", status: firstLine.length >= 12 && firstLine.length <= 32 ? "ok" as const : "warn" as const, note: firstLine.length >= 12 && firstLine.length <= 32 ? `目前標題 ${firstLine.length} 字，長度合適。` : `目前標題 ${firstLine.length} 字，建議 12 到 32 字，並放入主要關鍵字。` },
+      { area: "seo" as const, item: "文章長度", status: len >= 800 ? "ok" as const : "warn" as const, note: len >= 800 ? `目前約 ${len} 字，長度足夠。` : `目前約 ${len} 字，官網文章建議 800 字以上。` },
+      { area: "seo" as const, item: "段落結構", status: paragraphs >= 5 ? "ok" as const : "warn" as const, note: paragraphs >= 5 ? `目前 ${paragraphs} 段，結構足夠。` : `目前 ${paragraphs} 段，建議每段只講一件事、至少 5 段。` },
+      { area: "aeo" as const, item: "直接回答句", status: hasQuestion ? "ok" as const : "warn" as const, note: hasQuestion ? "文章中有提出問題，回答引擎較容易擷取。請確認問題後面緊接直接回答。" : "文章中缺少「問題＋直接回答」的段落，回答引擎較難擷取。" },
+      { area: "geo" as const, item: "可被 AI 引用的明確句", status: "warn" as const, note: "建議加入定義句與結論句（例如「某某是指……」），方便 AI 搜尋引用。" },
+    ];
+    return {
+      scores: { seo: 60, aeo: 50, geo: 50 },
+      checks,
+      title: firstLine,
+      meta_description: lines.slice(1, 3).join("").slice(0, 110),
+      optimized_content: content,
+      changes: [{ what: "本地規則檢查模式", why: "目前使用本地模擬大腦，只做規則檢查，未改寫內文。切換到 OpenAI 或 Gemini 才會產出優化後全文與 FAQ。" }],
+      faq: [],
+      geo_notes: ["切換到真實 AI 大腦後，才會產出針對 AI 搜尋的具體建議。"],
+      is_local_check: true,
+    };
+  }
+
+  const kwList = (keywords || []).map((k) => k.keyword).filter(Boolean).slice(0, 10).join("、") || "（無）";
+
+  const prompt = `你現在是 SEO、AEO（回答引擎優化）與 GEO（生成式 AI 搜尋優化）專家 Iris。
+請審查並優化下面這篇【${brandName}】的官網文章，產出可以直接取代原文的優化版本。
+
+【鐵則，違反即失敗】
+1. 絕對不可編造數據、統計、案例、客戶故事、來源、頭銜或引用。原文沒有的事實，一律不得新增。
+2. 保留作者原本的語氣、論點與段落邏輯，只調整：標題、開頭直接回答句、段落切分、小標題、定義句與結論句、關鍵字自然融入、結尾收束。
+3. 全文與 FAQ 一律純文字，禁止任何 Markdown 符號（不可出現星號、井字號、減號清單、反引號等）；小標題請用單獨一行的純文字。
+4. 關鍵字僅作主題參考，必須自然融入，禁止堆砌：${kwList}
+5. 不得使用誇大、保證、療效或命定性的說法。
+
+【GEO 重點】讓 ChatGPT、Gemini、Perplexity 等 AI 搜尋容易引用：
+- 開頭 2 到 3 句直接回答文章核心問題
+- 重要名詞給出一句話定義
+- 每段主張清楚、可獨立被擷取
+- 品牌與作者名稱以一致寫法出現
+- 只列原文確實存在的資訊，不得自創來源
+
+【原文】
+"""
+${content}
+"""
+
+請只輸出以下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束），不要有任何前後說明：
+{
+  "scores": { "seo": 0到100整數, "aeo": 0到100整數, "geo": 0到100整數 },
+  "checks": [ { "area": "seo|aeo|geo", "item": "檢查項目", "status": "ok|warn", "note": "具體說明，指出原文哪裡有問題" } ],
+  "title": "優化後標題（12 到 32 字）",
+  "meta_description": "搜尋結果摘要，90 到 120 字，純文字",
+  "optimized_content": "優化後的完整文章全文，第一行為標題，純文字",
+  "changes": [ { "what": "改了什麼", "why": "為什麼這樣改" } ],
+  "faq": [ { "q": "讀者真的會問的問題", "a": "30 到 80 字的直接回答，內容必須能在原文找到依據" } ],
+  "geo_notes": ["針對 AI 搜尋引用的具體建議"]
+}
+checks 請涵蓋 SEO、AEO、GEO 各至少 2 項；faq 3 到 5 題。`;
+
+  const response = await runQueryWithFallback(prompt, config, true, "anthropic");
+  const r = robustJSONParse(response);
+  const num = (v: any) => (typeof v === "number" ? Math.max(0, Math.min(100, Math.round(v))) : 0);
+
+  return {
+    scores: { seo: num(r?.scores?.seo), aeo: num(r?.scores?.aeo), geo: num(r?.scores?.geo) },
+    checks: Array.isArray(r.checks) ? r.checks : [],
+    title: typeof r.title === "string" && r.title.trim() ? r.title.trim() : firstLine,
+    meta_description: typeof r.meta_description === "string" ? r.meta_description.trim() : "",
+    optimized_content: typeof r.optimized_content === "string" && r.optimized_content.trim() ? r.optimized_content.trim() : content,
+    changes: Array.isArray(r.changes) ? r.changes : [],
+    faq: Array.isArray(r.faq) ? r.faq.filter((f: any) => f && f.q && f.a) : [],
+    geo_notes: Array.isArray(r.geo_notes) ? r.geo_notes : [],
+    is_local_check: false,
   };
 }

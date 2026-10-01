@@ -7,7 +7,7 @@ import {
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
   Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp,
   Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal,
-  ChevronDown
+  ChevronDown, Activity
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -16,6 +16,8 @@ import {
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
+import { stripMarkdown } from "@/lib/plain-text";
+import { SeoOptimization, faqToPlainText, buildFaqJsonLd } from "@/lib/seo-optimizer";
 import { getProjectName, resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { 
   FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPageById, getFacebookPagesByIds 
@@ -182,7 +184,7 @@ interface WorkspaceBoardProps {
   aiProvider: string;
 }
 
-type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines";
+type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines" | "theo";
 
 /**
  * getBrandTheme 每次呼叫都會配置一個全新的物件，導致任何吃 theme 的
@@ -198,7 +200,8 @@ const TABS = [
   { id: "architecture", label: "網頁架構", expert: "Leon", icon: Network, color: "from-sky-500 to-indigo-500", glow: "shadow-indigo-500/10" },
   { id: "seo", label: "SEO關鍵字", expert: "Iris", icon: Search, color: "from-emerald-500 to-teal-500", glow: "shadow-emerald-500/10" },
   { id: "ads", label: "廣告數據", expert: "Jack", icon: BarChart3, color: "from-purple-500 to-violet-500", glow: "shadow-violet-500/10" },
-  { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" }
+  { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" },
+  { id: "theo", label: "流量預測", expert: "Theo", icon: Activity, color: "from-amber-500 to-yellow-500", glow: "shadow-amber-500/10" }
 ] as const;
 
 export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
@@ -307,12 +310,23 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 aeoSchema={data.aeo_schema}
                 aeoFaq={data.aeo_faq}
                 aiProvider={aiProvider}
+                socialCopy={data.social_copy}
+                activePlatform={data.active_platform}
               />
             )}
             {activeTab === "ads" && (
               <AdsTabContent 
                 brandId={activeBrandId} 
                 adData={data.ad_data} 
+              />
+            )}
+            {activeTab === "theo" && (
+              <TheoTabContent
+                brandId={activeBrandId}
+                socialCopy={data.social_copy}
+                theoAnalysis={data.theo_analysis}
+                aiProvider={aiProvider}
+                activePlatform={data.active_platform}
               />
             )}
             {activeTab === "guidelines" && (
@@ -389,7 +403,6 @@ const SocialTabContent = memo(function SocialTabContent({
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [platform, setPlatform] = useState(activePlatform || "threads");
   const fmtTaipei = (t?: number) =>
     t
@@ -654,65 +667,6 @@ const SocialTabContent = memo(function SocialTabContent({
     await saveWorkspace(brandId, { active_platform: newPlatform });
   };
 
-  const handleAnalyzeViral = async (textToAnalyze?: string) => {
-    const targetContent = textToAnalyze !== undefined ? textToAnalyze : val;
-    if (isAnalyzing || !targetContent.trim()) return;
-    setIsAnalyzing(true);
-    try {
-      const brandName = getBrandOrProjectName(brandId);
-      const res = await fetch("/api/theo/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: targetContent,
-          brandName,
-          aiProvider,
-          platform
-        })
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "流量預測分析失敗");
-      }
-
-      const resData = await res.json();
-      if (resData.success && resData.data) {
-        await saveWorkspace(brandId, {
-          theo_analysis: resData.data
-        });
-      }
-    } catch (error: any) {
-      console.error("Theo analysis error:", error);
-      alert(`❌ 流量預測檢測失敗：${error.message}`);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleApplyRewrite = async (original: string, rewrite: string) => {
-    if (!val.includes(original)) {
-      alert("⚠️ 無法在文案中找到一模一樣的原句，可能您已手動編輯過。請手動修改或重新檢測！");
-      return;
-    }
-    const newVal = val.replace(original, rewrite);
-    setVal(newVal);
-
-    // 過濾已套用的 reach_killer
-    let updatedAnalysis = undefined;
-    if (theoAnalysis) {
-      updatedAnalysis = {
-        ...theoAnalysis,
-        reach_killers: theoAnalysis.reach_killers.filter(k => k.original_sentence !== original)
-      };
-    }
-
-    await saveWorkspace(brandId, {
-      social_copy: newVal,
-      ...(updatedAnalysis ? { theo_analysis: updatedAnalysis } : {})
-    });
-  };
-
   // 歷史文章狀態
   const [historyArticles, setHistoryArticles] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -812,7 +766,7 @@ const SocialTabContent = memo(function SocialTabContent({
           brandName,
           content: val,
           aeoSchema: aeoSchema || null,
-          aeoFaq: aeoFaq || null,
+          aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
           force
         })
       });
@@ -921,7 +875,7 @@ const SocialTabContent = memo(function SocialTabContent({
         brandName: getBrandOrProjectName(brandId),
         content: val,
         aeoSchema: aeoSchema || null,
-        aeoFaq: aeoFaq || null,
+        aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
         force
       })
     });
@@ -1495,17 +1449,12 @@ const SocialTabContent = memo(function SocialTabContent({
               <>
                 <button
                   type="button"
-                  disabled={isAnalyzing}
-                  onClick={() => handleAnalyzeViral()}
+                  onClick={() => window.dispatchEvent(new CustomEvent("ek-switch-tab", { detail: "theo" }))}
                   className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
-                  title="由流量軍師 Theo 進行 Meta 演算法與病毒分數分析"
+                  title="前往 Theo 分頁，進行 Meta 演算法與病毒分數分析"
                 >
-                  {isAnalyzing ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                  ) : (
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                  )}
-                  {isAnalyzing ? "正在逆向算法..." : "🔍 流量分析"}
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  🦠 流量分析（Theo）
                 </button>
                 <button
                   type="button"
@@ -1720,8 +1669,185 @@ const SocialTabContent = memo(function SocialTabContent({
         )
       )}
 
-      {/* 🦠 Theo 演算法流量預測與優化面版 */}
-      {(isAnalyzing || theoAnalysis) && (
+      {/* 📚 歷史上架文章庫 (Supabase Archive) */}
+      <div className="bg-slate-900/10 border border-slate-800/80 rounded-xl overflow-hidden backdrop-blur-md transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/30 hover:bg-slate-900/50 transition-colors text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Folder className={`w-4 h-4 ${theme.copyIconColor}`} />
+            <span className="text-xs font-bold text-slate-200">📚 歷史上架文章庫 (Supabase Archive)</span>
+            <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">
+              {historyArticles.length} 篇
+            </span>
+          </div>
+          <span className="text-xs text-slate-500 font-bold">
+            {isHistoryExpanded ? "收起 ▲" : "展開 ▼"}
+          </span>
+        </button>
+
+        {isHistoryExpanded && (
+          <div className="p-4 border-t border-slate-800/60 max-h-[280px] overflow-y-auto space-y-2.5 scrollbar-thin scrollbar-thumb-slate-800">
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-6 gap-2 text-xs text-slate-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>讀取 Supabase 文章庫中...</span>
+              </div>
+            ) : historyArticles.length === 0 ? (
+              <p className="text-slate-500 italic text-xs text-center py-4">此品牌目前尚無已上架至 Supabase 的文章紀錄。</p>
+            ) : (
+              <div className="space-y-2">
+                {historyArticles.map((article: any) => (
+                  <div 
+                    key={article.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-950/30 border border-slate-850 rounded-xl hover:border-slate-800 transition-all duration-300 gap-3"
+                  >
+                    <div className="space-y-1">
+                      <h5 className="text-xs font-bold text-slate-200 line-clamp-1">{article.title}</h5>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-semibold">
+                        <span className="bg-blue-600/10 text-blue-400 px-1 py-0.5 rounded border border-blue-500/10">已上架網站</span>
+                        <span>{new Date(article.created_at).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleLoadArticle(article.content)}
+                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 text-slate-350 text-[10px] font-bold rounded-lg border border-slate-800 transition cursor-pointer flex items-center gap-1"
+                        title="載入文章內容至上方編輯區"
+                      >
+                        <Folder className="w-3 h-3 text-slate-400" />
+                        <span>載入</span>
+                      </button>
+                      <button
+                        onClick={() => handleSyndicateArticle(article.content)}
+                        disabled={isPublishing}
+                        className={`px-2.5 py-1 bg-gradient-to-r ${theme.gradientFromTo} ${theme.primaryBtnText} text-[10px] font-bold rounded-lg hover:shadow-md hover:${theme.glowShadow} transition cursor-pointer flex items-center gap-1`}
+                        title="透過 N8N 自動化補發至社群與留言連結"
+                      >
+                        <Send className="w-3 h-3 text-slate-950" />
+                        <span>補發社群</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 📅 排程清單 (publish_queue) */}
+      <PublishQueuePanel
+        items={queueItems}
+        enabled={queueEnabled}
+        error={queueError}
+        isLoading={isLoadingQueue}
+        onRefresh={fetchQueue}
+        onCancel={handleCancelQueue}
+      />
+    </div>
+  );
+});
+
+// ==================== 2. 網頁架構分頁 (Leon) ====================
+const TheoTabContent = memo(function TheoTabContent({
+  brandId,
+  socialCopy,
+  theoAnalysis,
+  aiProvider,
+  activePlatform
+}: {
+  brandId: string;
+  socialCopy: string;
+  theoAnalysis?: TheoAnalysis;
+  aiProvider: string;
+  activePlatform?: string;
+}) {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const platform = activePlatform || "threads";
+  const platformLabel = platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : "Threads";
+  const hasCopy = !!socialCopy && socialCopy.trim() !== "" && !socialCopy.startsWith("⏳") && !socialCopy.startsWith("❌");
+
+  const handleAnalyzeViral = async () => {
+    if (isAnalyzing || !hasCopy) return;
+    setIsAnalyzing(true);
+    try {
+      const res = await fetch("/api/theo/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: socialCopy,
+          brandName: getBrandOrProjectName(brandId),
+          aiProvider,
+          platform
+        })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "流量預測分析失敗");
+      }
+      const resData = await res.json();
+      if (resData.success && resData.data) {
+        await saveWorkspace(brandId, { theo_analysis: resData.data });
+      }
+    } catch (error: any) {
+      console.error("Theo analysis error:", error);
+      alert(`❌ 流量預測檢測失敗：${error.message}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleApplyRewrite = async (original: string, rewrite: string) => {
+    if (!socialCopy.includes(original)) {
+      alert("⚠️ 無法在文案中找到一模一樣的原句，可能您已手動編輯過。請重新檢測！");
+      return;
+    }
+    const newVal = socialCopy.replace(original, rewrite);
+    const updatedAnalysis = theoAnalysis
+      ? { ...theoAnalysis, reach_killers: theoAnalysis.reach_killers.filter((k) => k.original_sentence !== original) }
+      : undefined;
+    await saveWorkspace(brandId, {
+      social_copy: newVal,
+      ...(updatedAnalysis ? { theo_analysis: updatedAnalysis } : {})
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-slate-900/20 border border-slate-800/80 p-4 rounded-xl space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-100">流量預測專家：Theo</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              檢查目前「{platformLabel}」文案會不會被演算法壓流量，並給出可一鍵套用的改寫。分數是 AI 判斷，不是真實流量預測。
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={isAnalyzing || !hasCopy}
+            onClick={handleAnalyzeViral}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            {isAnalyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+            {isAnalyzing ? "分析中..." : theoAnalysis ? "重新分析" : "開始分析"}
+          </button>
+        </div>
+        {hasCopy ? (
+          <p className="text-[11px] text-slate-300 bg-slate-950/50 border border-slate-850 rounded-lg p-3 whitespace-pre-wrap line-clamp-6">
+            {socialCopy}
+          </p>
+        ) : (
+          <p className="text-[11px] text-slate-500 italic">
+            目前「{platformLabel}」還沒有文案。請先到「社群文案」分頁由 Maya 產出。
+          </p>
+        )}
+      </div>
+
+            {(isAnalyzing || theoAnalysis) && (
         <div className="bg-slate-900/20 border border-amber-500/25 p-4 rounded-xl space-y-4 backdrop-blur-md relative overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
           {/* Decorative background glow */}
           <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full filter blur-xl -mr-6 -mt-6 select-none pointer-events-none" />
@@ -1834,90 +1960,10 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       )}
 
-      {/* 📚 歷史上架文章庫 (Supabase Archive) */}
-      <div className="bg-slate-900/10 border border-slate-800/80 rounded-xl overflow-hidden backdrop-blur-md transition-all duration-300">
-        <button
-          type="button"
-          onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/30 hover:bg-slate-900/50 transition-colors text-left cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Folder className={`w-4 h-4 ${theme.copyIconColor}`} />
-            <span className="text-xs font-bold text-slate-200">📚 歷史上架文章庫 (Supabase Archive)</span>
-            <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">
-              {historyArticles.length} 篇
-            </span>
-          </div>
-          <span className="text-xs text-slate-500 font-bold">
-            {isHistoryExpanded ? "收起 ▲" : "展開 ▼"}
-          </span>
-        </button>
-
-        {isHistoryExpanded && (
-          <div className="p-4 border-t border-slate-800/60 max-h-[280px] overflow-y-auto space-y-2.5 scrollbar-thin scrollbar-thumb-slate-800">
-            {isLoadingHistory ? (
-              <div className="flex items-center justify-center py-6 gap-2 text-xs text-slate-500">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>讀取 Supabase 文章庫中...</span>
-              </div>
-            ) : historyArticles.length === 0 ? (
-              <p className="text-slate-500 italic text-xs text-center py-4">此品牌目前尚無已上架至 Supabase 的文章紀錄。</p>
-            ) : (
-              <div className="space-y-2">
-                {historyArticles.map((article: any) => (
-                  <div 
-                    key={article.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-950/30 border border-slate-850 rounded-xl hover:border-slate-800 transition-all duration-300 gap-3"
-                  >
-                    <div className="space-y-1">
-                      <h5 className="text-xs font-bold text-slate-200 line-clamp-1">{article.title}</h5>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-semibold">
-                        <span className="bg-blue-600/10 text-blue-400 px-1 py-0.5 rounded border border-blue-500/10">已上架網站</span>
-                        <span>{new Date(article.created_at).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => handleLoadArticle(article.content)}
-                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 text-slate-350 text-[10px] font-bold rounded-lg border border-slate-800 transition cursor-pointer flex items-center gap-1"
-                        title="載入文章內容至上方編輯區"
-                      >
-                        <Folder className="w-3 h-3 text-slate-400" />
-                        <span>載入</span>
-                      </button>
-                      <button
-                        onClick={() => handleSyndicateArticle(article.content)}
-                        disabled={isPublishing}
-                        className={`px-2.5 py-1 bg-gradient-to-r ${theme.gradientFromTo} ${theme.primaryBtnText} text-[10px] font-bold rounded-lg hover:shadow-md hover:${theme.glowShadow} transition cursor-pointer flex items-center gap-1`}
-                        title="透過 N8N 自動化補發至社群與留言連結"
-                      >
-                        <Send className="w-3 h-3 text-slate-950" />
-                        <span>補發社群</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 📅 排程清單 (publish_queue) */}
-      <PublishQueuePanel
-        items={queueItems}
-        enabled={queueEnabled}
-        error={queueError}
-        isLoading={isLoadingQueue}
-        onRefresh={fetchQueue}
-        onCancel={handleCancelQueue}
-      />
     </div>
   );
 });
 
-// ==================== 2. 網頁架構分頁 (Leon) ====================
 const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
   const theme = useBrandTheme(brandId);
   const [val, setVal] = useState(architecture);
@@ -2096,19 +2142,256 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
   );
 });
 
+// ==================== 3-1. 文章優化器（SEO / AEO / GEO） ====================
+const SCORE_LABEL: Record<string, string> = { seo: "SEO 搜尋", aeo: "AEO 回答引擎", geo: "GEO AI 搜尋" };
+
+const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
+  brandId,
+  socialCopy,
+  keywords,
+  aiProvider,
+  activePlatform
+}: {
+  brandId: string;
+  socialCopy: string;
+  keywords: SEOKeyword[];
+  aiProvider: string;
+  activePlatform?: string;
+}) {
+  const [isRunning, setIsRunning] = useState(false);
+  const [result, setResult] = useState<(SeoOptimization & { forContent: string }) | null>(null);
+  const [showFull, setShowFull] = useState(false);
+  const [applied, setApplied] = useState<"" | "all" | "faq">("");
+
+  const platformLabel = activePlatform === "facebook" ? "Facebook" : activePlatform === "instagram" ? "Instagram" : "Threads";
+  const hasCopy = !!socialCopy && socialCopy.trim().length >= 30 && !socialCopy.startsWith("⏳") && !socialCopy.startsWith("❌");
+  const effectiveBrand = resolveEffectiveBrandId(brandId) || brandId;
+  const stale = !!result && result.forContent !== socialCopy && applied === "";
+
+  const run = async () => {
+    if (isRunning || !hasCopy) return;
+    setIsRunning(true);
+    setApplied("");
+    try {
+      const res = await fetch("/api/seo/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: socialCopy,
+          brandId: effectiveBrand,
+          brandName: getBrandOrProjectName(brandId),
+          keywords,
+          aiProvider
+        })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "文章優化失敗");
+      setResult({ ...json.data, forContent: socialCopy });
+    } catch (e: any) {
+      console.error(e);
+      alert(`❌ 文章優化失敗：${e.message}`);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const applyAll = async () => {
+    if (!result) return;
+    if (result.is_local_check) {
+      alert("目前是本地模擬大腦，沒有產出優化後全文，無法套用。請切換到 OpenAI 或 Gemini 後再優化。");
+      return;
+    }
+    if (result.guardrail_violations.length > 0) {
+      if (!window.confirm(`優化後內容含品牌紅線詞：${result.guardrail_violations.join("、")}\n\n仍要套用嗎？（建議取消後重新優化）`)) return;
+    }
+    if (!window.confirm("套用後，目前「" + platformLabel + "」分頁的文案會被取代為優化後版本（可在社群文案分頁手動再改）。確定嗎？")) return;
+    await saveWorkspace(brandId, {
+      social_copy: result.optimized_content,
+      aeo_faq: faqToPlainText(result.faq),
+      aeo_schema: result.faq.length ? buildFaqJsonLd(result.faq, result.title, result.meta_description) : ""
+    });
+    setApplied("all");
+  };
+
+  const applyFaq = async () => {
+    if (!result || result.faq.length === 0) return;
+    await saveWorkspace(brandId, {
+      aeo_faq: faqToPlainText(result.faq),
+      aeo_schema: buildFaqJsonLd(result.faq, result.title, result.meta_description)
+    });
+    setApplied("faq");
+  };
+
+  const scoreColor = (n: number) => (n >= 80 ? "text-emerald-400" : n >= 60 ? "text-amber-400" : "text-rose-400");
+
+  return (
+    <div className="bg-slate-900/30 border border-emerald-500/25 rounded-xl p-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-bold text-slate-100">文章優化器：SEO ＋ AEO ＋ GEO</h4>
+          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+            檢查目前「{platformLabel}」分頁的文案（也就是按「發布至官網」會送出的內容），直接給你優化後的版本。
+            AI 不會編造數據、案例或來源，只調整標題、結構、定義句、結論句與問答。
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={isRunning || !hasCopy}
+          onClick={run}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+        >
+          {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          {isRunning ? "優化中..." : result ? "重新優化" : "開始優化"}
+        </button>
+      </div>
+
+      {!hasCopy && (
+        <p className="text-[11px] text-slate-500 italic">目前「{platformLabel}」分頁還沒有足夠的文案。請先到「社群文案」分頁產出或載入一篇文章。</p>
+      )}
+
+      {result && (
+        <div className="space-y-4">
+          {result.is_local_check && (
+            <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              目前使用本地模擬大腦，只做規則檢查、沒有改寫全文與 FAQ。切換到 OpenAI 或 Gemini 才會產出完整優化版本。
+            </div>
+          )}
+          {stale && (
+            <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              文案在優化後又被修改過，這份結果可能已過期，建議重新優化。
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2">
+            {(["seo", "aeo", "geo"] as const).map((k) => (
+              <div key={k} className="bg-slate-950/50 border border-slate-850 rounded-lg p-3 text-center">
+                <div className={`text-2xl font-black ${scoreColor(result.scores[k])}`}>{result.scores[k]}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{SCORE_LABEL[k]}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[9px] text-slate-500">分數是 AI 依檢查項目的判斷，用來看改善方向，不是搜尋排名預測。</p>
+
+          <div className="space-y-1.5">
+            {result.checks.map((c, i) => (
+              <div key={i} className="flex gap-2 text-[11px] bg-slate-950/30 border border-slate-850 rounded-lg px-3 py-2">
+                <span className={c.status === "ok" ? "text-emerald-400" : "text-amber-400"}>{c.status === "ok" ? "✓" : "!"}</span>
+                <span className="text-slate-500 shrink-0 w-10">{c.area.toUpperCase()}</span>
+                <span className="text-slate-200 font-semibold shrink-0">{c.item}</span>
+                <span className="text-slate-400">{c.note}</span>
+              </div>
+            ))}
+          </div>
+
+          {!result.is_local_check && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                <div className="bg-slate-950/40 border border-slate-850 rounded-lg p-3">
+                  <div className="text-slate-500 mb-1">標題：修改前</div>
+                  <div className="text-slate-300">{result.forContent.split(/\r?\n/).find((l) => l.trim())?.replace(/^#+\s*/, "")}</div>
+                </div>
+                <div className="bg-emerald-500/5 border border-emerald-500/30 rounded-lg p-3">
+                  <div className="text-emerald-400 mb-1">標題：修改後</div>
+                  <div className="text-slate-100 font-semibold">{result.title}</div>
+                </div>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-850 rounded-lg p-3 text-[11px]">
+                <div className="text-slate-500 mb-1">搜尋結果摘要（Meta Description，{result.meta_description.length} 字）</div>
+                <div className="text-slate-200">{result.meta_description}</div>
+              </div>
+
+              {result.changes.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-bold text-slate-300">改了什麼、為什麼</div>
+                  {result.changes.map((c, i) => (
+                    <div key={i} className="text-[11px] text-slate-400 bg-slate-950/30 border border-slate-850 rounded-lg px-3 py-2">
+                      <span className="text-slate-200 font-semibold">{c.what}</span>　{c.why}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result.geo_notes.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-bold text-slate-300">AI 搜尋（GEO）建議</div>
+                  {result.geo_notes.map((n, i) => (
+                    <div key={i} className="text-[11px] text-slate-400">・{n}</div>
+                  ))}
+                </div>
+              )}
+
+              {result.guardrail_violations.length > 0 && (
+                <div className="text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                  優化後內容含品牌紅線詞：{result.guardrail_violations.join("、")}。套用前請先處理，或重新優化。
+                </div>
+              )}
+
+              <div>
+                <button type="button" onClick={() => setShowFull((v) => !v)} className="text-[11px] text-slate-300 underline cursor-pointer">
+                  {showFull ? "收起原文與優化後全文對照 ▲" : "展開原文與優化後全文對照 ▼"}
+                </button>
+                {showFull && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <pre className="whitespace-pre-wrap text-[11px] text-slate-400 bg-slate-950/50 border border-slate-850 rounded-lg p-3 max-h-80 overflow-y-auto font-sans">{result.forContent}</pre>
+                    <pre className="whitespace-pre-wrap text-[11px] text-slate-100 bg-emerald-500/5 border border-emerald-500/30 rounded-lg p-3 max-h-80 overflow-y-auto font-sans">{result.optimized_content}</pre>
+                  </div>
+                )}
+              </div>
+
+              {result.faq.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-bold text-slate-300">問答集（會同步產生結構化資料）</div>
+                  <pre className="whitespace-pre-wrap text-[11px] text-slate-300 bg-slate-950/50 border border-slate-850 rounded-lg p-3 font-sans">{faqToPlainText(result.faq)}</pre>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={applyAll}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
+                >
+                  套用到文章（取代目前文案＋問答＋結構化資料）
+                </button>
+                <button
+                  type="button"
+                  onClick={applyFaq}
+                  disabled={result.faq.length === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer"
+                >
+                  只套用問答與結構化資料
+                </button>
+                {applied && (
+                  <span className="text-[11px] text-emerald-400">
+                    {applied === "all" ? "✓ 已套用到文章。到「社群文案」分頁按「發布至官網」，問答與結構化資料會跟著文章一起存入。" : "✓ 已更新問答與結構化資料，發布至官網時會跟著文章一起存入。"}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 // ==================== 3. SEO關鍵字分頁 (Iris) ====================
 const SEOTabContent = memo(function SEOTabContent({ 
   brandId, 
   keywords, 
   aeoSchema, 
   aeoFaq, 
-  aiProvider 
+  aiProvider,
+  socialCopy,
+  activePlatform
 }: { 
   brandId: string; 
   keywords: SEOKeyword[]; 
   aeoSchema?: string; 
   aeoFaq?: string; 
   aiProvider: string; 
+  socialCopy: string;
+  activePlatform?: string;
 }) {
   const theme = useBrandTheme(brandId);
   const [newKeyword, setNewKeyword] = useState("");
@@ -2185,7 +2468,7 @@ const SEOTabContent = memo(function SEOTabContent({
 
   const handleCopyFaq = () => {
     if (!aeoFaq) return;
-    navigator.clipboard.writeText(aeoFaq);
+    navigator.clipboard.writeText(stripMarkdown(aeoFaq));
     setFaqCopied(true);
     setTimeout(() => setFaqCopied(false), 2000);
   };
@@ -2195,9 +2478,17 @@ const SEOTabContent = memo(function SEOTabContent({
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">SEO 專家：Iris</h4>
-          <p className="text-[10px] text-slate-400">探索高點擊潛力詞與競爭度分析</p>
+          <p className="text-[10px] text-slate-400">文章優化（SEO／AEO／GEO）與關鍵字分析</p>
         </div>
       </div>
+
+      <SeoOptimizerPanel
+        brandId={brandId}
+        socialCopy={socialCopy}
+        keywords={keywords}
+        aiProvider={aiProvider}
+        activePlatform={activePlatform}
+      />
 
       {/* 數據表格 Table */}
       <div className="flex-1 rounded-xl bg-slate-950/40 border border-slate-850/65 overflow-hidden flex flex-col min-h-[180px]">
@@ -2406,7 +2697,7 @@ const SEOTabContent = memo(function SEOTabContent({
                   </button>
                 </div>
                 <div className="flex-1 min-h-[160px] max-h-[220px] overflow-y-auto rounded-lg bg-slate-950 border border-slate-900 p-3.5 text-xs text-slate-300 leading-relaxed font-sans scrollbar-thin select-text">
-                  <div className="whitespace-pre-wrap">{aeoFaq}</div>
+                  <div className="whitespace-pre-wrap">{stripMarkdown(aeoFaq)}</div>
                 </div>
                 <p className="text-[9px] text-slate-500">提示：將這些問答放置於您官網的 FAQ 區塊。結構化的問答設計更容易被 Answer Engines (AEO) 抓取。</p>
               </div>
@@ -2448,6 +2739,9 @@ const AdsTabContent = memo(function AdsTabContent({ brandId, adData }: { brandId
     setEditingIndex(null);
   };
 
+  // 只有從 Meta 廣告帳號實際同步的指標才算真實數據（change 欄位會標「實體後台同步」）
+  const adIsReal = !!adData && adData.length > 0 && adData.every((d) => String(d.change || "").includes("實體後台同步"));
+
   return (
     <div className="flex flex-col min-h-full space-y-4">
       <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
@@ -2456,6 +2750,13 @@ const AdsTabContent = memo(function AdsTabContent({ brandId, adData }: { brandId
           <p className="text-[10px] text-slate-400">廣告投放效能預估與關鍵成效指標</p>
         </div>
       </div>
+
+      {adData && adData.length > 0 && !adIsReal && (
+        <div className="shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] text-amber-200 leading-relaxed">
+          這一頁的數字是 AI 依品牌與文案「預估」出來的，不是真實投放數據，請勿當成效報告使用。
+          要看真實數字，目前請到 Meta 廣告後台查看。
+        </div>
+      )}
 
       {/* 指標卡片 Metrics Grid */}
       <div className="flex-1 overflow-y-auto">
@@ -2524,7 +2825,7 @@ const AdsTabContent = memo(function AdsTabContent({ brandId, adData }: { brandId
                       <span className={`text-[10px] font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
                         {item.change}
                       </span>
-                      <span className="text-[9px] text-slate-500 ml-1">較前次發布</span>
+                      {adIsReal && <span className="text-[9px] text-slate-500 ml-1">較前次發布</span>}
                     </div>
                   )}
                 </div>
