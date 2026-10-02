@@ -3,7 +3,7 @@ import { inspectForPublish } from "@/lib/brand-guardrail";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, brandName, content, aeoSchema, aeoFaq, force } = await req.json();
+    const { brandId, brandName, content, aeoSchema, aeoFaq, force, promptVersion, modelVersion } = await req.json();
 
     if (!brandId || !content) {
       return NextResponse.json(
@@ -57,23 +57,41 @@ export async function POST(req: NextRequest) {
     else if (brandId.includes("abl")) finalBrandId = "abl";
 
     // 2. 透過 PostgREST API 直接發送 POST 請求寫入 Supabase 資料庫
-    const response = await fetch(`${supabaseUrl}/rest/v1/insights_articles`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": supabaseKey,
-        "Authorization": `Bearer ${supabaseKey}`,
-        "Prefer": "return=representation"
-      },
-      body: JSON.stringify({
-        brand_id: finalBrandId,
-        title: title,
-        content: content,
-        aeo_schema: aeoSchema || "",
-        aeo_faq: aeoFaq || "",
-        status: "published" // 預設直接上架
-      })
-    });
+    const baseRow: Record<string, unknown> = {
+      brand_id: finalBrandId,
+      title: title,
+      content: content,
+      aeo_schema: aeoSchema || "",
+      aeo_faq: aeoFaq || "",
+      status: "published" // 預設直接上架
+    };
+    const insertRow = async (row: Record<string, unknown>) =>
+      fetch(`${supabaseUrl}/rest/v1/insights_articles`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": supabaseKey,
+          "Authorization": `Bearer ${supabaseKey}`,
+          "Prefer": "return=representation"
+        },
+        body: JSON.stringify(row)
+      });
+
+    // 文體生成的文章會帶 prompt_version / model_version，之後可回頭比較哪一版提示詞寫得比較好。
+    // 資料表還沒新增這兩個欄位時，自動退回不帶版本欄位的寫入，避免整個發佈失敗。
+    let response: Response;
+    if (promptVersion || modelVersion) {
+      response = await insertRow({ ...baseRow, prompt_version: promptVersion || null, model_version: modelVersion || null });
+      if (!response.ok && response.status === 400) {
+        const t = await response.clone().text();
+        if (/prompt_version|model_version|column/i.test(t)) {
+          console.warn("[publish-website] insights_articles 尚未有版本欄位，改為不帶版本寫入：", t.slice(0, 200));
+          response = await insertRow(baseRow);
+        }
+      }
+    } else {
+      response = await insertRow(baseRow);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

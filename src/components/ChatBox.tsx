@@ -5,6 +5,7 @@ import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
+import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -20,6 +21,16 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   // 進度：0 待命、1 營運長拆解、2 Maya/Iris、3 Leon/Jack、4 完成、-1 未觸發/失敗
   const [progress, setProgress] = useState<{ stage: number; startedAt: number; note: string }>({ stage: 0, startedAt: 0, note: "" });
   const [tick, setTick] = useState(0);
+  // 文體生成表單
+  const [genreOpen, setGenreOpen] = useState(false);
+  const [genreId, setGenreId] = useState<GenreId>("case");
+  const [funnel, setFunnel] = useState<FunnelLevel>("cold");
+  const [gClaim, setGClaim] = useState("");
+  const [gMaterial, setGMaterial] = useState("");
+  const [gMetaphor, setGMetaphor] = useState("");
+  const [gLength, setGLength] = useState("");
+  const [gCta, setGCta] = useState("");
+  const [genreError, setGenreError] = useState("");
   useEffect(() => {
     if (progress.stage < 1 || progress.stage > 3) return;
     const t = setInterval(() => setTick((n) => n + 1), 1000);
@@ -130,6 +141,211 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     });
   };
 
+  // 依子任務啟動專家：先 Maya + Iris，再 Leon + Jack。一般指令與文體生成共用這段。
+  const dispatchExperts = async (
+    subPrompts: any,
+    signal: AbortSignal,
+    genre?: { settings: GenreSettings; brandKey: BrandKey }
+  ) => {
+
+    // 如果是 mockData 模式，直接一次性更新，省去後續請求
+    if (subPrompts.mockData) {
+      await saveWorkspace(activeBrandId, subPrompts.mockData, { generated: true });
+      setProgress((p) => ({ ...p, stage: 4, note: "完成（模擬模式）" }));
+    } else {
+      // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
+      await saveWorkspace(activeBrandId, {
+        social_copy: "⏳ 專家助理 Maya 正在為您撰寫爆款社群行銷長文與文章，這大約需要 15-30 秒，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
+        web_architecture: "⏳ 系統架構師 Leon 正在設計網頁功能路由架構，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
+        seo_keywords: [
+          { keyword: "⏳ 專家助理 Iris 正在分析關鍵字與規劃文章大綱...", volume: "計算中", competition: "計算中", outline: "大腦計算中" }
+        ],
+        ad_data: [
+          { label: "⏳ 廣告數據專家 Jack 正在計算廣告漏斗數據與預估成效指標...", value: "計算中", change: "計算中", isPositive: true }
+        ],
+        aeo_schema: "",
+        aeo_faq: ""
+      });
+
+      // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
+      let anyFailed = false;
+      const runMayaIris = async () => {
+        setProgress((p) => ({ ...p, stage: 2 }));
+        try {
+          const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: signal,
+            body: JSON.stringify({
+              stage: "expert",
+              expertType: "maya_iris",
+              subPrompts,
+              brandName: activeBrandName,
+              aiProvider,
+              brandGuidelines: mergedGuidelines,
+              platform: activePlat,
+              copywritingFramework: activeFramework,
+              ...(genre ? { genre } : {})
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.dispatchData) {
+              await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
+              return data.dispatchData;
+            } else {
+              throw new Error("專家回傳資料格式不正確");
+            }
+          } else {
+            let errorMsg = `HTTP 狀態碼: ${res.status}`;
+            try {
+              const errorData = await res.json();
+              if (errorData && errorData.error) {
+                errorMsg += ` - ${errorData.error}`;
+              }
+            } catch (_) {}
+            throw new Error(errorMsg);
+          }
+        } catch (e: any) {
+          if (e.name === 'AbortError') {
+            console.log("Background Maya & Iris generation aborted.");
+            return;
+          }
+          console.error("Background Maya & Iris generation failed:", e);
+          anyFailed = true;
+          await saveWorkspace(activeBrandId, {
+            social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
+            seo_keywords: [
+              { keyword: "❌ 專家助理 Iris 產出失敗", volume: "失敗", competition: "失敗", outline: e.message || "金鑰或 API 連線異常" }
+            ]
+          });
+        }
+      };
+
+      const runLeonJack = async (prevData?: any) => {
+        setProgress((p) => ({ ...p, stage: 3 }));
+        try {
+          const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: signal,
+            body: JSON.stringify({
+              stage: "expert",
+              expertType: "leon_jack",
+              subPrompts,
+              brandName: activeBrandName,
+              aiProvider,
+              brandGuidelines: mergedGuidelines,
+              prevData
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.dispatchData) {
+              await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
+            } else {
+              throw new Error("專家回傳資料格式不正確");
+            }
+          } else {
+            let errorMsg = `HTTP 狀態碼: ${res.status}`;
+            try {
+              const errorData = await res.json();
+              if (errorData && errorData.error) {
+                errorMsg += ` - ${errorData.error}`;
+              }
+            } catch (_) {}
+            throw new Error(errorMsg);
+          }
+        } catch (e: any) {
+          if (e.name === 'AbortError') {
+            console.log("Background Leon & Jack generation aborted.");
+            return;
+          }
+          console.error("Background Leon & Jack generation failed:", e);
+          anyFailed = true;
+          await saveWorkspace(activeBrandId, {
+            web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
+            ad_data: [
+              { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: e.message || "金鑰或 API 連線異常", isPositive: false }
+            ]
+          });
+        }
+      };
+
+      // 順序背景發起，避免 Render 免費版同時處理兩個大腦 API 導致記憶體超載 (OOM) 與 502 崩潰
+      const runSequentially = async () => {
+        setIsGenerating(true);
+        try {
+          const prevData = await runMayaIris();
+          if (signal.aborted) return;
+          await runLeonJack(prevData);
+        } finally {
+          if (!signal.aborted) {
+            setIsGenerating(false);
+            setProgress((p) => anyFailed
+              ? { ...p, stage: -1, note: "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
+              : { ...p, stage: 4, note: "全部完成" });
+          }
+        }
+      };
+      runSequentially();
+    }
+  };
+
+  // 文體生成：不經過營運長，直接把「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」送給 Maya
+  const handleGenreGenerate = async () => {
+    if (isLoading || isGenerating) return;
+    const def = GENRES[genreId];
+    if (!def.enabled) {
+      setGenreError(`${def.name}${def.disabledReason ? "：" + def.disabledReason : "尚未開放"}`);
+      return;
+    }
+    if (!gClaim.trim()) {
+      setGenreError("請填「主張」：這篇文章要讓讀者接受的那一件事，一句話。");
+      return;
+    }
+    if (def.materialRequired && !gMaterial.trim()) {
+      setGenreError(`請填「${def.materialLabel}」。${def.materialHint}`);
+      return;
+    }
+    setGenreError("");
+
+    const settings: GenreSettings = {
+      genre: genreId,
+      funnel,
+      claim: gClaim,
+      material: gMaterial,
+      metaphor: gMetaphor,
+      length: gLength,
+      cta: gCta,
+    };
+    const brandKey: BrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
+    const subPrompts = {
+      maya: gClaim.trim(),
+      iris: `這篇文章的主張是：${gClaim.trim()}。請據此規劃關鍵字與問答，不得編造文章沒有的事實。`,
+      leon: `為這篇文章設計對應的網頁結構。主張：${gClaim.trim()}`,
+      jack: `為這篇文章估算廣告素材方向與指標。主張：${gClaim.trim()}`,
+    };
+
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    setProgress({ stage: 2, startedAt: Date.now(), note: "" });
+
+    // 文體文章是 Facebook 長文：先把看板切到 Facebook，等待中的提示與成品才會落在同一個平台
+    setActivePlat("facebook");
+    await saveWorkspace(activeBrandId, { active_platform: "facebook" });
+
+    await saveChatMessage(activeBrandId, {
+      role: "user",
+      content: `【文體生成】${def.name}｜${FUNNEL_LABEL[funnel]}｜主張：${gClaim.trim()}`,
+    });
+    await saveChatMessage(activeBrandId, {
+      role: "assistant",
+      content: `收到。我用【${def.name}】的骨架直接交給 Maya 寫（Facebook 長文格式）。缺素材的地方她會標【需補】，不會代寫。`,
+    });
+    await dispatchExperts(subPrompts, signal, { settings, brandKey });
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading || isGenerating) return;
@@ -197,149 +413,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         await saveChatMessage(activeBrandId, { role: "assistant", content: `【系統狀態】${msg}` });
       }
       if (result.dispatchData && result.dispatchData.subPrompts) {
-        const subPrompts = result.dispatchData.subPrompts;
-
-        // 如果是 mockData 模式，直接一次性更新，省去後續請求
-        if (subPrompts.mockData) {
-          await saveWorkspace(activeBrandId, subPrompts.mockData, { generated: true });
-          setProgress((p) => ({ ...p, stage: 4, note: "完成（模擬模式）" }));
-        } else {
-          // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
-          await saveWorkspace(activeBrandId, {
-            social_copy: "⏳ 專家助理 Maya 正在為您撰寫爆款社群行銷長文與文章，這大約需要 15-30 秒，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
-            web_architecture: "⏳ 系統架構師 Leon 正在設計網頁功能路由架構，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
-            seo_keywords: [
-              { keyword: "⏳ 專家助理 Iris 正在分析關鍵字與規劃文章大綱...", volume: "計算中", competition: "計算中", outline: "大腦計算中" }
-            ],
-            ad_data: [
-              { label: "⏳ 廣告數據專家 Jack 正在計算廣告漏斗數據與預估成效指標...", value: "計算中", change: "計算中", isPositive: true }
-            ],
-            aeo_schema: "",
-            aeo_faq: ""
-          });
-
-          // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
-          let anyFailed = false;
-          const runMayaIris = async () => {
-            setProgress((p) => ({ ...p, stage: 2 }));
-            try {
-              const res = await fetch("/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: signal,
-                body: JSON.stringify({
-                  stage: "expert",
-                  expertType: "maya_iris",
-                  subPrompts,
-                  brandName: activeBrandName,
-                  aiProvider,
-                  brandGuidelines: mergedGuidelines,
-                  platform: activePlat,
-                  copywritingFramework: activeFramework
-                })
-              });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.dispatchData) {
-                  await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
-                  return data.dispatchData;
-                } else {
-                  throw new Error("專家回傳資料格式不正確");
-                }
-              } else {
-                let errorMsg = `HTTP 狀態碼: ${res.status}`;
-                try {
-                  const errorData = await res.json();
-                  if (errorData && errorData.error) {
-                    errorMsg += ` - ${errorData.error}`;
-                  }
-                } catch (_) {}
-                throw new Error(errorMsg);
-              }
-            } catch (e: any) {
-              if (e.name === 'AbortError') {
-                console.log("Background Maya & Iris generation aborted.");
-                return;
-              }
-              console.error("Background Maya & Iris generation failed:", e);
-              anyFailed = true;
-              await saveWorkspace(activeBrandId, {
-                social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
-                seo_keywords: [
-                  { keyword: "❌ 專家助理 Iris 產出失敗", volume: "失敗", competition: "失敗", outline: e.message || "金鑰或 API 連線異常" }
-                ]
-              });
-            }
-          };
-
-          const runLeonJack = async (prevData?: any) => {
-            setProgress((p) => ({ ...p, stage: 3 }));
-            try {
-              const res = await fetch("/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: signal,
-                body: JSON.stringify({
-                  stage: "expert",
-                  expertType: "leon_jack",
-                  subPrompts,
-                  brandName: activeBrandName,
-                  aiProvider,
-                  brandGuidelines: mergedGuidelines,
-                  prevData
-                })
-              });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.dispatchData) {
-                  await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
-                } else {
-                  throw new Error("專家回傳資料格式不正確");
-                }
-              } else {
-                let errorMsg = `HTTP 狀態碼: ${res.status}`;
-                try {
-                  const errorData = await res.json();
-                  if (errorData && errorData.error) {
-                    errorMsg += ` - ${errorData.error}`;
-                  }
-                } catch (_) {}
-                throw new Error(errorMsg);
-              }
-            } catch (e: any) {
-              if (e.name === 'AbortError') {
-                console.log("Background Leon & Jack generation aborted.");
-                return;
-              }
-              console.error("Background Leon & Jack generation failed:", e);
-              anyFailed = true;
-              await saveWorkspace(activeBrandId, {
-                web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
-                ad_data: [
-                  { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: e.message || "金鑰或 API 連線異常", isPositive: false }
-                ]
-              });
-            }
-          };
-
-          // 順序背景發起，避免 Render 免費版同時處理兩個大腦 API 導致記憶體超載 (OOM) 與 502 崩潰
-          const runSequentially = async () => {
-            setIsGenerating(true);
-            try {
-              const prevData = await runMayaIris();
-              if (signal.aborted) return;
-              await runLeonJack(prevData);
-            } finally {
-              if (!signal.aborted) {
-                setIsGenerating(false);
-                setProgress((p) => anyFailed
-                  ? { ...p, stage: -1, note: "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
-                  : { ...p, stage: 4, note: "全部完成" });
-              }
-            }
-          };
-          runSequentially();
-        }
+        await dispatchExperts(result.dispatchData.subPrompts, signal);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -519,6 +593,94 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         onSubmit={handleSend}
         className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setGenreOpen((o) => !o)}
+            disabled={isLoading || isGenerating}
+            className={`text-xs border rounded-md px-2 py-1 cursor-pointer disabled:opacity-50 transition-colors ${genreOpen ? "bg-amber-500/20 text-amber-300 border-amber-500/40" : "bg-slate-800/80 text-slate-300 border-slate-700/80"}`}
+            title="用文體骨架（案例文、拆解文、邀請文）直接生成"
+          >
+            文體生成 {genreOpen ? "▲" : "▼"}
+          </button>
+        </div>
+        {genreOpen && (
+          <div className="max-h-[42vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
+            <div className="flex gap-2">
+              <label className="flex-1 text-[10px] text-slate-400">
+                文體
+                <select
+                  value={genreId}
+                  onChange={(e) => { setGenreId(e.target.value as GenreId); setGenreError(""); }}
+                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                >
+                  {GENRE_LIST.map((g) => (
+                    <option key={g.id} value={g.id} disabled={!g.enabled}>
+                      {g.name}{g.enabled ? "" : "（未啟用）"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex-1 text-[10px] text-slate-400">
+                漏斗層
+                <select
+                  value={funnel}
+                  onChange={(e) => setFunnel(e.target.value as FunnelLevel)}
+                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                >
+                  {(Object.keys(FUNNEL_LABEL) as FunnelLevel[]).map((f) => (
+                    <option key={f} value={f}>{FUNNEL_LABEL[f]}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="text-[10px] text-slate-500 leading-relaxed">{GENRES[genreId].when}</div>
+            <label className="block text-[10px] text-slate-400">
+              主張（必填）：這篇要讓讀者接受的那一件事，一句話
+              <input
+                value={gClaim}
+                onChange={(e) => setGClaim(e.target.value)}
+                className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60"
+              />
+            </label>
+            <label className="block text-[10px] text-slate-400">
+              {GENRES[genreId].materialLabel}{GENRES[genreId].materialRequired ? "（必填）" : ""}
+              <textarea
+                value={gMaterial}
+                onChange={(e) => setGMaterial(e.target.value)}
+                rows={4}
+                placeholder={GENRES[genreId].materialHint}
+                className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
+              />
+            </label>
+            <div className="flex gap-2">
+              <label className="flex-1 text-[10px] text-slate-400">
+                比喻（選填，留空由 AI 提案並標示）
+                <input value={gMetaphor} onChange={(e) => setGMetaphor(e.target.value)} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
+              </label>
+              <label className="w-24 text-[10px] text-slate-400">
+                長度（選填）
+                <input value={gLength} onChange={(e) => setGLength(e.target.value)} placeholder={`${GENRES[genreId].lengthRange[0]}–${GENRES[genreId].lengthRange[1]}`} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600" />
+              </label>
+            </div>
+            <label className="block text-[10px] text-slate-400">
+              CTA（選填，留空就不放）
+              <input value={gCta} onChange={(e) => setGCta(e.target.value)} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
+            </label>
+            {genreError && <div className="text-[11px] text-red-300">{genreError}</div>}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] text-slate-500">以 Facebook 長文格式產出；Threads、IG 請之後用「改寫」。品牌：{activeBrandName}</span>
+              <button
+                type="button"
+                onClick={handleGenreGenerate}
+                disabled={isLoading || isGenerating}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                用此文體生成
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center">
           <select 
             value={activeFramework}

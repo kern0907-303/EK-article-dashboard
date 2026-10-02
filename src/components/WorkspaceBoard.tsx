@@ -17,6 +17,8 @@ import {
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
 import { stripMarkdown } from "@/lib/plain-text";
+import { checkGenreText, blockingIssues } from "@/lib/genre-check";
+import { GENRES, FUNNEL_LABEL, type GenreMeta } from "@/data/skills/genres";
 import { SeoOptimization, faqToPlainText, buildFaqJsonLd } from "@/lib/seo-optimizer";
 import { getProjectName, resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { 
@@ -295,6 +297,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 activePlatform={data.active_platform}
                 seoKeywords={data.seo_keywords}
                 copyMeta={data.social_copy_meta}
+                genreMeta={data.genre_meta}
               />
             )}
             {activeTab === "architecture" && (
@@ -363,7 +366,8 @@ const SocialTabContent = memo(function SocialTabContent({
   aiProvider,
   activePlatform,
   seoKeywords,
-  copyMeta
+  copyMeta,
+  genreMeta
 }: { 
   brandId: string; 
   socialCopy: string; 
@@ -377,6 +381,7 @@ const SocialTabContent = memo(function SocialTabContent({
   activePlatform?: string;
   seoKeywords?: any[];
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
+  genreMeta?: GenreMeta | null;
 }) {
   // 發文／粉專／官網分類／主題一律用「有效品牌」：一般品牌是自己，階段專案是所屬品牌
   const [parentTick, setParentTick] = useState(0);
@@ -404,6 +409,18 @@ const SocialTabContent = memo(function SocialTabContent({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
+  const genreIssues = useMemo(
+    () => (genreMeta ? checkGenreText(val, genreMeta, platform) : []),
+    [val, genreMeta, platform]
+  );
+  // 擋住發佈的檢查：只看「禁用詞」與「【需補】」，這兩項與平台無關
+  const requireGenreOk = (): boolean => {
+    if (!genreMeta) return true;
+    const blocks = blockingIssues(checkGenreText(val, genreMeta));
+    if (blocks.length === 0) return true;
+    alert("⚠️ 這篇文章還不能發佈：\n\n" + blocks.map((b) => "・" + b.message).join("\n"));
+    return false;
+  };
   const fmtTaipei = (t?: number) =>
     t
       ? new Date(t).toLocaleString("zh-TW", {
@@ -755,6 +772,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handlePublishWebsite = async (force = false) => {
     if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
     if (isPublishingWebsite || !val) return;
     setIsPublishingWebsite(true);
     try {
@@ -769,6 +787,8 @@ const SocialTabContent = memo(function SocialTabContent({
           content: val,
           aeoSchema: aeoSchema || null,
           aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
+          promptVersion: genreMeta?.prompt_version || null,
+          modelVersion: genreMeta?.model_version || null,
           force
         })
       });
@@ -904,6 +924,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handleSchedule = async (targetTime: string, force = false) => {
     if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
     if (isScheduling || isPublishing || !val || !targetTime) return;
 
     const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(pubBrandId).id];
@@ -979,6 +1000,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
     if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
     if (isPublishing || !val) return;
     setIsPublishing(true);
     setPubStatus("idle");
@@ -1577,6 +1599,31 @@ const SocialTabContent = memo(function SocialTabContent({
           );
         })}
       </div>
+
+      {genreMeta && (
+        <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-200">
+              文體檢查｜{GENRES[genreMeta.genre]?.name}・{FUNNEL_LABEL[genreMeta.funnel]}
+            </span>
+            <span className="text-slate-500">提示詞版本 {genreMeta.prompt_version}</span>
+          </div>
+          {genreIssues.length === 0 ? (
+            <div className="mt-1.5 text-emerald-300">✓ 自動檢查全部通過。最後請念出聲，像不像自己講話。</div>
+          ) : (
+            <ul className="mt-1.5 space-y-1">
+              {genreIssues.map((i, idx) => (
+                <li key={idx} className={i.level === "block" ? "text-red-300" : "text-amber-300"}>
+                  {i.level === "block" ? "⛔ 擋住發佈：" : "⚠ 提醒："}{i.message}
+                </li>
+              ))}
+              {genreIssues.every((i) => i.level === "warn") && (
+                <li className="text-slate-400">只有提醒，不影響發佈。最後請念出聲，像不像自己講話。</li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
 
       {mode === "edit" ? (
         <div className="flex-1 flex flex-col space-y-3">

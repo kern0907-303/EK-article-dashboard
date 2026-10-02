@@ -1,5 +1,6 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
 import { stripMarkdown } from "@/lib/plain-text";
+import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
@@ -193,7 +194,7 @@ async function runQueryWithFallback(
   config: AIProviderConfig,
   jsonMode?: boolean,
   preferredProvider?: "openai" | "gemini" | "anthropic",
-  opts?: { maxTokens?: number; timeoutMs?: number }
+  opts?: { maxTokens?: number; timeoutMs?: number; report?: { provider?: string; model?: string } }
 ): Promise<string> {
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
@@ -227,6 +228,10 @@ async function runQueryWithFallback(
   for (const provider of validProviders) {
     try {
       console.log(`[runQueryWithFallback] Attempting ${provider}...`);
+      if (opts?.report) {
+        opts.report.provider = provider;
+        opts.report.model = provider === "openai" ? config.model : provider === "gemini" ? config.geminiModel : (config.anthropicModel || process.env.ANTHROPIC_MODEL);
+      }
       if (provider === "gemini") {
         return await callGemini([{ role: "user", content: prompt }], config, jsonMode);
       } else if (provider === "openai") {
@@ -426,7 +431,8 @@ export async function callErickCOO(
   brandGuidelines?: string,
   prevData?: any,
   platform?: string,
-  copywritingFramework?: string
+  copywritingFramework?: string,
+  genre?: { settings: GenreSettings; brandKey: BrandKey }
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = overrideProvider || config.provider;
@@ -822,10 +828,21 @@ ${mayaPlatformRules}
   "social_copy": "Maya 產出的乾淨純文字社群文案內容 (絕對禁止包含任何 **粗體**, #標題 或 ---分隔線等 Markdown 符號)"
 }`;
 
-    console.log("[callErickCOO] Running Iris (gemini) and Maya (anthropic) concurrently...");
+    // 文體模式：用「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」取代預設的 Maya 提示詞。
+    // 品牌既有規範只保留為事實邊界（語氣衝突時以文體提示詞為準）。
+    let finalMayaPrompt = mayaStepPrompt;
+    const mayaReport: { provider?: string; model?: string } = {};
+    if (genre?.settings) {
+      finalMayaPrompt = `${buildGenrePrompt(genre.brandKey, genre.settings)}
+
+【事實邊界（品牌既有規範。語氣與格式衝突時，以上方文體提示詞為準；事實、紅線與不可宣稱的內容，以此為準）】
+${brandContext}`;
+    }
+
+    console.log(`[callErickCOO] Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`);
     const [irisResponse, mayaResponse] = await Promise.all([
       runQueryWithFallback(irisStepPrompt, config, true, "gemini"),
-      runQueryWithFallback(mayaStepPrompt, config, true, "anthropic")
+      runQueryWithFallback(finalMayaPrompt, config, true, "anthropic", genre?.settings ? { maxTokens: 8000, timeoutMs: 100000, report: mayaReport } : undefined)
     ]);
 
     const irisResult = robustJSONParse(irisResponse);
@@ -864,11 +881,19 @@ ${mayaPlatformRules}
     return {
       content: "",
       dispatchData: {
-        social_copy: mayaResult.social_copy || "",
+        social_copy: genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : (mayaResult.social_copy || ""),
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
         aeo_faq: irisResult.aeo_faq || "",
-        active_platform: activePlatform
+        active_platform: genre?.settings ? "facebook" : activePlatform,
+        genre_meta: genre?.settings
+          ? {
+              genre: genre.settings.genre,
+              funnel: genre.settings.funnel,
+              prompt_version: PROMPT_VERSION,
+              model_version: mayaReport.model || undefined,
+            }
+          : null,
       }
     };
   }

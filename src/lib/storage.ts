@@ -84,6 +84,8 @@ export interface WorkspaceData {
   theo_analysis_facebook?: TheoAnalysis;
   theo_analysis_instagram?: TheoAnalysis;
   active_platform?: string;
+  /** 這篇文章是用哪個文體生成的（null 代表一般生成）。發文前的檢查會用到 */
+  genre_meta?: import("@/data/skills/genres").GenreMeta | null;
   /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */
   social_copy_meta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }
@@ -165,13 +167,13 @@ function syncPlatformFields(current: WorkspaceData, updatedFields: Partial<Works
   if (updatedFields.active_platform !== undefined && updatedFields.active_platform !== current.active_platform) {
     const targetPlat = updatedFields.active_platform;
     if (targetPlat === "threads") {
-      updates.social_copy = current.social_copy_threads !== undefined ? current.social_copy_threads : (current.active_platform === "threads" || !current.active_platform ? current.social_copy : "");
+      if (updatedFields.social_copy === undefined) updates.social_copy = current.social_copy_threads !== undefined ? current.social_copy_threads : (current.active_platform === "threads" || !current.active_platform ? current.social_copy : "");
       updates.theo_analysis = current.theo_analysis_threads !== undefined ? current.theo_analysis_threads : (current.active_platform === "threads" || !current.active_platform ? current.theo_analysis : undefined);
     } else if (targetPlat === "facebook") {
-      updates.social_copy = current.social_copy_facebook !== undefined ? current.social_copy_facebook : (current.active_platform === "facebook" ? current.social_copy : "");
+      if (updatedFields.social_copy === undefined) updates.social_copy = current.social_copy_facebook !== undefined ? current.social_copy_facebook : (current.active_platform === "facebook" ? current.social_copy : "");
       updates.theo_analysis = current.theo_analysis_facebook !== undefined ? current.theo_analysis_facebook : (current.active_platform === "facebook" ? current.theo_analysis : undefined);
     } else if (targetPlat === "instagram") {
-      updates.social_copy = current.social_copy_instagram !== undefined ? current.social_copy_instagram : (current.active_platform === "instagram" ? current.social_copy : "");
+      if (updatedFields.social_copy === undefined) updates.social_copy = current.social_copy_instagram !== undefined ? current.social_copy_instagram : (current.active_platform === "instagram" ? current.social_copy : "");
       updates.theo_analysis = current.theo_analysis_instagram !== undefined ? current.theo_analysis_instagram : (current.active_platform === "instagram" ? current.theo_analysis : undefined);
     }
   }
