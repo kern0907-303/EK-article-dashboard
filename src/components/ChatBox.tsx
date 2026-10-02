@@ -6,6 +6,7 @@ import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-sto
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
+import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -31,6 +32,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [gLength, setGLength] = useState("");
   const [gCta, setGCta] = useState("");
   const [genreError, setGenreError] = useState("");
+  // 貼上選題（每週品牌調研的 Telegram 訊息）
+  const [pasteText, setPasteText] = useState("");
+  const [pasteBundle, setPasteBundle] = useState<PastedBundle | null>(null);
+  const [pasteNotes, setPasteNotes] = useState<string[]>([]);
+  const [pasteApplied, setPasteApplied] = useState("");
   useEffect(() => {
     if (progress.stage < 1 || progress.stage > 3) return;
     const t = setInterval(() => setTick((n) => n + 1), 1000);
@@ -290,6 +296,47 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       };
       runSequentially();
     }
+  };
+
+  // 把一個選題填進文體生成表單
+  const applyPastedTopic = (t: PastedTopic, bundle: PastedBundle) => {
+    const notes: string[] = [];
+    const g: GenreId = t.genre && GENRES[t.genre].enabled ? t.genre : genreId;
+    if (!t.genre) notes.push("沒有看到建議文體，文體維持你原本的選擇。");
+    setGenreId(g);
+    if (t.funnel) setFunnel(t.funnel);
+    else notes.push("沒有看到漏斗層，維持原本的選擇。");
+    setGClaim(t.claim);
+    if (!t.claim) notes.push("沒有看到主張，請自己填一句。");
+    setGMaterial(materialFor(t, g));
+    setGMetaphor("");
+    setGLength("");
+    setGCta("");
+    setGenreError("");
+
+    const currentBrand = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
+    if (bundle.brandKey && bundle.brandKey !== currentBrand) {
+      notes.push(`這份選題屬於「${bundle.brandName}」，但你現在在「${activeBrandName}」。生成前請先切換品牌，否則會用錯語氣。`);
+    }
+    const need = t.needMaterial && !/^無需/.test(t.needMaterial) ? t.needMaterial : "";
+    if (g === "case") notes.push(`案例文需要真實個案，系統不會代寫。請貼上個案摘要${need ? "。調研建議補：" + need : "。"}`);
+    else if (g === "invite") notes.push(`邀請文請補素材欄：導向的網址、點進去會得到什麼、邀請對象。${need ? "調研建議補：" + need : ""}`);
+    else if (g === "breakdown") notes.push(`拆解文請在素材欄補上要用的框架（四層／領域／隱態顯態／內外一致）。事件內容是 AI 搜尋的，貼文前先核對來源。${need ? "調研建議補：" + need : ""}`);
+    setPasteNotes(notes);
+    setPasteApplied(`題目 ${t.index}｜${t.mode || "選題"}：${t.title || t.claim}`);
+  };
+
+  const handlePasteParse = () => {
+    const bundle = parsePastedTopics(pasteText);
+    setPasteApplied("");
+    setPasteNotes([]);
+    if (bundle.topics.length === 0) {
+      setPasteBundle(null);
+      setPasteNotes(["看不出選題格式。請貼上 Telegram 收到的調研訊息（含「題目 1｜…」與【主張】），或 Google Sheet「選題情報」的 content_task 欄整段。"]);
+      return;
+    }
+    setPasteBundle(bundle);
+    if (bundle.topics.length === 1) applyPastedTopic(bundle.topics[0], bundle);
   };
 
   // 文體生成：不經過營運長，直接把「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」送給 Maya
@@ -605,7 +652,46 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           </button>
         </div>
         {genreOpen && (
-          <div className="max-h-[42vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
+          <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
+            <div className="rounded-lg border border-slate-700/80 bg-slate-900/60 p-2 space-y-1.5">
+              <div className="text-[10px] text-slate-400">貼上選題：把每週品牌調研的 Telegram 訊息整段貼進來，會自動填入下方的文體、漏斗層、主張與素材</div>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={3}
+                placeholder="貼上「題目 1｜我的看法 …【主張】…」"
+                className="w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePasteParse}
+                  disabled={!pasteText.trim()}
+                  className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-100 text-[11px] font-bold rounded-md cursor-pointer disabled:opacity-40"
+                >
+                  解析並填入
+                </button>
+                {pasteApplied && <span className="text-[10px] text-emerald-300 truncate">已填入：{pasteApplied}</span>}
+              </div>
+              {pasteBundle && pasteBundle.topics.length > 1 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] text-slate-400">找到 {pasteBundle.topics.length} 個選題，選一個填入：</div>
+                  {pasteBundle.topics.map((tp) => (
+                    <button
+                      key={tp.index}
+                      type="button"
+                      onClick={() => applyPastedTopic(tp, pasteBundle)}
+                      className="block w-full text-left text-[11px] text-slate-200 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                    >
+                      題目 {tp.index}｜{tp.mode || "選題"}｜{tp.genreRaw || "文體未定"}：{tp.title || tp.claim}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pasteNotes.map((n, i) => (
+                <div key={i} className="text-[10px] text-amber-300 leading-relaxed">• {n}</div>
+              ))}
+            </div>
             <div className="flex gap-2">
               <label className="flex-1 text-[10px] text-slate-400">
                 文體
