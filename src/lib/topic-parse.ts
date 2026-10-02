@@ -48,6 +48,9 @@ export function brandKeyFromText(s: string): BrandKey | null {
   return null;
 }
 
+/** 行首的表情符號、項目符號、全形空白（保留中文、英數與「『【（( 引號括號） */
+const LEAD_SYMBOLS = /^[^一-龥A-Za-z0-9「『【（(“"]+/;
+
 const LABELS = ["本週事件", "受眾原話", "市場常見說法", "我的角度", "建議", "主張", "需要你補的素材", "來源"];
 
 function emptyTopic(index: number): PastedTopic {
@@ -66,12 +69,15 @@ function parseBlock(block: string, index: number): PastedTopic | null {
   const loose: string[] = []; // 沒有欄位標籤的行（含標題）
 
   for (const raw of lines) {
-    const line = raw.replace(/\s+$/, "");
-    if (!line.trim()) continue;
-    if (line.startsWith("👀")) { current = "__ignore"; continue; }
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("👀")) { current = "__ignore"; continue; }
     if (current === "__ignore") continue;
-    const head =line.match(/^題目\s*\d+\s*[｜|]\s*(.+)$/);
-    if (head) { t.mode = head[1].trim(); current = "__title"; continue; }
+    // 新版訊息每行前面有表情符號，先去掉再比對
+    const line = trimmed.replace(LEAD_SYMBOLS, "");
+    if (!line) continue;
+    const head = line.match(/^題目\s*\d+\s*[｜|]\s*(.+)$/);
+    if (head) { t.mode = head[1].trim().replace(LEAD_SYMBOLS, ""); current = "__title"; continue; }
     const m = line.match(/^【([^】]+)】(.*)$/);
     if (m && LABELS.includes(m[1].trim())) {
       current = m[1].trim();
@@ -134,7 +140,7 @@ export function parsePastedTopics(input: string): PastedBundle {
 
   // 以分隔線切段；有「題目 N｜」的段落才是選題
   const pieces = text.split(/\n[━─\-]{5,}\n?/);
-  const blocks = pieces.filter((p) => /^\s*題目\s*\d+\s*[｜|]/m.test(p));
+  const blocks = pieces.filter((p) => /^[^\n一-龥]*題目\s*\d+\s*[｜|]/m.test(p));
   if (blocks.length > 0) {
     blocks.forEach((b, i) => {
       const parsed = parseBlock(b, i + 1);
@@ -144,7 +150,7 @@ export function parsePastedTopics(input: string): PastedBundle {
   }
 
   // 沒有分隔線但有多個「題目 N｜」
-  const byHead = text.split(/\n(?=題目\s*\d+\s*[｜|])/).filter((p) => /^題目\s*\d+\s*[｜|]/.test(p.trim()));
+  const byHead = text.split(/\n(?=[^\n一-龥]*題目\s*\d+\s*[｜|])/).filter((p) => /^[^\n一-龥]*題目\s*\d+\s*[｜|]/.test(p.trim()));
   if (byHead.length > 0) {
     byHead.forEach((b, i) => {
       const parsed = parseBlock(b, i + 1);

@@ -59,5 +59,60 @@ t("亂貼的字不會誤判", parsePastedTopics("今天天氣很好").topics.len
 t("空字串", parsePastedTopics("").topics.length === 0);
 t("回應文不自動帶入", parsePastedTopics("題目 1｜x\n標題\n【建議】回應文｜熱流量\n【主張】甲").topics[0].genre === null);
 
+const emoji = `🔎 本週品牌調研｜NAS 生命數字（2026-10-02）
+
+📊 資料：Google 趨勢 10 則・新聞 13 則
+
+━━━━━━━━━━━━
+
+📌 題目 1｜我的看法
+👉 容貌焦慮的解法不是「接受自己的外表」
+
+📰 【本週事件】
+兒福聯盟發布調查報告。
+
+💬 【受眾原話】
+　「我不是在迷路，我是在被引導」
+
+🗣 【市場常見說法】
+解方是接受外貌。
+
+💡 【我的角度】
+接受外表仍把外表當價值來源。
+
+🎯 【建議】拆解文｜冷流量
+
+✍️ 【主張】
+問題不在臉，在你用哪把尺量自己的價值
+
+📎 【需要你補的素材】
+無需額外素材
+
+🔗 【來源】兒福聯盟
+
+━━━━━━━━━━━━
+
+📌 題目 2｜二創
+👉 報告做得很好卻沒人看見
+
+🎯 【建議】案例文｜溫流量
+
+✍️ 【主張】
+努力沒被看見，是你還不認識自己
+
+━━━━━━━━━━━━
+
+👀 不建議做：1. 紅包：略過。
+`;
+const e = parsePastedTopics(emoji);
+t("emoji 版：品牌", e.brandKey === "nas");
+t("emoji 版：2 題", e.topics.length === 2);
+t("emoji 版：模式與標題", e.topics[0].mode === "我的看法" && e.topics[0].title.startsWith("容貌焦慮"));
+t("emoji 版：欄位內容換行也能讀", e.topics[0].event === "兒福聯盟發布調查報告。" && e.topics[0].claim.startsWith("問題不在臉"));
+t("emoji 版：原話", e.topics[0].audienceVoice[0] === "我不是在迷路，我是在被引導");
+t("emoji 版：文體漏斗", e.topics[0].genre === "breakdown" && e.topics[0].funnel === "cold" && e.topics[1].genre === "case" && e.topics[1].funnel === "warm");
+t("emoji 版：不建議做不混入", !e.topics[1].claim.includes("紅包") && !e.topics[1].needMaterial.includes("紅包"));
+t("emoji 版：單題（前綴符號）", parsePastedTopics("📌 題目 2｜二創\n👉 標題\n🎯 【建議】邀請文｜熱流量\n✍️ 【主張】甲").topics[0].genre === "invite");
+
 console.log(`\n${pass} 通過 / ${fail} 失敗`);
 if (fail > 0) process.exit(1);
