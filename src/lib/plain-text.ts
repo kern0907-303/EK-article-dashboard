@@ -14,6 +14,7 @@ export function stripMarkdown(input: string): string {
     .replace(/(^|[^\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, "$1$2") // *斜體*
     .replace(/`([^`\n]+)`/g, "$1")             // `行內程式碼`
     .replace(/^\s*[-*]{3,}\s*$/gm, "")         // --- 分隔線
+    .replace(/^[ \t　]*[─—]{2,}[ \t　]*(?=[^\s─—])/gm, "") // ── 小標記號：留下文字，讓小標成為單獨一行的純文字
     .replace(/^\s*[-*+]\s+/gm, "・")            // 清單符號改成中文頓點
     .replace(/\n{3,}/g, "\n\n")
     .trim();

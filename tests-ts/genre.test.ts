@@ -1,5 +1,5 @@
 import { checkGenreText, blockingIssues } from "../src/lib/genre-check";
-import { buildGenrePrompt, GENRES, brandKeyFromId, PROMPT_VERSION } from "../src/data/skills/genres";
+import { buildGenrePrompt, GENRES, brandKeyFromId, PROMPT_VERSION, SHARED_PREFIX } from "../src/data/skills/genres";
 import { stripMarkdown } from "../src/lib/plain-text";
 
 let pass = 0, fail = 0;
@@ -38,7 +38,9 @@ t("CTA 留空 → 不放", p.includes("全文不放 CTA"));
 t("主張與素材代入", p.includes("決策不該都靠老闆") && p.includes("某個案"));
 t("回應文標為未啟用", GENRES.response.enabled === false);
 t("品牌對應", brandKeyFromId("brand_c_abl") === "abl" && brandKeyFromId("brand_b_nas") === "nas" && brandKeyFromId("personal_brand") === "erick");
-t("stripMarkdown 保留 【】 與 ──", stripMarkdown("【標題】\n\n── 小標\n**重點**") === "【標題】\n\n── 小標\n重點");
+t("stripMarkdown 保留 【】、去掉 ── 小標記號", stripMarkdown("【標題】\n\n── 小標\n**重點**") === "【標題】\n\n小標\n重點");
+t("stripMarkdown 只有符號的 ── 線不留殘字", !/[^\s]/.test(stripMarkdown("──────").replace(/[─—]/g, "")));
+t("共用前綴不再要求 ── 當小標", !SHARED_PREFIX.includes("小標用 ──"));
 void filler;
 
 console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);

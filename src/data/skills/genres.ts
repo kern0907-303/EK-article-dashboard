@@ -2,7 +2,7 @@
 // 內容來源：Erick 提供的《文案文體提示詞骨架｜四種》。改提示詞時請同步調高 PROMPT_VERSION，
 // 文章存入官網時會一併記錄版本，之後可以回頭比較哪一版寫得比較好。
 
-export const PROMPT_VERSION = "genre-v1";
+export const PROMPT_VERSION = "genre-v2";
 
 export type GenreId = "case" | "breakdown" | "response" | "invite";
 export type FunnelLevel = "cold" | "warm" | "hot";
@@ -59,7 +59,8 @@ export const SHARED_PREFIX = `你在替艾瑞克（Erick）寫文案。他是從
 
 【輸出格式】
 純文字。不要出現 ** ## 這類 Markdown 符號，Facebook 不支援。
-標題用【】，小標用 ── 開頭。要強調就斷行，不要用粗體。
+標題用【】。小標寫成單獨一行的純文字，前後各空一行，行首不加任何符號
+（不要用 ──、—、#、*、數字編號或表情符號當小標記號）。要強調就斷行，不要用粗體。
 段落極短，一到兩行一段，段間空一行。不要出現密密麻麻的文字塊。
 
 【絕對不做】
