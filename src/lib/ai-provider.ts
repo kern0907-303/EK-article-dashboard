@@ -84,6 +84,20 @@ export function getAIConfig(): AIProviderConfig {
   };
 }
 
+/**
+ * 下拉選單的值可以是 "openai" 或 "openai:gpt-6.1-sol" 這種「廠商:模型」寫法。
+ * 這裡把它拆開：回傳廠商名稱，並在有指定模型時覆蓋 config.model（只限 OpenAI）。
+ */
+export function resolveProvider(config: AIProviderConfig, override?: string): string {
+  const raw = override || config.provider;
+  const idx = raw.indexOf(":");
+  if (idx === -1) return raw;
+  const provider = raw.slice(0, idx);
+  const model = raw.slice(idx + 1).trim();
+  if (provider === "openai" && /^[A-Za-z0-9._-]{1,64}$/.test(model)) config.model = model;
+  return provider;
+}
+
 function extractJSON(text: string): string | null {
   const startObj = text.indexOf('{');
   const startArr = text.indexOf('[');
@@ -437,7 +451,7 @@ export async function callErickCOO(
   genre?: { settings: GenreSettings; brandKey: BrandKey }
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
-  const provider = overrideProvider || config.provider;
+  const provider = resolveProvider(config, overrideProvider);
   config.provider = provider; // 確保專家端能讀取到目前選用的 Provider
   const brandColors = getBrandColorsForPrompt(brandName);
   const activePlatform = platform || "threads";
@@ -1456,7 +1470,7 @@ export async function generateAEOData(
   overrideProvider?: string
 ): Promise<{ schemaMarkup: string; aeoFaq: string }> {
   const config = getAIConfig();
-  const provider = overrideProvider || config.provider;
+  const provider = resolveProvider(config, overrideProvider);
 
   if (provider === "mock") {
     return callMockAEO(brandName, keywords);
@@ -1666,7 +1680,7 @@ export async function callTheoAnalysis(
   platform?: string
 ): Promise<TheoAnalysis> {
   const config = getAIConfig();
-  const provider = overrideProvider || config.provider;
+  const provider = resolveProvider(config, overrideProvider);
   config.provider = provider;
   const activePlatform = platform || "threads";
 
@@ -1855,7 +1869,7 @@ export async function callSeoOptimizer(
   overrideProvider?: string
 ): Promise<Omit<import("@/lib/seo-optimizer").SeoOptimization, "guardrail_violations">> {
   const config = getAIConfig();
-  const provider = overrideProvider || config.provider;
+  const provider = resolveProvider(config, overrideProvider);
   config.provider = provider;
 
   const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
