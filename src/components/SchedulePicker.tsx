@@ -2,6 +2,15 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import {
+  buildDayMarks,
+  dayKey,
+  describeDay,
+  sameSlotHint,
+  MARK_BRAND_COLOR,
+  MARK_BRAND_LABEL,
+  type MarkSource,
+} from "@/lib/schedule-marks";
 
 /**
  * 排程時間選擇器：月曆點日期 + 滾輪選時、分。
@@ -27,9 +36,11 @@ interface Props {
   /** 最晚可選日期，預設 30 天後 */
   max?: Date;
   accentClass?: string;
+  /** 已排程的項目（所有品牌），用來在月曆上標示哪天已有預約發文 */
+  items?: MarkSource[];
 }
 
-export default function SchedulePicker({ value, onChange, min, max, accentClass = "bg-indigo-600" }: Props) {
+export default function SchedulePicker({ value, onChange, min, max, accentClass = "bg-indigo-600", items }: Props) {
   const minDate = useMemo(() => min ?? new Date(Date.now() + 5 * 60 * 1000), [min]);
   const maxDate = useMemo(() => max ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), [max]);
 
@@ -56,6 +67,10 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
     for (let d = 1; d <= total; d++) arr.push(new Date(view.getFullYear(), view.getMonth(), d));
     return arr;
   }, [view]);
+
+  const marks = useMemo(() => buildDayMarks(items || []), [items]);
+  const selectedMark = selected ? marks.get(dayKey(selected)) : undefined;
+  const slotHint = sameSlotHint(selectedMark, selected);
 
   const dayDisabled = (d: Date) => d < startOfDay(minDate) || d > maxDate;
 
@@ -125,29 +140,72 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
                   <span key={w}>{w}</span>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-y-1 text-center">
+              <div className="grid grid-cols-7 gap-y-0 text-center">
                 {cells.map((d, i) =>
                   d ? (
-                    <button
-                      key={i}
-                      type="button"
-                      disabled={dayDisabled(d)}
-                      onClick={() => pickDay(d)}
-                      className={`mx-auto w-8 h-8 rounded-full text-[11px] transition ${
-                        selected && sameDay(d, selected)
-                          ? `${accentClass} text-white font-bold`
-                          : sameDay(d, new Date())
-                          ? "border border-slate-500 text-slate-100 hover:bg-slate-800"
-                          : "text-slate-200 hover:bg-slate-800"
-                      } disabled:text-slate-700 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer`}
-                    >
-                      {d.getDate()}
-                    </button>
+                    (() => {
+                      const mk = marks.get(dayKey(d));
+                      const tip = mk ? `${d.getMonth() + 1}/${d.getDate()} 已預約：${describeDay(mk)}` : undefined;
+                      return (
+                        <div key={i} className="flex flex-col items-center" title={tip}>
+                          <button
+                            type="button"
+                            disabled={dayDisabled(d)}
+                            onClick={() => pickDay(d)}
+                            className={`mx-auto w-8 h-8 rounded-full text-[11px] transition ${
+                              mk?.full ? "ring-1 ring-slate-100/80 " : ""
+                            }${
+                              selected && sameDay(d, selected)
+                                ? `${accentClass} text-white font-bold`
+                                : sameDay(d, new Date())
+                                ? "border border-slate-500 text-slate-100 hover:bg-slate-800"
+                                : "text-slate-200 hover:bg-slate-800"
+                            } disabled:text-slate-700 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer`}
+                          >
+                            {d.getDate()}
+                          </button>
+                          <div className="flex items-center justify-center gap-[3px] h-[10px] mt-[1px]">
+                            {mk?.brands.map((b) => (
+                              <span
+                                key={b.brand}
+                                className="inline-flex items-center justify-center rounded-full border border-white/30 text-[6px] leading-none font-bold text-white"
+                                style={{
+                                  backgroundColor: MARK_BRAND_COLOR[b.brand],
+                                  width: b.count > 1 ? 9 : 6,
+                                  height: b.count > 1 ? 9 : 6,
+                                }}
+                              >
+                                {b.count > 1 ? b.count : ""}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <span key={i} />
                   )
                 )}
               </div>
+            </div>
+
+            {/* 圖例與選到那天的預約清單 */}
+            <div className="text-[10px] text-slate-400 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {(["i8", "abl", "nas"] as const).map((b) => (
+                  <span key={b} className="inline-flex items-center gap-1">
+                    <span className="inline-block w-[6px] h-[6px] rounded-full border border-white/30" style={{ backgroundColor: MARK_BRAND_COLOR[b] }} />
+                    {MARK_BRAND_LABEL[b]}
+                  </span>
+                ))}
+                <span className="text-slate-500">圓點＝當天已有預約　外框＝四個品牌都有</span>
+              </div>
+              {selected && (
+                <div className="text-slate-300">
+                  {selectedMark ? `${selected.getMonth() + 1}/${selected.getDate()} 已預約：${describeDay(selectedMark)}` : `${selected.getMonth() + 1}/${selected.getDate()} 目前沒有預約`}
+                </div>
+              )}
+              {slotHint && <div className="text-amber-400">{slotHint}</div>}
             </div>
 
             {/* 滾輪時間 */}

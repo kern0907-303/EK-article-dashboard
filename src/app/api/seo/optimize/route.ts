@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { callSeoOptimizer } from "@/lib/ai-provider";
 import { checkText, resolveBrandContext } from "@/lib/brand-guardrail";
 import { stripMarkdown } from "@/lib/plain-text";
+import { extractProtected, restoreProtected } from "@/lib/protect-blocks";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,7 +15,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing brandName parameter" }, { status: 400 });
     }
 
-    const result = await callSeoOptimizer(content, brandName, keywords || [], aiProvider);
+    // 原文裡的圖表（Mermaid）與圖片先換成佔位標記，優化完再原樣放回，避免圖文在優化後消失
+    const prot = extractProtected(content);
+    const result = await callSeoOptimizer(prot.text, brandName, keywords || [], aiProvider);
 
     // 一律清成純文字，並以品牌紅線再檢查一次優化後的全文與 FAQ
     const optimized = stripMarkdown(result.optimized_content);
@@ -34,7 +37,7 @@ export async function POST(req: NextRequest) {
         ...result,
         title: stripMarkdown(result.title),
         meta_description: stripMarkdown(result.meta_description),
-        optimized_content: optimized,
+        optimized_content: restoreProtected(optimized, prot),
         faq,
         guardrail_violations: violations,
       },

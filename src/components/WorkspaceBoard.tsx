@@ -448,6 +448,8 @@ const SocialTabContent = memo(function SocialTabContent({
   // 排程佇列狀態
   const [publishedArticle, setPublishedArticle] = useState<{ id: string; content: string } | null>(null);
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  // 所有品牌的排程（只給月曆標記用），不受目前品牌篩選影響
+  const [allQueueItems, setAllQueueItems] = useState<QueueItem[]>([]);
   const [queueEnabled, setQueueEnabled] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
@@ -720,6 +722,13 @@ const SocialTabContent = memo(function SocialTabContent({
       setQueueEnabled(!!resData.enabled);
       setQueueItems(Array.isArray(resData.data) ? resData.data : []);
       setQueueError(resData.success ? null : resData.error || "讀取排程失敗");
+      try {
+        const allRes = await fetch("/api/publish-queue?limit=100", { cache: "no-store" });
+        const allData = await allRes.json();
+        setAllQueueItems(Array.isArray(allData.data) ? allData.data : []);
+      } catch {
+        // 月曆標記讀不到時不影響主流程
+      }
     } catch (err: any) {
       setQueueEnabled(false);
       setQueueError(err?.message || "讀取排程失敗");
@@ -1386,6 +1395,7 @@ const SocialTabContent = memo(function SocialTabContent({
                     value={scheduleTime}
                     onChange={setScheduleTime}
                     accentClass={theme.primaryBg}
+                    items={allQueueItems}
                   />
                   <button
                     disabled={isScheduling || !scheduleTime}
