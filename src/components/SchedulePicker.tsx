@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import {
   buildDayMarks,
   dayKey,
@@ -46,6 +47,17 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
 
   const selected = value ? new Date(value) : null;
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [align, setAlign] = useState<PopoverAlign>("left");
+  // 展開前先量位置：放不下就換邊，避免月曆被外層切掉
+  const toggleOpen = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const b = clippingBounds(btnRef.current);
+      setAlign(pickAlign(r.left, r.right, b.left, b.right, 300));
+    }
+    setOpen((o) => !o);
+  };
   const [view, setView] = useState<Date>(() => new Date((selected ?? minDate).getFullYear(), (selected ?? minDate).getMonth(), 1));
   const hourRef = useRef<HTMLDivElement>(null);
   const minuteRef = useRef<HTMLDivElement>(null);
@@ -102,8 +114,9 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
   return (
     <div className="relative">
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className="flex items-center gap-1.5 text-[10px] text-slate-200 cursor-pointer px-1 py-0.5"
       >
         <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
@@ -113,7 +126,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-2 z-50 w-[300px] rounded-xl border border-slate-700 bg-slate-950 shadow-2xl p-3 space-y-3">
+          <div className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full mt-2 z-50 w-[300px] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-700 bg-slate-950 shadow-2xl p-3 space-y-3`}>
             {/* 月曆 */}
             <div>
               <div className="flex items-center justify-between mb-2">

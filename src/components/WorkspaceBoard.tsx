@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
@@ -17,6 +17,7 @@ import {
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
 import { stripMarkdown } from "@/lib/plain-text";
+import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { GENRES, FUNNEL_LABEL, type GenreMeta } from "@/data/skills/genres";
@@ -458,6 +459,17 @@ const SocialTabContent = memo(function SocialTabContent({
     getDefaultFacebookPage(pubBrandId).id
   ]);
   const [showPageSelector, setShowPageSelector] = useState(false);
+  const pageSelectorBtnRef = useRef<HTMLButtonElement>(null);
+  const [pageSelectorAlign, setPageSelectorAlign] = useState<PopoverAlign>("left");
+  // 展開前先量一下位置：往左長會被外層切掉就改成往右長，避免面板被擋住
+  const togglePageSelector = () => {
+    if (!showPageSelector && pageSelectorBtnRef.current) {
+      const r = pageSelectorBtnRef.current.getBoundingClientRect();
+      const b = clippingBounds(pageSelectorBtnRef.current);
+      setPageSelectorAlign(pickAlign(r.left, r.right, b.left, b.right, 320));
+    }
+    setShowPageSelector(!showPageSelector);
+  };
 
   // 排程佇列狀態
   const [publishedArticle, setPublishedArticle] = useState<{ id: string; content: string } | null>(null);
@@ -1318,8 +1330,9 @@ const SocialTabContent = memo(function SocialTabContent({
           {val && (
             <div className="relative">
               <button
+                ref={pageSelectorBtnRef}
                 type="button"
-                onClick={() => setShowPageSelector(!showPageSelector)}
+                onClick={togglePageSelector}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900/90 hover:bg-slate-850 text-slate-200 border border-slate-750 hover:border-slate-600 transition-all duration-200 cursor-pointer shadow-sm"
                 title="切換或多選發布目標 Facebook 粉絲專頁"
               >
@@ -1343,7 +1356,7 @@ const SocialTabContent = memo(function SocialTabContent({
               {showPageSelector && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowPageSelector(false)} />
-                  <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-80 bg-slate-950/95 border border-slate-800 rounded-xl shadow-2xl z-50 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className={`absolute ${pageSelectorAlign === "right" ? "right-0" : "left-0"} mt-2 w-80 max-w-[calc(100vw-1rem)] bg-slate-950/95 border border-slate-800 rounded-xl shadow-2xl z-50 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 duration-200`}>
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-850">
                       <div className="flex items-center gap-1.5">
                         <Facebook className="w-4 h-4 text-blue-400" />
