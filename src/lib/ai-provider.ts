@@ -1,5 +1,5 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
-import { stripMarkdown } from "@/lib/plain-text";
+import { stripMarkdown, stripDashes } from "@/lib/plain-text";
 import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
@@ -421,6 +421,8 @@ function getBrandColorsForPrompt(brandName: string) {
 /**
  * 核心 AI 雙模型協作調度路由
  */
+const NO_DASH_LAYOUT_RULE = `【絕對禁止破折號】全文任何位置都不可出現破折號或橫線符號，包含「——」「—」「–」「─」「━」「--」。這一條優先於前面所有品牌範例與語氣示範（範例裡若有破折號，一律不要模仿）。不可當分隔線，不可標記小標，也不可用在句子中間。需要停頓、補充或轉折時，一律改用逗號、句號，或直接拆成兩句。段落之間只用空行分隔，小標寫成單獨一行的純文字，行首不加任何符號。`;
+
 export async function callErickCOO(
   history: ChatMessage[],
   brandName: string,
@@ -504,6 +506,9 @@ export async function callErickCOO(
     brandContext += "\n\n" + frameworkData.promptContext;
   }
 
+  // 全品牌、全路徑通用：最後再提醒一次（放在最後，模型最容易遵守）
+  brandContext += "\n\n" + NO_DASH_LAYOUT_RULE;
+
   if (stage === "adapt") {
     const currentCopy = prevData?.social_copy || "";
     const targetPlatform = platform || "threads";
@@ -529,6 +534,8 @@ export async function callErickCOO(
 4. 建議在文案結尾寫「詳細資訊與連結我放在留言區第一則」，避免在貼文正文中直接塞網址。
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個。`;
     }
+
+    platformInstructions += "\n" + NO_DASH_LAYOUT_RULE;
 
     let adaptPrompt = "";
     if (currentCopy) {
@@ -778,6 +785,8 @@ ${irisPrompt}
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個。`;
     }
 
+    mayaPlatformRules += "\n" + NO_DASH_LAYOUT_RULE;
+
     const mayaStepPrompt = `你現在是社群行銷專家 Maya。
     
 【Erick 核心語氣與思考邏輯最高工作準則】：
@@ -881,10 +890,11 @@ ${brandContext}`;
     return {
       content: "",
       dispatchData: {
-        social_copy: genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : (mayaResult.social_copy || ""),
+        // 文體模式整篇清成純文字；其他框架（如品牌形象與故事）保留文案內容，但一律去掉破折號分隔線與小標記號
+        social_copy: genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : stripDashes(mayaResult.social_copy || ""),
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
-        aeo_faq: irisResult.aeo_faq || "",
+        aeo_faq: stripMarkdown(irisResult.aeo_faq || ""),
         active_platform: genre?.settings ? "facebook" : activePlatform,
         genre_meta: genre?.settings
           ? {
@@ -1021,7 +1031,7 @@ ${jackPrompt}
         web_architecture: leonResult.web_architecture || "",
         visual_direction: leonResult.visual_direction || {},
         ad_data: adData,
-        ad_strategy_notes: jackResult.ad_strategy_notes || ""
+        ad_strategy_notes: typeof jackResult.ad_strategy_notes === "string" ? stripDashes(jackResult.ad_strategy_notes) : (jackResult.ad_strategy_notes || "")
       }
     };
   }
@@ -1883,7 +1893,7 @@ export async function callSeoOptimizer(
 【鐵則，違反即失敗】
 1. 絕對不可編造數據、統計、案例、客戶故事、來源、頭銜或引用。原文沒有的事實，一律不得新增。
 2. 保留作者原本的語氣、論點與段落邏輯，只調整：標題、開頭直接回答句、段落切分、小標題、定義句與結論句、關鍵字自然融入、結尾收束。
-3. 全文與 FAQ 一律純文字，禁止任何 Markdown 符號（不可出現星號、井字號、減號清單、反引號等）；小標題請用單獨一行的純文字，行首不加任何符號。原文若用「──」之類符號標記小標，請去掉符號，改成單獨一行的純文字小標。
+3. 全文與 FAQ 一律純文字，禁止任何 Markdown 符號（不可出現星號、井字號、減號清單、反引號等）；小標題請用單獨一行的純文字，行首不加任何符號。原文若用「──」之類符號標記小標，請去掉符號，改成單獨一行的純文字小標。另外，優化後全文與 FAQ 不可出現任何破折號（——、—、–、─），原文有的一律改成逗號或句號。
 4. 關鍵字僅作主題參考，必須自然融入，禁止堆砌：${kwList}
 5. 不得使用誇大、保證、療效或命定性的說法。
 

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stripDashes } from "@/lib/plain-text";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPagesByIds } from "@/lib/facebook-pages";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, targetPages: rawTargetPages, content, action, scheduleTime, force } = await req.json();
+    const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force } = await req.json();
+    // 發出去之前最後一道保險：舊草稿裡殘留的破折號也一併清掉
+    const content = typeof rawContent === "string" ? stripDashes(rawContent) : rawContent;
 
     if (!brandId || !content) {
       return NextResponse.json(

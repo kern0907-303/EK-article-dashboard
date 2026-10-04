@@ -1,6 +1,6 @@
 import { checkGenreText, blockingIssues } from "../src/lib/genre-check";
 import { buildGenrePrompt, GENRES, brandKeyFromId, PROMPT_VERSION, SHARED_PREFIX } from "../src/data/skills/genres";
-import { stripMarkdown } from "../src/lib/plain-text";
+import { stripMarkdown, stripDividers, stripDashes } from "../src/lib/plain-text";
 
 let pass = 0, fail = 0;
 const t = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`${cond ? "✓" : "✗"} ${name}`); };
@@ -40,6 +40,19 @@ t("回應文標為未啟用", GENRES.response.enabled === false);
 t("品牌對應", brandKeyFromId("brand_c_abl") === "abl" && brandKeyFromId("brand_b_nas") === "nas" && brandKeyFromId("personal_brand") === "erick");
 t("stripMarkdown 保留 【】、去掉 ── 小標記號", stripMarkdown("【標題】\n\n── 小標\n**重點**") === "【標題】\n\n小標\n重點");
 t("stripMarkdown 只有符號的 ── 線不留殘字", !/[^\s]/.test(stripMarkdown("──────").replace(/[─—]/g, "")));
+t("stripDividers 移除整行破折號分隔線", stripDividers("標題\n———\n第一段\n──────\n第二段") === "標題\n\n第一段\n\n第二段");
+t("stripDividers 不動句中的破折號（由 stripDashes 處理）", stripDividers("他說——這很重要") === "他說——這很重要");
+t("stripDashes 句中 —— 換成逗號", stripDashes("他說——這很重要") === "他說，這很重要");
+t("stripDashes 單一 — 與 – 也處理", stripDashes("甲—乙–丙―丁") === "甲，乙，丙，丁");
+t("stripDashes 行尾與引號前直接刪除", stripDashes("他停了一下——\n「就是這樣——」") === "他停了一下\n「就是這樣」");
+t("stripDashes 貼著標點直接刪除", stripDashes("真的，——不是") === "真的，不是");
+t("stripDashes 數字區間改成到", stripDashes("5–50 人與10-20件") === "5到50 人與10-20件");
+t("stripDashes 空格夾住的 - 與 -- ", stripDashes("甲 - 乙 -- 丙") === "甲，乙，丙");
+t("stripDashes 不動連字號與網址", stripDashes("02-1234 與 well-being") === "02-1234 與 well-being");
+t("stripDashes 保留 mermaid 區塊", stripDashes("前——文\n```mermaid\nA --> B\nA --- C\n```\n後") === "前，文\n```mermaid\nA --> B\nA --- C\n```\n後");
+t("stripMarkdown 同時清掉 —— ", stripMarkdown("**重點**——很重要") === "重點，很重要");
+t("全部輸出不含任何破折號", !/[—―─━═–－]/.test(stripMarkdown("甲——乙\n———\n── 小標\n丙–丁")));
+t("stripDividers 移除 --- 與 === 線", stripDividers("甲\n---\n乙\n===\n丙") === "甲\n\n乙\n\n丙");
 t("共用前綴不再要求 ── 當小標", !SHARED_PREFIX.includes("小標用 ──"));
 void filler;
 
