@@ -1,0 +1,20 @@
+import { shouldAutoCheck, isScoreStale, healthHash } from "../src/lib/seo-optimizer";
+let pass = 0, fail = 0;
+const t = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`${cond ? "✓" : "✗"} ${name}`); };
+
+const base = { enabled: true, isMock: false, hasContent: true, currentHash: 1, savedHash: undefined as number | undefined, attemptedHash: undefined as number | undefined, inFlight: false };
+t("有內容、沒評分過 → 要跑", shouldAutoCheck(base) === true);
+t("開關關閉 → 不跑", shouldAutoCheck({ ...base, enabled: false }) === false);
+t("本地模擬大腦 → 不自動跑", shouldAutoCheck({ ...base, isMock: true }) === false);
+t("沒有內容 → 不跑", shouldAutoCheck({ ...base, hasContent: false }) === false);
+t("已有同一份內容的評分 → 不跑（快取）", shouldAutoCheck({ ...base, savedHash: 1 }) === false);
+t("內容改過（評分過期）→ 要跑", shouldAutoCheck({ ...base, savedHash: 2 }) === true);
+t("同一份內容剛失敗過 → 不重試", shouldAutoCheck({ ...base, attemptedHash: 1 }) === false);
+t("內容又改了，之前失敗的是舊內容 → 要跑", shouldAutoCheck({ ...base, attemptedHash: 0 }) === true);
+t("正在跑 → 不重複跑", shouldAutoCheck({ ...base, inFlight: true }) === false);
+t("沒有評分 → 視為過期", isScoreStale(undefined, 1) === true);
+t("雜湊相同 → 不過期", isScoreStale({ for_hash: 5 }, 5) === false);
+t("雜湊不同 → 過期", isScoreStale({ for_hash: 5 }, 6) === true);
+t("文章、問答、結構化資料任一改變，指紋就不同", healthHash("a","b","c") !== healthHash("a","b","d") && healthHash("a","b","c") !== healthHash("x","b","c") && healthHash("a","b","c") === healthHash("a","b","c"));
+console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);
+process.exit(fail ? 1 : 0);

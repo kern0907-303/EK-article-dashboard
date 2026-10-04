@@ -20,8 +20,10 @@ import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
-import { GENRES, FUNNEL_LABEL, type GenreMeta } from "@/data/skills/genres";
-import { SeoOptimization, faqToPlainText, buildFaqJsonLd } from "@/lib/seo-optimizer";
+import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
+import { GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreMeta } from "@/data/skills/genres";
+import { SeoOptimization, SeoScore, faqToPlainText, buildFaqJsonLd, isScoreStale, healthHash } from "@/lib/seo-optimizer";
+import { useAutoHealthCheck, useAutoHealthSetting } from "@/lib/use-auto-health";
 import { getProjectName, resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { 
   FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPageById, getFacebookPagesByIds 
@@ -247,6 +249,9 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
   // 整個 header 共用同一份 theme，不再於 map 迴圈內重複計算
   const theme = useBrandTheme(activeBrandId);
 
+  // 第二階段：生成後自動健檢（只評分不改寫）。放在這一層，不論目前停在哪個分頁都會跑
+  const healthBusy = useAutoHealthCheck(activeBrandId, data, aiProvider);
+
   return (
     <div className="flex flex-col h-full bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Tabs Selector Header */}
@@ -324,6 +329,8 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 webArticleMeta={data.web_article_meta}
                 brandGuidelines={data.brand_guidelines}
                 webSourceCopy={pickWebSourceCopy(data)}
+                seoScore={data.seo_score}
+                healthBusy={healthBusy.seo}
               />
             )}
             {activeTab === "ads" && (
@@ -339,6 +346,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 theoAnalysis={data.theo_analysis}
                 aiProvider={aiProvider}
                 activePlatform={data.active_platform}
+                healthBusy={healthBusy.theo}
               />
             )}
             {activeTab === "guidelines" && (
@@ -659,11 +667,25 @@ const SocialTabContent = memo(function SocialTabContent({
         }
       }
 
-      const res = await fetch("/api/chat", {
+      // 品牌錯置檢查：要改寫的原文明顯在講別的品牌時先問一次
+      const guardKey = brandKeyFromId(resolveEffectiveBrandId(brandId) || brandId);
+      const mm = findTextMismatch(sourceCopy, guardKey, "要改寫的原文");
+      let confirmedBrand = false;
+      if (mm) {
+        if (!window.confirm(`${describeMismatch(mm)}\n\n仍要用「${GUARD_BRAND_LABEL[guardKey]}」的語氣改寫嗎？`)) {
+          setIsAdapting(false);
+          return;
+        }
+        confirmedBrand = true;
+      }
+
+      const callAdapt = (confirmFlag: boolean) => fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stage: "adapt",
+          brandKey: guardKey,
+          confirmBrandMismatch: confirmFlag,
           brandName,
           aiProvider,
           platform,
@@ -675,9 +697,19 @@ const SocialTabContent = memo(function SocialTabContent({
           }
         })
       });
+      let res = await callAdapt(confirmedBrand);
+      if (res.status === 409) {
+        let j: any = null;
+        try { j = await res.clone().json(); } catch {}
+        if (j?.code === "BRAND_MISMATCH" && window.confirm(`${j.error}\n\n仍要用「${GUARD_BRAND_LABEL[guardKey]}」改寫嗎？`)) {
+          res = await callAdapt(true);
+        }
+      }
 
       if (!res.ok) {
-        throw new Error("轉化改寫失敗，請檢查 API 金鑰與連線。");
+        let serverMsg = "";
+        try { serverMsg = (await res.json())?.error || ""; } catch {}
+        throw new Error(res.status === 409 && serverMsg ? serverMsg : "轉化改寫失敗，請檢查 API 金鑰與連線。");
       }
 
       const responseData = await res.json();
@@ -1874,15 +1906,19 @@ const TheoTabContent = memo(function TheoTabContent({
   socialCopy,
   theoAnalysis,
   aiProvider,
-  activePlatform
+  activePlatform,
+  healthBusy
 }: {
   brandId: string;
   socialCopy: string;
   theoAnalysis?: TheoAnalysis;
   aiProvider: string;
   activePlatform?: string;
+  healthBusy?: boolean;
 }) {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [manualAnalyzing, setIsAnalyzing] = useState(false);
+  const isAnalyzing = manualAnalyzing || !!healthBusy;
+  const theoStale = !!theoAnalysis && theoAnalysis.for_hash !== undefined && theoAnalysis.for_hash !== textHash(socialCopy);
   const platform = activePlatform || "threads";
   const platformLabel = platform === "facebook" ? "Facebook" : platform === "instagram" ? "Instagram" : "Threads";
   const hasCopy = !!socialCopy && socialCopy.trim() !== "" && !socialCopy.startsWith("⏳") && !socialCopy.startsWith("❌");
@@ -1907,7 +1943,7 @@ const TheoTabContent = memo(function TheoTabContent({
       }
       const resData = await res.json();
       if (resData.success && resData.data) {
-        await saveWorkspace(brandId, { theo_analysis: resData.data });
+        await saveWorkspace(brandId, { theo_analysis: { ...resData.data, for_hash: textHash(socialCopy) } });
       }
     } catch (error: any) {
       console.error("Theo analysis error:", error);
@@ -1924,7 +1960,7 @@ const TheoTabContent = memo(function TheoTabContent({
     }
     const newVal = socialCopy.replace(original, rewrite);
     const updatedAnalysis = theoAnalysis
-      ? { ...theoAnalysis, reach_killers: theoAnalysis.reach_killers.filter((k) => k.original_sentence !== original) }
+      ? { ...theoAnalysis, reach_killers: theoAnalysis.reach_killers.filter((k) => k.original_sentence !== original), for_hash: textHash(newVal) }
       : undefined;
     await saveWorkspace(brandId, {
       social_copy: newVal,
@@ -1952,6 +1988,12 @@ const TheoTabContent = memo(function TheoTabContent({
             {isAnalyzing ? "分析中..." : theoAnalysis ? "重新分析" : "開始分析"}
           </button>
         </div>
+        <AutoHealthToggle />
+        {theoStale && !isAnalyzing && (
+          <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            文案在分析後又被修改過，這份分析已過期。{aiProvider === "mock" ? "按「重新分析」更新。" : "自動健檢開啟時會自動更新，也可以按「重新分析」。"}
+          </div>
+        )}
         {hasCopy ? (
           <p className="text-[11px] text-slate-300 bg-slate-950/50 border border-slate-850 rounded-lg p-3 whitespace-pre-wrap line-clamp-6">
             {socialCopy}
@@ -2272,18 +2314,153 @@ function pickWebSourceCopy(data: any): string {
 
 const SCORE_LABEL: Record<string, string> = { seo: "SEO 搜尋", aeo: "AEO 回答引擎", geo: "GEO AI 搜尋" };
 
+// ==================== 自動健檢（只評分不改寫） ====================
+const AutoHealthToggle = memo(function AutoHealthToggle() {
+  const [enabled, setEnabled] = useAutoHealthSetting();
+  return (
+    <label className="flex items-center gap-2 text-[10px] text-slate-400 cursor-pointer select-none w-fit">
+      <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-emerald-500" />
+      自動健檢：內容產生或修改後自動評分一次（只評分、不改寫）。Theo 觸及分析在用本地模擬大腦時不會自動跑
+    </label>
+  );
+});
+
+const SeoHealthCard = memo(function SeoHealthCard({
+  brandId,
+  webArticle,
+  keywords,
+  aiProvider,
+  seoScore,
+  healthBusy,
+  aeoFaq,
+  aeoSchema
+}: {
+  brandId: string;
+  webArticle: string;
+  keywords: SEOKeyword[];
+  aiProvider: string;
+  seoScore?: SeoScore;
+  healthBusy: boolean;
+  aeoFaq?: string;
+  aeoSchema?: string;
+}) {
+  const [manual, setManual] = useState(false);
+  const [err, setErr] = useState("");
+  const busy = manual || healthBusy;
+  const hash = healthHash(webArticle, aeoFaq, aeoSchema);
+  const stale = !!seoScore && isScoreStale(seoScore, hash);
+
+  const runNow = async () => {
+    if (busy) return;
+    setManual(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/seo/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: webArticle, brandName: getBrandOrProjectName(brandId), keywords, faqText: aeoFaq || "", schemaText: aeoSchema || "" })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "評分失敗");
+      await saveWorkspace(brandId, { seo_score: json.data });
+    } catch (e: any) {
+      setErr(e.message || "評分失敗");
+    } finally {
+      setManual(false);
+    }
+  };
+
+  const color = (n: number) => (n >= 80 ? "text-emerald-400" : n >= 60 ? "text-amber-400" : "text-rose-400");
+
+  return (
+    <div className="bg-slate-950/40 border border-slate-850 rounded-lg p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-bold text-slate-200">
+          自動健檢{seoScore ? `（${new Date(seoScore.at).toLocaleTimeString()}）` : ""}
+          <span className="font-normal text-slate-500">　程式規則計分，不用 AI，同一篇每次結果一樣，沒有改寫你的文章</span>
+        </div>
+        <button
+          type="button"
+          onClick={runNow}
+          disabled={busy}
+          className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
+        >
+          {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+          {busy ? "評分中..." : seoScore ? "重新評分" : "立即評分"}
+        </button>
+      </div>
+      <AutoHealthToggle />
+      {err && <div className="text-[11px] text-rose-300">{err}</div>}
+      {stale && !busy && (
+        <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          官網文章在評分後被修改過，這份分數已過期。
+        </div>
+      )}
+      {!seoScore && !busy && (
+        <p className="text-[11px] text-slate-500 italic">還沒有評分。自動健檢開啟時，文章產生後幾秒內會自動評分。</p>
+      )}
+      {seoScore && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            {(["seo", "aeo", "geo"] as const).map((k) => (
+              <div key={k} className={`bg-slate-950/50 border border-slate-850 rounded-lg p-2 text-center ${stale ? "opacity-50" : ""}`}>
+                <div className={`text-xl font-black ${color(seoScore.scores[k])}`}>{seoScore.scores[k]}</div>
+                <div className="text-[10px] text-slate-400">{SCORE_LABEL[k]}</div>
+              </div>
+            ))}
+          </div>
+          {seoScore.top_issues.length > 0 && (
+            <div className="space-y-0.5">
+              <div className="text-[11px] font-bold text-slate-300">建議先處理</div>
+              {seoScore.top_issues.map((t, i) => (
+                <div key={i} className="text-[11px] text-slate-400">{i + 1}. {t}</div>
+              ))}
+            </div>
+          )}
+          {seoScore.checks.length > 0 && (
+            <details className="text-[11px]">
+              <summary className="text-slate-400 cursor-pointer">檢查項目明細（{seoScore.checks.length}）</summary>
+              <div className="space-y-1 mt-1.5">
+                {seoScore.checks.map((c, i) => (
+                  <div key={i} className="flex gap-2 bg-slate-950/30 border border-slate-850 rounded-lg px-3 py-1.5">
+                    <span className={c.status === "ok" ? "text-emerald-400" : "text-amber-400"}>{c.status === "ok" ? "✓" : "!"}</span>
+                    <span className="text-slate-500 shrink-0 w-10">{c.area.toUpperCase()}</span>
+                    <span className="text-slate-200 font-semibold shrink-0">{c.item}</span>
+                    <span className="text-slate-400">{c.note}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          <p className="text-[9px] text-slate-500">
+            分數是「寫法有沒有符合搜尋與 AI 引用的結構規則」，不是排名預測；真實成效要看 Search Console。想要改寫版本，按下方「開始優化」，由你決定要不要套用。
+          </p>
+        </>
+      )}
+    </div>
+  );
+});
+
 const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
   brandId,
   webArticle,
   webArticleMeta,
   keywords,
-  aiProvider
+  aiProvider,
+  seoScore,
+  healthBusy,
+  aeoFaq,
+  aeoSchema
 }: {
   brandId: string;
   webArticle: string;
   webArticleMeta?: WebArticleMeta;
   keywords: SEOKeyword[];
   aiProvider: string;
+  seoScore?: SeoScore;
+  healthBusy?: boolean;
+  aeoFaq?: string;
+  aeoSchema?: string;
 }) {
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<(SeoOptimization & { forContent: string }) | null>(null);
@@ -2307,7 +2484,9 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
           brandId: effectiveBrand,
           brandName: getBrandOrProjectName(brandId),
           keywords,
-          aiProvider
+          aiProvider,
+          faqText: aeoFaq || "",
+          schemaText: aeoSchema || ""
         })
       });
       const json = await res.json();
@@ -2376,6 +2555,19 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
         <p className="text-[11px] text-slate-500 italic">還沒有官網文章。請先在上方按「由社群文案產生官網文章」。</p>
       )}
 
+      {hasCopy && !result && (
+        <SeoHealthCard
+          brandId={brandId}
+          webArticle={webArticle}
+          keywords={keywords}
+          aiProvider={aiProvider}
+          seoScore={seoScore}
+          healthBusy={!!healthBusy}
+          aeoFaq={aeoFaq}
+          aeoSchema={aeoSchema}
+        />
+      )}
+
       {result && (
         <div className="space-y-4">
           {result.is_local_check && (
@@ -2392,12 +2584,17 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
           <div className="grid grid-cols-3 gap-2">
             {(["seo", "aeo", "geo"] as const).map((k) => (
               <div key={k} className="bg-slate-950/50 border border-slate-850 rounded-lg p-3 text-center">
-                <div className={`text-2xl font-black ${scoreColor(result.scores[k])}`}>{result.scores[k]}</div>
+                <div className={`text-2xl font-black ${scoreColor(result.scores[k])}`}>
+                  {result.scores_before && !result.is_local_check && (
+                    <span className="text-sm font-semibold text-slate-500">{result.scores_before[k]} → </span>
+                  )}
+                  {result.scores[k]}
+                </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">{SCORE_LABEL[k]}</div>
               </div>
             ))}
           </div>
-          <p className="text-[9px] text-slate-500">分數是 AI 依檢查項目的判斷，用來看改善方向，不是搜尋排名預測。</p>
+          <p className="text-[9px] text-slate-500">分數由程式規則計算（不是 AI 打的），原文與優化後用同一把尺，箭頭左邊是原文、右邊是優化後；不是搜尋排名預測。</p>
 
           <div className="space-y-1.5">
             {result.checks.map((c, i) => (
@@ -2668,7 +2865,9 @@ const SEOTabContent = memo(function SEOTabContent({
   webArticle,
   webArticleMeta,
   brandGuidelines,
-  webSourceCopy
+  webSourceCopy,
+  seoScore,
+  healthBusy
 }: { 
   brandId: string; 
   keywords: SEOKeyword[]; 
@@ -2681,6 +2880,8 @@ const SEOTabContent = memo(function SEOTabContent({
   webArticleMeta?: WebArticleMeta;
   brandGuidelines?: string;
   webSourceCopy?: string;
+  seoScore?: SeoScore;
+  healthBusy?: boolean;
 }) {
   const theme = useBrandTheme(brandId);
   const [newKeyword, setNewKeyword] = useState("");
@@ -2789,6 +2990,10 @@ const SEOTabContent = memo(function SEOTabContent({
         webArticleMeta={webArticleMeta}
         keywords={keywords}
         aiProvider={aiProvider}
+        seoScore={seoScore}
+        healthBusy={healthBusy}
+        aeoFaq={aeoFaq}
+        aeoSchema={aeoSchema}
       />
 
       {/* 數據表格 Table */}

@@ -66,6 +66,8 @@ export interface TheoAnalysis {
   explanation: string;
   reach_killers: ReachKillerItem[];
   analyzed_at: number;
+  /** 被分析的文案雜湊；文案改過就和目前雜湊不同 → 標示「已過期」（舊資料沒有這欄，不標） */
+  for_hash?: number;
 }
 
 export interface WorkspaceData {
@@ -86,6 +88,8 @@ export interface WorkspaceData {
   active_platform?: string;
   /** 官網文章（與社群貼文分開存放；按「由社群文案產生官網文章」才會有） */
   web_article?: string;
+  /** 官網文章的自動健檢結果（只評分不改寫） */
+  seo_score?: import("@/lib/seo-optimizer").SeoScore;
   web_article_meta?: { generated_at?: number; edited_at?: number; from_hash?: number; from_platform?: string };
   /** 這篇文章是用哪個文體生成的（null 代表一般生成）。發文前的檢查會用到 */
   genre_meta?: import("@/data/skills/genres").GenreMeta | null;

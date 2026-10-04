@@ -7,6 +7,7 @@ import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChat
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
+import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL, type BrandMismatch } from "@/lib/brand-guard";
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -43,6 +44,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     return () => clearInterval(t);
   }, [progress.stage]);
   const [brandGuidelines, setBrandGuidelines] = useState("");
+  // 品牌錯置確認視窗：內容明顯在講別的品牌時，生成前先問一次
+  const [brandConfirm, setBrandConfirm] = useState<{ lines: string[]; onConfirm: () => void } | null>(null);
+  // 使用者已確認「仍用目前品牌生成」：這一輪生成的所有請求都帶上，避免後端重複攔截
+  const brandOverrideRef = useRef(false);
+  const currentBrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
+  const guardBody = () => ({ brandKey: currentBrandKey, confirmBrandMismatch: brandOverrideRef.current });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -185,6 +192,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             body: JSON.stringify({
               stage: "expert",
               expertType: "maya_iris",
+              ...guardBody(),
               subPrompts,
               brandName: activeBrandName,
               aiProvider,
@@ -238,6 +246,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             body: JSON.stringify({
               stage: "expert",
               expertType: "leon_jack",
+              ...guardBody(),
               subPrompts,
               brandName: activeBrandName,
               aiProvider,
@@ -357,6 +366,26 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     }
     setGenreError("");
 
+    // 品牌錯置檢查：主張／素材在講別的品牌，或貼上的選題屬於別的品牌
+    const found: BrandMismatch[] = [];
+    const m1 = findTextMismatch(gClaim, currentBrandKey, "主張");
+    if (m1) found.push(m1);
+    const m2 = findTextMismatch(gMaterial, currentBrandKey, "素材");
+    if (m2) found.push(m2);
+    const lines = found.map(describeMismatch);
+    if (pasteApplied && pasteBundle?.brandKey && pasteBundle.brandKey !== currentBrandKey) {
+      lines.push(`你貼上的選題屬於「${pasteBundle.brandName || GUARD_BRAND_LABEL[pasteBundle.brandKey]}」，但你現在在 ${GUARD_BRAND_LABEL[currentBrandKey]}。`);
+    }
+    brandOverrideRef.current = false;
+    if (lines.length > 0) {
+      setBrandConfirm({ lines, onConfirm: () => { brandOverrideRef.current = true; void runGenreGenerate(); } });
+      return;
+    }
+    await runGenreGenerate();
+  };
+
+  const runGenreGenerate = async () => {
+    const def = GENRES[genreId];
     const settings: GenreSettings = {
       genre: genreId,
       funnel,
@@ -398,6 +427,16 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     if (!inputValue.trim() || isLoading || isGenerating) return;
 
     const userText = inputValue.trim();
+    const m = findTextMismatch(userText, currentBrandKey, "你的指令");
+    brandOverrideRef.current = false;
+    if (m) {
+      setBrandConfirm({ lines: [describeMismatch(m)], onConfirm: () => { brandOverrideRef.current = true; void runSend(userText); } });
+      return;
+    }
+    await runSend(userText);
+  };
+
+  const runSend = async (userText: string) => {
     setInputValue("");
     setIsLoading(true);
     setIsGenerating(false);
@@ -425,6 +464,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         signal: signal,
         body: JSON.stringify({
           stage: "coo",
+          ...guardBody(),
           history: updatedHistory,
           brandName: activeBrandName,
           aiProvider: aiProvider,
@@ -641,6 +681,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
         <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-bold px-2 py-1 rounded-md border border-slate-700/80 bg-slate-800/80 text-slate-200 whitespace-nowrap"
+            title="之後送出的指令與文體生成，都會以這個品牌的語氣與規範產出"
+          >
+            目前品牌：{GUARD_BRAND_LABEL[currentBrandKey]}
+          </span>
           <button
             type="button"
             onClick={() => setGenreOpen((o) => !o)}
@@ -800,6 +846,38 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           </button>
         </div>
       </form>
+
+      {brandConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/40 bg-slate-900 p-5 space-y-3 shadow-2xl">
+            <h3 className="text-sm font-bold text-amber-300">品牌可能搞錯了</h3>
+            <div className="space-y-1.5">
+              {brandConfirm.lines.map((l, i) => (
+                <p key={i} className="text-xs text-slate-200 leading-relaxed">{l}</p>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              繼續的話，會用「{GUARD_BRAND_LABEL[currentBrandKey]}」的語氣與規範生成。想換品牌，請取消後到左側切換。
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setBrandConfirm(null)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => { const c = brandConfirm; setBrandConfirm(null); c.onConfirm(); }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
+              >
+                仍用目前品牌生成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
