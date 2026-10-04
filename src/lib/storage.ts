@@ -84,6 +84,9 @@ export interface WorkspaceData {
   theo_analysis_facebook?: TheoAnalysis;
   theo_analysis_instagram?: TheoAnalysis;
   active_platform?: string;
+  /** 官網文章（與社群貼文分開存放；按「由社群文案產生官網文章」才會有） */
+  web_article?: string;
+  web_article_meta?: { generated_at?: number; edited_at?: number; from_hash?: number; from_platform?: string };
   /** 這篇文章是用哪個文體生成的（null 代表一般生成）。發文前的檢查會用到 */
   genre_meta?: import("@/data/skills/genres").GenreMeta | null;
   /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */

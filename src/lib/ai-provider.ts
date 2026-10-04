@@ -1857,6 +1857,75 @@ ${socialCopy}
 }
 
 
+/** 取得品牌背景（官網文章用；邏輯與 callErickCOO 內相同，但不含文案框架） */
+function buildBrandContextLite(brandName: string, brandGuidelines?: string): string {
+  let ctx = `當前切換的品牌/領域是：【${brandName}】。請確保所有產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
+  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
+  if (brandGuidelines && brandGuidelines.trim().length > 0) {
+    ctx += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
+  } else if (isI8) {
+    ctx += "\n\n" + I8_BRAND_CONTEXT;
+  } else if (brandName.includes("NAS") || brandName.includes("brand_b")) {
+    ctx += "\n\n" + NAS_BRAND_CONTEXT + "\n\n" + NAS_WRITING_PROMPT;
+  } else if (brandName.includes("ABL") || brandName.includes("brand_c")) {
+    ctx += "\n\n" + ABL_BRAND_CONTEXT;
+  } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
+    ctx += "\n\n" + ERICK_BRAND_CONTEXT;
+  }
+  // 有自訂品牌大腦時，I8 現行規格仍優先；沒有時上面已加入，不重複
+  if (isI8 && brandGuidelines && brandGuidelines.trim()) {
+    ctx += "\n\n【I8 現行必遵守的對外內容規格，優先於其他 I8 文字】：\n" + I8_BRAND_CONTEXT;
+  }
+  return ctx + "\n\n" + NO_DASH_LAYOUT_RULE;
+}
+
+/**
+ * 官網文章產生器：把一篇社群貼文改寫成可發布在官網 Insights 的完整文章。
+ * 回傳純文字（不用 JSON，避免長文被 JSON 跳脫字元弄壞）。
+ */
+export async function callWebArticle(
+  socialCopy: string,
+  brandName: string,
+  keywords: Array<{ keyword: string }>,
+  brandGuidelines?: string,
+  overrideProvider?: string
+): Promise<{ article: string; is_local_check: boolean }> {
+  const config = getAIConfig();
+  const provider = resolveProvider(config, overrideProvider);
+  config.provider = provider;
+
+  if (provider === "mock") {
+    return { article: socialCopy, is_local_check: true };
+  }
+
+  const kwList = (keywords || []).map((k) => k.keyword).filter(Boolean).slice(0, 10).join("、") || "（無）";
+  const brandContext = buildBrandContextLite(brandName, brandGuidelines);
+
+  const prompt = `你現在是官網內容編輯 Iris。請把下面這篇【${brandName}】的社群貼文，改寫成可以發布在官網 Insights 的完整文章。
+
+【品牌背景與限制】
+${brandContext}
+
+【鐵則，違反即失敗】
+1. 絕對不可編造數據、統計、案例、客戶故事、來源、頭銜或引用。社群貼文沒有的事實，一律不得新增。
+2. 保留原本的論點、故事與語氣，只做官網文章需要的調整：補足背景與推理、讓段落更完整、加上清楚的小標題、開頭用 2 到 3 句直接回答文章核心問題、重要名詞給一句話定義、結尾自然收束並給出下一步。
+3. 長度以 800 到 1500 字為目標。素材不夠時寧可寫短，不可為了湊字數灌水或編造內容。
+4. 純文字輸出：第一行是文章標題，小標題寫成單獨一行的純文字，行首不加任何符號；不要用星號、井字號、減號清單、反引號。
+5. 拿掉社群專用的元素：hashtag、「留言區第一則」之類的導流句、表情符號。
+6. 關鍵字僅作主題參考，必須自然融入，禁止堆砌：${kwList}
+7. 不得使用誇大、保證、療效或命定性的說法。${/【保留區塊\d+】/.test(socialCopy) ? "\n8. 文中形如【保留區塊1】的單獨一行，是圖表或圖片的佔位標記，必須原樣保留在合適的位置，一字不改，不可刪除或加說明。" : ""}
+
+【社群貼文原文】
+"""
+${socialCopy}
+"""
+
+請只輸出文章本身，不要有任何前後說明、不要用代碼區塊包起來。`;
+
+  const response = await runQueryWithFallback(prompt, config, false, "anthropic", { maxTokens: 8000, timeoutMs: 100000 });
+  return { article: response.trim(), is_local_check: false };
+}
+
 /**
  * 文章優化器（Iris）：針對一篇文章同時做 SEO / AEO（回答引擎）/ GEO（生成式 AI 搜尋）檢查，
  * 並產出可直接套用的優化版本。

@@ -17,6 +17,7 @@ import {
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
 import { stripMarkdown } from "@/lib/plain-text";
+import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { GENRES, FUNNEL_LABEL, type GenreMeta } from "@/data/skills/genres";
 import { SeoOptimization, faqToPlainText, buildFaqJsonLd } from "@/lib/seo-optimizer";
@@ -298,6 +299,9 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 seoKeywords={data.seo_keywords}
                 copyMeta={data.social_copy_meta}
                 genreMeta={data.genre_meta}
+                webArticle={data.web_article}
+                webArticleMeta={data.web_article_meta}
+                webSourceCopy={pickWebSourceCopy(data)}
               />
             )}
             {activeTab === "architecture" && (
@@ -315,6 +319,10 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 aiProvider={aiProvider}
                 socialCopy={data.social_copy}
                 activePlatform={data.active_platform}
+                webArticle={data.web_article}
+                webArticleMeta={data.web_article_meta}
+                brandGuidelines={data.brand_guidelines}
+                webSourceCopy={pickWebSourceCopy(data)}
               />
             )}
             {activeTab === "ads" && (
@@ -367,7 +375,10 @@ const SocialTabContent = memo(function SocialTabContent({
   activePlatform,
   seoKeywords,
   copyMeta,
-  genreMeta
+  genreMeta,
+  webArticle,
+  webArticleMeta,
+  webSourceCopy
 }: { 
   brandId: string; 
   socialCopy: string; 
@@ -382,6 +393,9 @@ const SocialTabContent = memo(function SocialTabContent({
   seoKeywords?: any[];
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
   genreMeta?: GenreMeta | null;
+  webArticle?: string;
+  webArticleMeta?: WebArticleMeta;
+  webSourceCopy?: string;
 }) {
   // 發文／粉專／官網分類／主題一律用「有效品牌」：一般品牌是自己，階段專案是所屬品牌
   const [parentTick, setParentTick] = useState(0);
@@ -779,10 +793,38 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
-  const handlePublishWebsite = async (force = false) => {
+  /**
+   * 官網要送哪一份：有「官網文章」就送官網文章；
+   * 舊草稿沒有時，經使用者確認後退回社群貼文。回傳 null 代表使用者取消。
+   */
+  const getWebContent = (): string | null => {
+    const r = resolveWebContent(webArticle, val);
+    if (
+      !r.usedFallback &&
+      isArticleStale(webArticleMeta, webSourceCopy ?? val) &&
+      !window.confirm(
+        "社群貼文在「官網文章」產生之後又被修改過，官網文章可能不是最新（甚至是上一篇的內容）。\n\n仍要把目前的官網文章上架嗎？\n（取消後可到「SEO關鍵字」分頁重新產生）"
+      )
+    ) {
+      return null;
+    }
+    if (
+      r.usedFallback &&
+      !window.confirm(
+        "這篇還沒有「官網文章」版本，將直接使用目前的社群貼文上架官網。\n\n建議先到「SEO關鍵字」分頁按「由社群文案產生官網文章」，再回來發布。\n\n仍要用社群貼文上架嗎？"
+      )
+    ) {
+      return null;
+    }
+    return r.content;
+  };
+
+  const handlePublishWebsite = async (force = false, resolvedContent?: string) => {
     if (!requireParentBrand()) return;
     if (!requireGenreOk()) return;
     if (isPublishingWebsite || !val) return;
+    const webContent = resolvedContent ?? getWebContent();
+    if (webContent === null) return;
     setIsPublishingWebsite(true);
     try {
       const brandName = getBrandOrProjectName(brandId);
@@ -793,7 +835,7 @@ const SocialTabContent = memo(function SocialTabContent({
         body: JSON.stringify({
           brandId: pubBrandId,
           brandName,
-          content: val,
+          content: webContent,
           aeoSchema: aeoSchema || null,
           aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
           promptVersion: genreMeta?.prompt_version || null,
@@ -808,7 +850,7 @@ const SocialTabContent = memo(function SocialTabContent({
       if (response.status === 422 && resData.blocked) {
         setIsPublishingWebsite(false);
         if (confirmGuardrail(resData)) {
-          return handlePublishWebsite(true);
+          return handlePublishWebsite(true, webContent);
         }
         return;
       }
@@ -819,7 +861,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
       const newArticleId = Array.isArray(resData.data) ? resData.data[0]?.id : resData.data?.id;
       if (newArticleId !== undefined && newArticleId !== null) {
-        setPublishedArticle({ id: String(newArticleId), content: val });
+        setPublishedArticle({ id: String(newArticleId), content: webContent });
       }
 
       alert("🎉 文章已成功同步至官網 Supabase 資料庫！");
@@ -893,8 +935,10 @@ const SocialTabContent = memo(function SocialTabContent({
    * 若目前內容已經上架過（且沒有再改動）就直接沿用，避免重複上架同一篇。
    * 回傳 null 表示使用者取消或失敗（訊息已處理）。
    */
-  const ensureArticleId = async (force = false): Promise<string | null> => {
-    if (publishedArticle && publishedArticle.content === val) {
+  const ensureArticleId = async (force = false, resolvedContent?: string): Promise<string | null> => {
+    const webContent = resolvedContent ?? getWebContent();
+    if (webContent === null) return null;
+    if (publishedArticle && publishedArticle.content === webContent) {
       return publishedArticle.id;
     }
 
@@ -904,7 +948,7 @@ const SocialTabContent = memo(function SocialTabContent({
       body: JSON.stringify({
         brandId: pubBrandId,
         brandName: getBrandOrProjectName(brandId),
-        content: val,
+        content: webContent,
         aeoSchema: aeoSchema || null,
         aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
         force
@@ -914,7 +958,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
     if (response.status === 422 && resData.blocked) {
       if (confirmGuardrail(resData)) {
-        return ensureArticleId(true);
+        return ensureArticleId(true, webContent);
       }
       return null;
     }
@@ -926,7 +970,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (newId === undefined || newId === null) {
       throw new Error("官網已寫入，但沒有取得文章 id，無法排程");
     }
-    setPublishedArticle({ id: String(newId), content: val });
+    setPublishedArticle({ id: String(newId), content: webContent });
     fetchHistory();
     return String(newId);
   };
@@ -960,7 +1004,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (
       !force &&
       !window.confirm(
-        `排程會「現在」先把文章上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
+        `排程會「現在」先把官網文章上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
       )
     ) {
       return;
@@ -2202,30 +2246,40 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
 });
 
 // ==================== 3-1. 文章優化器（SEO / AEO / GEO） ====================
+/** 官網文章當初是用哪個平台分頁的貼文產生的，取出那個分頁「現在」的內容，用來判斷官網文章是否過期 */
+function pickWebSourceCopy(data: any): string {
+  const p: string | undefined = data?.web_article_meta?.from_platform;
+  const byPlatform: Record<string, string | undefined> = {
+    threads: data?.social_copy_threads,
+    facebook: data?.social_copy_facebook,
+    instagram: data?.social_copy_instagram,
+  };
+  return (p && byPlatform[p] !== undefined ? byPlatform[p] : data?.social_copy) || "";
+}
+
 const SCORE_LABEL: Record<string, string> = { seo: "SEO 搜尋", aeo: "AEO 回答引擎", geo: "GEO AI 搜尋" };
 
 const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
   brandId,
-  socialCopy,
+  webArticle,
+  webArticleMeta,
   keywords,
-  aiProvider,
-  activePlatform
+  aiProvider
 }: {
   brandId: string;
-  socialCopy: string;
+  webArticle: string;
+  webArticleMeta?: WebArticleMeta;
   keywords: SEOKeyword[];
   aiProvider: string;
-  activePlatform?: string;
 }) {
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<(SeoOptimization & { forContent: string }) | null>(null);
   const [showFull, setShowFull] = useState(false);
   const [applied, setApplied] = useState<"" | "all" | "faq">("");
 
-  const platformLabel = activePlatform === "facebook" ? "Facebook" : activePlatform === "instagram" ? "Instagram" : "Threads";
-  const hasCopy = !!socialCopy && socialCopy.trim().length >= 30 && !socialCopy.startsWith("⏳") && !socialCopy.startsWith("❌");
+  const hasCopy = hasWebArticle(webArticle);
   const effectiveBrand = resolveEffectiveBrandId(brandId) || brandId;
-  const stale = !!result && result.forContent !== socialCopy && applied === "";
+  const stale = !!result && result.forContent !== webArticle && applied === "";
 
   const run = async () => {
     if (isRunning || !hasCopy) return;
@@ -2236,7 +2290,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: socialCopy,
+          content: webArticle,
           brandId: effectiveBrand,
           brandName: getBrandOrProjectName(brandId),
           keywords,
@@ -2245,7 +2299,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "文章優化失敗");
-      setResult({ ...json.data, forContent: socialCopy });
+      setResult({ ...json.data, forContent: webArticle });
     } catch (e: any) {
       console.error(e);
       alert(`❌ 文章優化失敗：${e.message}`);
@@ -2263,9 +2317,10 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
     if (result.guardrail_violations.length > 0) {
       if (!window.confirm(`優化後內容含品牌紅線詞：${result.guardrail_violations.join("、")}\n\n仍要套用嗎？（建議取消後重新優化）`)) return;
     }
-    if (!window.confirm("套用後，目前「" + platformLabel + "」分頁的文案會被取代為優化後版本（可在社群文案分頁手動再改）。確定嗎？")) return;
+    if (!window.confirm("套用後，上方的「官網文章」會被取代為優化後版本（社群貼文不受影響）。確定嗎？")) return;
     await saveWorkspace(brandId, {
-      social_copy: result.optimized_content,
+      web_article: result.optimized_content,
+      web_article_meta: { ...(webArticleMeta || {}), edited_at: Date.now() },
       aeo_faq: faqToPlainText(result.faq),
       aeo_schema: result.faq.length ? buildFaqJsonLd(result.faq, result.title, result.meta_description) : ""
     });
@@ -2289,7 +2344,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
         <div>
           <h4 className="text-sm font-bold text-slate-100">文章優化器：SEO ＋ AEO ＋ GEO</h4>
           <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
-            檢查目前「{platformLabel}」分頁的文案（也就是按「發布至官網」會送出的內容），直接給你優化後的版本。
+            檢查上方的「官網文章」（也就是按「發布至官網」會送出的內容），直接給你優化後的版本。社群貼文不受影響。
             AI 不會編造數據、案例或來源，只調整標題、結構、定義句、結論句與問答。
           </p>
         </div>
@@ -2305,7 +2360,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
       </div>
 
       {!hasCopy && (
-        <p className="text-[11px] text-slate-500 italic">目前「{platformLabel}」分頁還沒有足夠的文案。請先到「社群文案」分頁產出或載入一篇文章。</p>
+        <p className="text-[11px] text-slate-500 italic">還沒有官網文章。請先在上方按「由社群文案產生官網文章」。</p>
       )}
 
       {result && (
@@ -2317,7 +2372,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
           )}
           {stale && (
             <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-              文案在優化後又被修改過，這份結果可能已過期，建議重新優化。
+              官網文章在優化後又被修改過，這份結果可能已過期，建議重新優化。
             </div>
           )}
 
@@ -2410,7 +2465,7 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
                   onClick={applyAll}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
                 >
-                  套用到文章（取代目前文案＋問答＋結構化資料）
+                  套用到官網文章（取代官網文章＋問答＋結構化資料）
                 </button>
                 <button
                   type="button"
@@ -2422,12 +2477,166 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
                 </button>
                 {applied && (
                   <span className="text-[11px] text-emerald-400">
-                    {applied === "all" ? "✓ 已套用到文章。到「社群文案」分頁按「發布至官網」，問答與結構化資料會跟著文章一起存入。" : "✓ 已更新問答與結構化資料，發布至官網時會跟著文章一起存入。"}
+                    {applied === "all" ? "✓ 已套用到官網文章。到「社群文案」分頁按「發布至官網」，問答與結構化資料會跟著文章一起存入。" : "✓ 已更新問答與結構化資料，發布至官網時會跟著文章一起存入。"}
                   </span>
                 )}
               </div>
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ==================== 3-0. 官網文章（與社群貼文分開存放） ====================
+const WebArticlePanel = memo(function WebArticlePanel({
+  brandId,
+  socialCopy,
+  sourceCopy,
+  activePlatform,
+  webArticle,
+  webArticleMeta,
+  keywords,
+  aiProvider,
+  brandGuidelines
+}: {
+  brandId: string;
+  socialCopy: string;
+  sourceCopy: string;
+  activePlatform?: string;
+  webArticle?: string;
+  webArticleMeta?: WebArticleMeta;
+  keywords: SEOKeyword[];
+  aiProvider: string;
+  brandGuidelines?: string;
+}) {
+  const platformLabel = activePlatform === "facebook" ? "Facebook" : activePlatform === "instagram" ? "Instagram" : "Threads";
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [draft, setDraft] = useState(webArticle || "");
+  const [violations, setViolations] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setDraft(webArticle || "");
+  }, [webArticle]);
+
+  const hasSocial = hasSocialCopy(socialCopy);
+  const hasArticle = hasWebArticle(webArticle);
+  const stale = hasArticle && isArticleStale(webArticleMeta, sourceCopy);
+  const dirty = draft !== (webArticle || "");
+  const effectiveBrand = resolveEffectiveBrandId(brandId) || brandId;
+
+  const generate = async () => {
+    if (isGenerating || !hasSocial) return;
+    if (hasArticle && !window.confirm("重新產生會取代目前的官網文章（包含你手動修改的內容）。確定嗎？")) return;
+    setIsGenerating(true);
+    setViolations([]);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/web-article", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          socialCopy,
+          brandId: effectiveBrand,
+          brandName: getBrandOrProjectName(brandId),
+          keywords,
+          brandGuidelines,
+          aiProvider
+        })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "產生官網文章失敗");
+      if (json.data.is_local_check) {
+        alert("目前是本地模擬大腦，沒有真的改寫，只是複製社群文案。請切換到 OpenAI、Gemini 或 Claude 後再產生。");
+      }
+      setViolations(json.data.guardrail_violations || []);
+      await saveWorkspace(brandId, {
+        web_article: json.data.article,
+        web_article_meta: { generated_at: Date.now(), from_hash: textHash(socialCopy), from_platform: activePlatform || "threads" }
+      });
+    } catch (e: any) {
+      console.error(e);
+      alert(`❌ 產生官網文章失敗：${e.message}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    await saveWorkspace(brandId, {
+      web_article: draft,
+      web_article_meta: { ...(webArticleMeta || {}), edited_at: Date.now() }
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div className="bg-slate-900/30 border border-sky-500/25 rounded-xl p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-bold text-slate-100">官網文章</h4>
+          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+            和社群貼文分開存放。「發布至官網」送出的是這一份，下方的文章優化器也只改這一份；社群貼文的流量分析與平台改寫不受影響。產生時以目前「{platformLabel}」分頁的貼文為底稿（想用別的平台版本，先到社群文案分頁切換）。
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={isGenerating || !hasSocial}
+          onClick={generate}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+        >
+          {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          {isGenerating ? "產生中..." : hasArticle ? "重新由社群文案產生" : "由社群文案產生官網文章"}
+        </button>
+      </div>
+
+      {!hasSocial && (
+        <p className="text-[11px] text-slate-500 italic">還沒有足夠的社群文案。請先到「社群文案」分頁產出或載入一篇文章。</p>
+      )}
+
+      {hasSocial && !hasArticle && !isGenerating && (
+        <p className="text-[11px] text-slate-400">
+          這篇還沒有官網文章。按上方按鈕，會以社群貼文為底稿寫成 800 到 1500 字的官網版本（不會編造內容，圖表會保留）。沒有產生的話，「發布至官網」會改用社群貼文。
+        </p>
+      )}
+
+      {stale && (
+        <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          社群貼文在官網文章產生之後又被修改過，官網文章可能不是最新。需要的話可以重新產生。
+        </div>
+      )}
+
+      {violations.length > 0 && (
+        <div className="text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+          官網文章含品牌紅線詞：{violations.join("、")}。請先修改再發布。
+        </div>
+      )}
+
+      {hasArticle && (
+        <div className="space-y-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={14}
+            className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-sky-500/50 font-sans"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-500">約 {countChars(draft)} 字</span>
+            <div className="flex items-center gap-2">
+              {saved && <span className="text-[11px] text-emerald-400">✓ 已儲存</span>}
+              <button
+                type="button"
+                disabled={!dirty}
+                onClick={saveDraft}
+                className="px-3 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer disabled:cursor-not-allowed"
+              >
+                儲存修改
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2442,7 +2651,11 @@ const SEOTabContent = memo(function SEOTabContent({
   aeoFaq, 
   aiProvider,
   socialCopy,
-  activePlatform
+  activePlatform,
+  webArticle,
+  webArticleMeta,
+  brandGuidelines,
+  webSourceCopy
 }: { 
   brandId: string; 
   keywords: SEOKeyword[]; 
@@ -2451,6 +2664,10 @@ const SEOTabContent = memo(function SEOTabContent({
   aiProvider: string; 
   socialCopy: string;
   activePlatform?: string;
+  webArticle?: string;
+  webArticleMeta?: WebArticleMeta;
+  brandGuidelines?: string;
+  webSourceCopy?: string;
 }) {
   const theme = useBrandTheme(brandId);
   const [newKeyword, setNewKeyword] = useState("");
@@ -2541,12 +2758,24 @@ const SEOTabContent = memo(function SEOTabContent({
         </div>
       </div>
 
-      <SeoOptimizerPanel
+      <WebArticlePanel
         brandId={brandId}
         socialCopy={socialCopy}
+        sourceCopy={webSourceCopy ?? socialCopy}
+        activePlatform={activePlatform}
+        webArticle={webArticle}
+        webArticleMeta={webArticleMeta}
         keywords={keywords}
         aiProvider={aiProvider}
-        activePlatform={activePlatform}
+        brandGuidelines={brandGuidelines}
+      />
+
+      <SeoOptimizerPanel
+        brandId={brandId}
+        webArticle={webArticle || ""}
+        webArticleMeta={webArticleMeta}
+        keywords={keywords}
+        aiProvider={aiProvider}
       />
 
       {/* 數據表格 Table */}
