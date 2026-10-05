@@ -730,8 +730,12 @@ You MUST return a JSON object with this exact format (do not include any markdow
 }}
 """
     
+    model = os.environ.get("OPENAI_MODEL")
+    if not model:
+        raise ValueError("Missing OPENAI_MODEL. Real AI daily decision calculation failed.")
+
     payload = {
-        "model": "gpt-4o-mini",
+        "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Articles:\n{articles_text}"}
@@ -1058,73 +1062,97 @@ def run_production_readiness_check():
         
     return all_passed
 
-def run_api_smoke_check():
-    import os
-    import json
-    import urllib.request
-    
-    errors = []
-    
-    # 1. OpenAI
-    oa_key = os.environ.get("OPENAI_API_KEY")
-    if not oa_key:
-        errors.append("Missing OPENAI_API_KEY")
-    else:
+def _smoke_error_reason(error):
+    """Return a safe, short cause without echoing API responses or credentials."""
+    if isinstance(error, urllib.error.HTTPError):
+        status = error.code
+        body = error.read().decode("utf-8", errors="replace").lower()
+        if "credit balance is too low" in body:
+            return "餘額不足 (HTTP 400)"
+        if status in (401, 403):
+            return f"金鑰或權限設定錯誤 (HTTP {status})"
+        if status == 429:
+            return "限流 (HTTP 429)"
+        if 500 <= status <= 599:
+            return f"供應商服務錯誤 (HTTP {status})"
+        return f"請求錯誤 (HTTP {status})"
+    if isinstance(error, (TimeoutError, urllib.error.URLError)):
+        return "逾時或網路錯誤"
+    return "連線測試發生未分類錯誤"
+
+
+def _smoke_request(request):
+    """At most one retry for transient failures; never retry auth or 400 errors."""
+    for attempt in range(2):
         try:
-            url = "https://api.openai.com/v1/chat/completions"
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 5
-            }
-            req = urllib.request.Request(
-                url, data=json.dumps(payload).encode('utf-8'),
-                headers={"Authorization": f"Bearer {oa_key}", "Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                r.read()
-        except Exception as e:
-            errors.append(f"OpenAI smoke test failed: {str(e)}")
-            
-    # 2. Anthropic
+            with urllib.request.urlopen(request, timeout=10) as response:
+                response.read()
+            return None
+        except Exception as error:
+            if isinstance(error, urllib.error.HTTPError):
+                transient = error.code == 429 or 500 <= error.code <= 599
+            else:
+                transient = isinstance(error, (TimeoutError, urllib.error.URLError))
+            if attempt == 0 and transient:
+                continue
+            return _smoke_error_reason(error)
+
+
+def run_api_smoke_check():
+    """OpenAI gates the daily run; Anthropic is an observed optional provider."""
+    errors = {"OpenAI": None, "Anthropic": None}
+    oa_key = os.environ.get("OPENAI_API_KEY")
+    oa_model = os.environ.get("OPENAI_MODEL")
+    if not oa_key or not oa_model:
+        missing = [name for name, value in (("OPENAI_API_KEY", oa_key), ("OPENAI_MODEL", oa_model)) if not value]
+        errors["OpenAI"] = "缺少 " + "、".join(missing)
+    else:
+        payload = {"model": oa_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5}
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {oa_key}", "Content-Type": "application/json"},
+        )
+        errors["OpenAI"] = _smoke_request(req)
+
     ant_key = os.environ.get("ANTHROPIC_API_KEY")
     if not ant_key:
-        errors.append("Missing ANTHROPIC_API_KEY")
+        errors["Anthropic"] = "缺少 ANTHROPIC_API_KEY"
     else:
-        try:
-            url = "https://api.anthropic.com/v1/messages"
-            payload = {
-                "model": "claude-haiku-4-5",
-                "max_tokens": 5,
-                "messages": [{"role": "user", "content": "ping"}]
-            }
-            req = urllib.request.Request(
-                url, data=json.dumps(payload).encode('utf-8'),
-                headers={"x-api-key": ant_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                r.read()
-        except Exception as e:
-            errors.append(f"Anthropic smoke test failed: {str(e)}")
-            
-    # 3. Gemini
-    gem_key = os.environ.get("GEMINI_API_KEY")
-    if not gem_key:
-        errors.append("Missing GEMINI_API_KEY")
-    else:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={gem_key}"
-            payload = {"contents": [{"parts": [{"text": "ping"}]}]}
-            req = urllib.request.Request(
-                url, data=json.dumps(payload).encode('utf-8'),
-                headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                r.read()
-        except Exception as e:
-            errors.append(f"Gemini smoke test failed: {str(e)}")
-            
+        payload = {"model": "claude-haiku-4-5", "max_tokens": 5, "messages": [{"role": "user", "content": "ping"}]}
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"x-api-key": ant_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+        )
+        errors["Anthropic"] = _smoke_request(req)
     return errors
+
+
+def _plain_telegram_alert(message):
+    return re.sub(r"[*#`_~\-\u2010-\u2015\u2500-\u257f]", "，", message)
+
+
+def send_daily_api_alert(today_str, errors, continuing):
+    """Send at most one plain-text warning for a smoke-check incident."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return "未送出：缺少 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID"
+    reasons = [f"{provider}：{reason or '通過'}" for provider, reason in errors.items()]
+    outcome = "OpenAI 主流程繼續" if continuing else "流程已停止，未產生報告"
+    text = _plain_telegram_alert("每日排程 " + today_str + "。" + "。".join(reasons) + "。" + outcome + "。")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            response.read()
+        return "SUCCESS"
+    except Exception:
+        return "FAILED：Telegram 警示送出失敗"
 
 def fetch_real_content_eligible(limit_per_source=2):
     """Fetches real content only from verified and decision-eligible sources."""
@@ -1643,96 +1671,29 @@ def run_daily_production_run():
         
     # 3. API Smoke Check
     smoke_errors = run_api_smoke_check()
-    failed_api_calls = smoke_errors
-    
-    if smoke_errors:
+    failed_api_calls = [f"{provider}: {reason}" for provider, reason in smoke_errors.items() if reason]
+    alert_status = "NOT_NEEDED"
+    if failed_api_calls:
+        alert_status = send_daily_api_alert(today_str, smoke_errors, not bool(smoke_errors["OpenAI"]))
+
+    if smoke_errors["OpenAI"]:
         status = "DAILY_RUN_FAILED"
         run_summary = f"""# Run Summary
 Run Status: {status}
 Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Database Backup: {db_backup_status}
+Report Provider: None
+Provider Switch: No
+OpenAI Smoke Test: {smoke_errors['OpenAI']}
+Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
+Telegram Alert: {alert_status}
 Errors:
 """
-        for err in smoke_errors:
+        for err in failed_api_calls:
             run_summary += f"- {err}\n"
-            
-        brief_md = f"""# Daily Morning Brief
-Generated on: {today_str}
-
-## 1. 今日總結
-系統 API 驗證未通過，無法執行 Daily Intelligence 運算。
-
-## 2. 今日是否可用
-DAILY_RUN_FAILED
-
-## 8. 今日異常
-* API 錯誤:
-"""
-        for err in smoke_errors:
-            brief_md += f"  - {err}\n"
-            
         with open(os.path.join(ops_dir, "run_summary.md"), "w", encoding="utf-8") as f:
             f.write(run_summary)
-        with open(os.path.join(ops_dir, "daily_morning_brief.md"), "w", encoding="utf-8") as f:
-            f.write(brief_md)
-            
-        # Generate Failed HTML for today
-        site_daily_dir = f"operations/site/daily/{today_str}"
-        os.makedirs(site_daily_dir, exist_ok=True)
-        failed_html = f"""<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>每日執行失敗 - {today_str}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
-            margin: 0;
-            padding: 40px 20px;
-            text-align: center;
-        }}
-        .error-card {{
-            background: #161b22;
-            border: 1px solid #da3633;
-            border-radius: 6px;
-            padding: 30px;
-            max-width: 600px;
-            margin: 0 auto;
-            text-align: left;
-        }}
-        h1 {{ color: #f85149; }}
-        ul {{ color: #8b949e; }}
-        a {{ color: #58a6ff; text-decoration: none; }}
-    </style>
-</head>
-<body>
-    <div class="error-card">
-        <h1>✖ 每日執行失敗 (DAILY_RUN_FAILED)</h1>
-        <p>系統 API 驗證未通過，無法執行 Daily Intelligence 運算。</p>
-        <strong>錯誤詳情：</strong>
-        <ul>
-        """
-        for err in smoke_errors:
-            failed_html += f"<li>{err}</li>\n"
-        failed_html += f"""
-        </ul>
-        <div style="margin-top: 20px; text-align: center;">
-            <a href="../../index.html">← 返回決策總覽首頁</a>
-        </div>
-    </div>
-</body>
-</html>
-"""
-        with open(os.path.join(site_daily_dir, "index.html"), "w", encoding="utf-8") as f:
-            f.write(failed_html)
-            
-        rebuild_dashboard_index()
-            
-        subprocess.run(["python3", "scripts/send_telegram_report.py", today_str])
-        print("Daily Production Run FAILED due to API connection failures.")
+        print("Daily Production Run stopped because OpenAI smoke test failed.")
         return False
     # 4. Fetch real content from verified eligible sources
     print("Verifying active sources...")
@@ -2039,7 +2000,7 @@ Generated on: {timestamp}
 
 ## Token Consumption Breakdown
 * **Provider**: OpenAI
-* **Model**: gpt-4o-mini
+* **Model**: {os.environ['OPENAI_MODEL']}
 * **Prompt Tokens**: {prompt_tokens}
 * **Completion Tokens**: {completion_tokens}
 * **Total Tokens**: {total_tokens}
@@ -2083,7 +2044,12 @@ Run Status: DAILY_RUN_CONFIRMED
 Timestamp: {timestamp}
 Database Backup: {db_backup_status}
 Telegram Delivery: PENDING
-Errors: None
+Report Provider: OpenAI
+Provider Switch: No
+OpenAI Smoke Test: PASS
+Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
+Telegram Alert: {alert_status}
+Errors: {', '.join(failed_api_calls) if failed_api_calls else 'None'}
 """
 
     # Report 11: daily_index.md
@@ -2194,4 +2160,3 @@ Generated on: {timestamp}
 
     print("\n✔ Daily Production Run completed. All reports organized.")
     return True
-
