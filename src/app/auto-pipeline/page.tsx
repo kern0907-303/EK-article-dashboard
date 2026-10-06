@@ -35,11 +35,13 @@ export default function AutoPipelinePage() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [draftChanges, setDraftChanges] = useState<Record<string, string>>({});
+  const [enabled, setEnabled] = useState<boolean | null>(null);
 
   const topics = useMemo(() => research ? parsePastedTopics(text).topics : [], [research, text]);
   const fetchOverview = async () => {
     const res = await fetch("/api/auto-pipeline", { cache: "no-store" });
     const data = await res.json();
+    setEnabled(res.ok && data.enabled === true);
     if (res.ok) { setJobs(data.jobs || []); setBatches(data.batches || []); }
     else setNotice(data.error || "讀取總覽失敗");
   };
@@ -106,6 +108,10 @@ export default function AutoPipelinePage() {
     if (!res.ok) setNotice(data.error || "文案儲存失敗"); else { setNotice("文案已更新並標記為已審；若仍在待發，排程列也已同步更新。"); setDraftChanges((all) => { const next = { ...all }; delete next[id]; return next; }); await fetchOverview(); }
   };
   const toggleWeekday = (day: number) => setWeekdays((current) => current.includes(day) ? current.filter((x) => x !== day) : [...current, day].sort());
+
+  if (enabled !== true) {
+    return <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100"><section className="mx-auto max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/60 p-6"><Link href="/" className="text-sm text-amber-300 hover:underline">← 回儀表板</Link><h1 className="mt-4 text-2xl font-bold">自動流水線</h1><p className="mt-3 text-sm text-slate-300">{enabled === null ? "正在確認功能狀態……" : "此功能目前已關閉。啟用 AUTO_PIPELINE_ENABLED 後，批次建立與總覽才會開放。"}</p></section></main>;
+  }
 
   return <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6 sm:px-8">
     <div className="mx-auto max-w-6xl space-y-6">

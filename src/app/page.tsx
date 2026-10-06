@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "board">("chat");
   const [projectsCache, setProjectsCache] = useState<any[]>([]);
+  const [autoPipelineEnabled, setAutoPipelineEnabled] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("ai_provider_override");
@@ -27,6 +28,9 @@ export default function DashboardPage() {
 
     // 初次載入專案清單，之後靠事件更新（不再輪詢）
     setProjectsCache(readProjects());
+    void fetch("/api/auto-pipeline", { cache: "no-store" })
+      .then((response) => { if (response.ok) setAutoPipelineEnabled(true); })
+      .catch(() => setAutoPipelineEnabled(false));
     return subscribeToProjects(setProjectsCache);
   }, []);
 
@@ -100,7 +104,7 @@ export default function DashboardPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
             系統主大腦連線中
           </div>
-          <Link href="/auto-pipeline" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20 sm:text-xs">自動流水線</Link>
+          {autoPipelineEnabled && <Link href="/auto-pipeline" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20 sm:text-xs">自動流水線</Link>}
         </div>
       </header>
 
