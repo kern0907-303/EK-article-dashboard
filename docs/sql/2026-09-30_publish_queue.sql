@@ -11,7 +11,9 @@ create table if not exists public.publish_queue (
   target_pages  text[] not null check (array_length(target_pages, 1) >= 1),  -- 例：{fb_i8,fb_nas}
   content       text not null,
   image_url     text,                                  -- 階段 2 之後才會有值；空值時 n8n 沿用原本的圖池
-  article_id    text not null,                         -- insights_articles.id，首則留言連結用它，不再抓「最新一篇」
+  article_id    text,                                   -- manual 必填；auto_pipeline 可空，不會加首則官網連結留言
+  source        text not null default 'manual' check (source in ('manual', 'auto_pipeline')),
+  is_test       boolean not null default false,          -- true 時派發函式絕不認領
   scheduled_at  timestamptz not null,                  -- 一律存 UTC，畫面顯示才轉台北時間
   status        text not null default 'pending'
                 check (status in ('pending', 'sending', 'sent', 'partial', 'failed', 'cancelled')),
@@ -21,7 +23,8 @@ create table if not exists public.publish_queue (
   test_mode     boolean not null default false,        -- true：n8n 以 published=false 發「未公開貼文」做演練
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
-  sent_at       timestamptz
+  sent_at       timestamptz,
+  constraint publish_queue_article_required_for_manual check (source = 'auto_pipeline' or article_id is not null)
 );
 
 -- runner 每次只撈 pending 且到期的，這個索引讓它很快

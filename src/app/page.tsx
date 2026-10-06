@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import ExpertTeamList from "@/components/ExpertTeamList";
 import { Bot, Sparkles, Radio, Cpu, Network, Menu, X } from "lucide-react";
 import BrandSelector, { BRANDS } from "@/components/BrandSelector";
@@ -99,6 +100,7 @@ export default function DashboardPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
             系統主大腦連線中
           </div>
+          <Link href="/auto-pipeline" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20 sm:text-xs">自動流水線</Link>
         </div>
       </header>
 

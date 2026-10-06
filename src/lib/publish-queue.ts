@@ -18,7 +18,9 @@ export interface QueueItem {
   target_pages: string[];
   content: string;
   image_url: string | null;
-  article_id: string;
+  article_id: string | null;
+  source: "manual" | "auto_pipeline";
+  is_test: boolean;
   scheduled_at: string;
   status: QueueStatus;
   results: QueuePageResult[];

@@ -32,17 +32,17 @@ begin
      set status = 'failed',
          error = '逾時未發送：預定時間已過超過 6 小時，為避免過期貼文突然發出，已停止',
          updated_at = now()
-   where status = 'pending' and scheduled_at < now() - interval '6 hours';
+   where status = 'pending' and coalesce(is_test, false) = false and scheduled_at < now() - interval '6 hours';
 
   update public.publish_queue
      set status = 'pending', updated_at = now()
-   where status = 'sending' and attempts = 0 and updated_at < now() - interval '10 minutes';
+   where status = 'sending' and coalesce(is_test, false) = false and attempts = 0 and updated_at < now() - interval '10 minutes';
 
   update public.publish_queue
      set status = 'failed',
          error = '發送結果不明：執行器逾時。請到粉專確認是否已發出，避免重複發文',
          updated_at = now()
-   where status = 'sending' and attempts >= 1 and updated_at < now() - interval '15 minutes';
+   where status = 'sending' and coalesce(is_test, false) = false and attempts >= 1 and updated_at < now() - interval '15 minutes';
 
   select decrypted_secret into hook_url
     from vault.decrypted_secrets
@@ -55,7 +55,7 @@ begin
 
   with due as (
     select id from public.publish_queue
-     where status = 'pending' and scheduled_at <= now()
+     where status = 'pending' and coalesce(is_test, false) = false and scheduled_at <= now()
      order by scheduled_at
      limit 20
      for update skip locked

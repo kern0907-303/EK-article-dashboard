@@ -108,6 +108,16 @@ export default function PublishQueuePanel({
                             演練（不公開）
                           </span>
                         )}
+                        {item.is_test && (
+                          <span className="px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/20">
+                            測試排程（不派發）
+                          </span>
+                        )}
+                        {item.source === "auto_pipeline" && !item.is_test && (
+                          <span className="px-1.5 py-0.5 rounded border bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+                            自動流水線
+                          </span>
+                        )}
                         <span>{formatTaipei(item.scheduled_at)}</span>
                         <span>
                           {item.target_pages.map((id) => getFacebookPageById(id)?.badge || id).join("、")}

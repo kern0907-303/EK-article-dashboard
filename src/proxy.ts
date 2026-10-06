@@ -12,6 +12,10 @@ const PUBLIC_PATHS = [
   "/api/logout",
   "/api/lead",
   "/api/radar/keywords",
+  // Supabase pg_cron 只能以 Bearer secret 呼叫，route handler 會再驗證該 secret。
+  "/api/auto-pipeline/tick",
+  "/api/auto-pipeline/test-drafts",
+  "/api/auto-pipeline/test-queue",
   "/nas/quiz",
   "/abl/check",
   "/i8/diagnosis",

@@ -10,6 +10,7 @@ import {
   supabaseHeaders,
   toShortBrandId,
 } from "@/lib/publish-queue";
+import { scheduleContractAllowed } from "@/lib/auto-pipeline";
 
 const errorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error && error.message ? error.message : fallback;
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     if (!brandId || !content) {
       return NextResponse.json({ error: "缺少 brandId 或 content" }, { status: 400 });
     }
-    if (articleId === undefined || articleId === null || String(articleId).trim() === "") {
+    if (!scheduleContractAllowed("manual", articleId)) {
       return NextResponse.json({ error: "缺少 articleId：排程前文章必須先上架官網" }, { status: 400 });
     }
 
@@ -130,6 +131,8 @@ export async function POST(req: NextRequest) {
         content,
         image_url: imageUrl || null,
         article_id: String(articleId),
+        source: "manual",
+        is_test: false,
         scheduled_at: when.toISOString(),
         status: "pending",
         results: [],
