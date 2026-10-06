@@ -208,7 +208,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
               return data.dispatchData;
             } else {
-              throw new Error("專家回傳資料格式不正確");
+              throw new Error(data.error || "後端未傳回專家結果資料；請重試，對話上下文已自動限制為最近 12 則。");
             }
           } else {
             let errorMsg = `HTTP 狀態碼: ${res.status}`;
@@ -227,10 +227,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           }
           console.error("Background Maya & Iris generation failed:", e);
           anyFailed = true;
+          const reason = e.message || "未知錯誤";
           await saveWorkspace(activeBrandId, {
-            social_copy: `❌ 專家助理 Maya 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（Gemini/OpenAI）設定是否正確，並清除歷史對話後重試。`,
+            social_copy: `❌ 專家助理 Maya 產出失敗：${reason}。\n對話上下文已自動限制為最近 12 則；請依上方錯誤原因處理後重試。`,
             seo_keywords: [
-              { keyword: "❌ 專家助理 Iris 產出失敗", volume: "失敗", competition: "失敗", outline: e.message || "金鑰或 API 連線異常" }
+              { keyword: "❌ 專家助理 Iris 產出失敗", volume: "失敗", competition: "失敗", outline: reason }
             ]
           });
         }
@@ -259,7 +260,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             if (data.dispatchData) {
               await saveWorkspace(activeBrandId, data.dispatchData, { generated: true });
             } else {
-              throw new Error("專家回傳資料格式不正確");
+              throw new Error(data.error || "後端未傳回專家結果資料；請重試，對話上下文已自動限制為最近 12 則。");
             }
           } else {
             let errorMsg = `HTTP 狀態碼: ${res.status}`;
@@ -278,10 +279,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           }
           console.error("Background Leon & Jack generation failed:", e);
           anyFailed = true;
+          const reason = e.message || "未知錯誤";
           await saveWorkspace(activeBrandId, {
-            web_architecture: `❌ 系統架構師 Leon 產出失敗：${e.message || "未知錯誤"}。\n請確認您的 API 金鑰（OpenAI）設定是否正確，並清除歷史對話後重試。`,
+            web_architecture: `❌ 系統架構師 Leon 產出失敗：${reason}。\n對話上下文已自動限制為最近 12 則；請依上方錯誤原因處理後重試。`,
             ad_data: [
-              { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: e.message || "金鑰或 API 連線異常", isPositive: false }
+              { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: reason, isPositive: false }
             ]
           });
         }
@@ -511,7 +513,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       setProgress((p) => ({ ...p, stage: -1, note: `營運長處理失敗：${error.message || "未知異常"}` }));
       await saveChatMessage(activeBrandId, {
         role: "assistant",
-        content: `【營運回報】系統處理指令時發生錯誤：${error.message || "未知異常"}。請確認您的 API 金鑰設定。`
+        content: `【營運回報】系統處理指令時發生錯誤：${error.message || "未知異常"}。請依錯誤內容處理後重試；系統只會傳送最近 12 則對話脈絡。`
       });
     } finally {
       setIsLoading(false);

@@ -98,27 +98,8 @@ export function resolveProvider(config: AIProviderConfig, override?: string): st
   return provider;
 }
 
-function extractJSON(text: string): string | null {
-  const startObj = text.indexOf('{');
-  const startArr = text.indexOf('[');
-  
-  if (startObj === -1 && startArr === -1) return null;
-  
-  let start = -1;
-  let openBrace = '';
-  let closeBrace = '';
-  
-  if (startObj !== -1 && (startArr === -1 || startObj < startArr)) {
-    start = startObj;
-    openBrace = '{';
-    closeBrace = '}';
-  } else {
-    start = startArr;
-    openBrace = '[';
-    closeBrace = ']';
-  }
-
-  let count = 0;
+function extractJSONAt(text: string, start: number): string | null {
+  const stack: string[] = [];
   let inString = false;
   let escape = false;
 
@@ -141,13 +122,11 @@ function extractJSON(text: string): string | null {
     }
 
     if (!inString) {
-      if (char === openBrace) {
-        count++;
-      } else if (char === closeBrace) {
-        count--;
-        if (count === 0) {
-          return text.substring(start, i + 1);
-        }
+      if (char === '{' || char === '[') stack.push(char);
+      else if (char === '}' || char === ']') {
+        const opener = stack.pop();
+        if ((char === '}' && opener !== '{') || (char === ']' && opener !== '[')) return null;
+        if (stack.length === 0) return text.substring(start, i + 1);
       }
     }
   }
@@ -155,52 +134,105 @@ function extractJSON(text: string): string | null {
   return null;
 }
 
-function robustJSONParse(text: string): any {
-  // 先去掉開頭的 ```json 與結尾的 ```（即使只有開頭沒有結尾也處理）
-  const clean = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-  
-  // 1. 優先嘗試解析 Markdown 中的 json 區塊
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-  const match = clean.match(jsonRegex);
-  if (match && match[1]) {
-    const codeBlockContent = match[1].trim();
+export function extractFirstCompleteJSON(text: string): string | null {
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{' && text[i] !== '[') continue;
+    const candidate = extractJSONAt(text, i);
+    if (!candidate) continue;
     try {
-      return JSON.parse(codeBlockContent);
-    } catch (e) {
-      // 降級方案：使用括號匹配提取區塊內部的 JSON
-      const extracted = extractJSON(codeBlockContent);
-      if (extracted) {
-        try {
-          return JSON.parse(extracted);
-        } catch (_) {}
-      }
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // 有些前置說明也會含括號；繼續找下一個完整且有效的 JSON。
+    }
+  }
+  return null;
+}
+
+export function robustJSONParse(text: string): any {
+  const clean = text.trim();
+  const fenced = [...clean.matchAll(/```(?:json)?\s*([\s\S]*?)(?:```|$)/gi)]
+    .map(match => match[1].trim())
+    .filter(Boolean);
+
+  for (const candidate of [...fenced, clean]) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      const extracted = extractFirstCompleteJSON(candidate);
+      if (extracted) return JSON.parse(extracted);
     }
   }
 
-  // 2. 嘗試直接解析整段文字
+  throw new Error(`JSON 格式錯誤 (原始長度: ${text.length})`);
+}
+
+type AIResponseReport = {
+  label?: string;
+  provider?: string;
+  model?: string;
+  httpStatus?: number;
+  finishReason?: string;
+  responsePreview?: string;
+};
+
+type ProviderCallOptions = { maxTokens?: number; timeoutMs?: number; report?: AIResponseReport };
+
+function safeResponsePreview(text: string): string {
+  return text
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_API_KEY]")
+    .replace(/\bAIzaSy[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_API_KEY]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .slice(0, 300)
+    .replace(/[\r\n\t]+/g, " ");
+}
+
+function logAIParseFailure(label: string, error: unknown, report?: AIResponseReport, responseText = ""): void {
+  console.error(`[AI_JSON_PARSE_FAILURE] ${JSON.stringify({
+    label,
+    provider: report?.provider || "unknown",
+    model: report?.model || "unknown",
+    http_status: report?.httpStatus,
+    finish_reason: report?.finishReason || "unknown",
+    error: error instanceof Error ? error.message : String(error),
+    response_preview: safeResponsePreview(responseText || report?.responsePreview || ""),
+  })}`);
+}
+
+function logAIModelResult(report?: AIResponseReport): void {
+  if (!report) return;
+  console.info(`[AI_MODEL_RESULT] ${JSON.stringify({
+    label: report.label || "AI",
+    provider: report.provider || "unknown",
+    model: report.model || "unknown",
+    http_status: report.httpStatus,
+    finish_reason: report.finishReason || "unknown",
+  })}`);
+}
+
+function providerHTTPError(provider: string, model: string, status: number, body: string): Error {
+  let detail = body;
   try {
-    return JSON.parse(clean);
-  } catch (e: any) {
-    // 3. 降級方案：使用括號匹配從整段文字中提取 JSON 物件或陣列
-    const extracted = extractJSON(clean);
-    if (extracted) {
-      try {
-        return JSON.parse(extracted);
-      } catch (e2) {}
-    }
-    
-    // 4. 最末降級方案：從第一個 { 到最後一個 } 截取
-    const start = clean.indexOf('{');
-    const end = clean.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) {
-      try {
-        return JSON.parse(clean.substring(start, end + 1));
-      } catch (e2) {}
-    }
-    
-    console.error("[robustJSONParse] 解析 JSON 失敗，原始文字為:", text);
-    throw new Error(`${e.message || "JSON 格式錯誤"} (原始長度: ${text.length})`);
-  }
+    const parsed = JSON.parse(body);
+    detail = parsed?.error?.message || parsed?.message || body;
+  } catch {}
+  detail = safeResponsePreview(detail);
+
+  const lower = detail.toLowerCase();
+  let cause = `${provider} API HTTP ${status}`;
+  if (status === 429 || /quota|rate.?limit|billing|resource exhausted/.test(lower)) cause = `${provider} 額度不足或請求頻率受限 (HTTP ${status})`;
+  else if (status === 400 && /model|not found|does not exist|invalid/.test(lower)) cause = `${provider} 模型名稱或請求格式無效 (HTTP ${status})`;
+  else if (status === 401 || status === 403) cause = `${provider} API 驗證或權限錯誤 (HTTP ${status})`;
+  return new Error(`${cause}，模型 ${model}：${detail}`);
+}
+
+function normalizeAIError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/HTTP 429|quota|rate.?limit|billing|resource exhausted/i.test(message)) return `服務額度不足或達到頻率限制。${message}`;
+  if (/HTTP 400|model.*(invalid|not found|does not exist)|model_not_found/i.test(message)) return `模型名稱或 API 請求格式無效。${message}`;
+  if (/HTTP 401|HTTP 403|authentication|unauthorized|forbidden/i.test(message)) return `供應商驗證或權限錯誤。${message}`;
+  if (/截斷|finish_reason=length|MAX_TOKENS|max_tokens/i.test(message)) return `模型回覆達到長度上限。${message}`;
+  return message;
 }
 
 async function runQueryWithFallback(
@@ -208,7 +240,7 @@ async function runQueryWithFallback(
   config: AIProviderConfig,
   jsonMode?: boolean,
   preferredProvider?: "openai" | "gemini" | "anthropic",
-  opts?: { maxTokens?: number; timeoutMs?: number; report?: { provider?: string; model?: string } }
+  opts?: ProviderCallOptions
 ): Promise<string> {
   const isOpenAIKeyValid = !!(config.apiKey && config.apiKey.trim().startsWith("sk-"));
   const isGeminiKeyValid = !!((config.geminiApiKey || process.env.GEMINI_API_KEY) && 
@@ -244,12 +276,12 @@ async function runQueryWithFallback(
       console.log(`[runQueryWithFallback] Attempting ${provider}...`);
       if (opts?.report) {
         opts.report.provider = provider;
-        opts.report.model = provider === "openai" ? config.model : provider === "gemini" ? config.geminiModel : (config.anthropicModel || process.env.ANTHROPIC_MODEL);
+        opts.report.model = provider === "openai" ? config.model || "gpt-5.4-mini" : provider === "gemini" ? config.geminiModel || "gemini-flash-latest" : (config.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6");
       }
       if (provider === "gemini") {
-        return await callGemini([{ role: "user", content: prompt }], config, jsonMode);
+        return await callGemini([{ role: "user", content: prompt }], config, jsonMode, opts);
       } else if (provider === "openai") {
-        return await callOpenAI([{ role: "user", content: prompt }], config, jsonMode);
+        return await callOpenAI([{ role: "user", content: prompt }], config, jsonMode, opts);
       } else if (provider === "anthropic") {
         return await callAnthropic([{ role: "user", content: prompt }], config, opts);
       }
@@ -618,9 +650,11 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
       content: `${ERICK_SYSTEM_PROMPT}\n\n【發布平台指令】：\n當前使用者選擇的社群平台是：【${activePlatform.toUpperCase()}】。請務必在指派給 Maya 的子提示詞（maya）中，明確指定該平台的寫作限制（如 Threads 限 500 字以內且禁正文連結；IG 限 2200 字以內且多 emoji；FB 適合 800-1500 字長文說書且連結放留言）。\n\n【Erick 核心語氣與思考邏輯最高工作準則】：\n${ERICK_PERSONA_SKILL}\n\n${brandContext}`
     };
 
+    const cooReport: AIResponseReport = { label: "COO" };
+    const recentHistory = history.slice(-12);
     const formattedMessages = [
       systemMessage,
-      ...history.map(msg => ({
+      ...recentHistory.map(msg => ({
         role: msg.role === "user" ? "user" : "assistant",
         content: msg.content
       }))
@@ -656,12 +690,14 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
       for (const p of validProviders) {
         try {
           console.log(`[callErickCOO] Attempting COO generation with ${p}...`);
+          cooReport.provider = p;
+          cooReport.model = p === "openai" ? config.model || "gpt-5.4-mini" : p === "gemini" ? config.geminiModel || "gemini-flash-latest" : config.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
           if (p === "gemini") {
-            erickOutput = await callGemini(formattedMessages, config);
+            erickOutput = await callGemini(formattedMessages, config, false, { maxTokens: 8000, report: cooReport });
           } else if (p === "openai") {
-            erickOutput = await callOpenAI(formattedMessages, config);
+            erickOutput = await callOpenAI(formattedMessages, config, false, { maxTokens: 8000, report: cooReport });
           } else if (p === "anthropic") {
-            erickOutput = await callAnthropic(formattedMessages, config);
+            erickOutput = await callAnthropic(formattedMessages, config, { maxTokens: 8000, timeoutMs: 100000, report: cooReport });
           }
           break; // Success!
         } catch (error: any) {
@@ -679,23 +715,21 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
     }
 
     // 解析 Erick 的輸出以提取子提示詞
-    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-    const match = erickOutput.match(jsonRegex);
     cleanErickContent = erickOutput;
-
-    if (match && match[1]) {
-      try {
-        const parsed = JSON.parse(match[1].trim());
-        subPrompts = parsed.sub_prompts;
-        cleanErickContent = erickOutput.replace(jsonRegex, "").trim();
-      } catch (e) {
-        console.error("Failed to parse sub-prompts JSON from Erick response:", e);
+    try {
+      const parsed = robustJSONParse(erickOutput);
+      subPrompts = parsed?.sub_prompts;
+      if (subPrompts) {
+        const jsonBlock = erickOutput.match(/```(?:json)?\s*[\s\S]*?(?:```|$)/i)?.[0] || extractFirstCompleteJSON(erickOutput) || "";
+        cleanErickContent = erickOutput.replace(jsonBlock, "").trim();
       }
+    } catch (error) {
+      logAIParseFailure("COO sub_prompts", error, cooReport, erickOutput);
     }
 
     if (!subPrompts) {
-      const fallbackParsed = parseCOOOutput(erickOutput);
-      console.warn(`[callErickCOO] 營運長回覆未附可用的 sub_prompts（長度 ${erickOutput.length}），前 200 字：${erickOutput.slice(0, 200).replace(/\s+/g, " ")}`);
+      const fallbackParsed = parseCOOOutput(erickOutput, cooReport);
+      console.warn(`[callErickCOO] 營運長回覆未附可用的 sub_prompts（長度 ${erickOutput.length}），供應商=${cooReport.provider || "unknown"}，模型=${cooReport.model || "unknown"}，finish_reason=${cooReport.finishReason || "unknown"}，前 300 字：${safeResponsePreview(erickOutput)}`);
       // 營運長口頭說要派工、卻漏了 JSON：用使用者原始指令代替，讓專家照常生成
       const lastUserText = history[history.length - 1]?.content || "";
       if (stage === "coo" && !fallbackParsed.dispatchData && lastUserText && /Maya|Leon|Iris|Jack/.test(erickOutput)) {
@@ -854,7 +888,7 @@ ${mayaPlatformRules}
     // 文體模式：用「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」取代預設的 Maya 提示詞。
     // 品牌既有規範只保留為事實邊界（語氣衝突時以文體提示詞為準）。
     let finalMayaPrompt = mayaStepPrompt;
-    const mayaReport: { provider?: string; model?: string } = {};
+    const mayaReport: AIResponseReport = { label: "Maya" };
     if (genre?.settings) {
       finalMayaPrompt = `${buildGenrePrompt(genre.brandKey, genre.settings)}
 
@@ -862,14 +896,51 @@ ${mayaPlatformRules}
 ${brandContext}`;
     }
 
+    const irisReport: AIResponseReport = { label: "Iris" };
     console.log(`[callErickCOO] Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`);
-    const [irisResponse, mayaResponse] = await Promise.all([
-      runQueryWithFallback(irisStepPrompt, config, true, "gemini"),
-      runQueryWithFallback(finalMayaPrompt, config, true, "anthropic", genre?.settings ? { maxTokens: 8000, timeoutMs: 100000, report: mayaReport } : undefined)
+    const runMayaWithJSONRetry = async (): Promise<{ result: any; response: string }> => {
+      const mayaOptions: ProviderCallOptions = { maxTokens: 12000, timeoutMs: 120000, report: mayaReport };
+      let lastParseError: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const prompt = attempt === 0
+          ? finalMayaPrompt
+          : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy。`;
+        const response = await runQueryWithFallback(prompt, config, true, "anthropic", mayaOptions);
+        try {
+          const result = robustJSONParse(response);
+          if (!result || typeof result.social_copy !== "string" || !result.social_copy.trim()) {
+            throw new Error("回覆缺少非空的 social_copy 欄位");
+          }
+          return { result, response };
+        } catch (error) {
+          lastParseError = error;
+          logAIParseFailure(`Maya attempt ${attempt + 1}`, error, mayaReport, response);
+        }
+      }
+      throw new Error(`Maya（${mayaReport.provider || "AI"}/${mayaReport.model || "未知模型"}）回覆格式無法解析；finish_reason=${mayaReport.finishReason || "unknown"}。${normalizeAIError(lastParseError)}`);
+    };
+    const [irisOutcome, mayaOutcome] = await Promise.allSettled([
+      runQueryWithFallback(irisStepPrompt, config, true, "gemini", { maxTokens: 5000, timeoutMs: 100000, report: irisReport }),
+      runMayaWithJSONRetry()
     ]);
 
-    const irisResult = robustJSONParse(irisResponse);
-    const mayaResult = robustJSONParse(mayaResponse);
+    if (mayaOutcome.status === "rejected") {
+      throw new Error(`Maya（${mayaReport.provider || "AI"}/${mayaReport.model || "未知模型"}）生成失敗：${normalizeAIError(mayaOutcome.reason)}`);
+    }
+
+    const mayaResult = mayaOutcome.value.result;
+
+    let irisResult: any = { seo_keywords: [], aeo_faq: "", aeo_schema: "" };
+    if (irisOutcome.status === "fulfilled") {
+      try {
+        irisResult = robustJSONParse(irisOutcome.value);
+      } catch (error) {
+        logAIParseFailure("Iris", error, irisReport, irisOutcome.value);
+        console.warn("Iris 回覆無法解析，保留 Maya 文案並使用空白 SEO 欄位。");
+      }
+    } else {
+      console.error(`[AI_PROVIDER_FAILURE] ${JSON.stringify({ role: "Iris", provider: irisReport.provider || "unknown", model: irisReport.model || "unknown", error: normalizeAIError(irisOutcome.reason) })}`);
+    }
 
     // 如果有找到關鍵字，主動抓取實體 API (如 SEMrush) 的搜尋量與競爭度
     if (irisResult.seo_keywords && Array.isArray(irisResult.seo_keywords)) {
@@ -1057,17 +1128,15 @@ ${jackPrompt}
 }
 
 // 1. OpenAI 實作
-async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: boolean, opts?: ProviderCallOptions): Promise<string> {
   if (!config.apiKey) throw new Error("Missing OPENAI_API_KEY");
-
-  const keyPrefix = config.apiKey.substring(0, 10);
-  console.log(`[OpenAI Call] Using key prefix: ${keyPrefix}... (length: ${config.apiKey.length})`);
 
   const requestBody: any = {
     model: config.model || "gpt-5.4-mini",
     messages: messages,
     temperature: 0.7
   };
+  if (opts?.maxTokens) requestBody.max_completion_tokens = opts.maxTokens;
 
   if (jsonMode) {
     requestBody.response_format = { type: "json_object" };
@@ -1085,21 +1154,34 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${errText}`);
+    if (opts?.report) opts.report.httpStatus = response.status;
+    throw providerHTTPError("OpenAI", requestBody.model, response.status, errText);
   }
 
   const json = await response.json();
-  return json.choices?.[0]?.message?.content || "";
+  const choice = json.choices?.[0];
+  const text = choice?.message?.content || "";
+  if (opts?.report) {
+    opts.report.httpStatus = response.status;
+    opts.report.finishReason = choice?.finish_reason || "unknown";
+    opts.report.responsePreview = safeResponsePreview(text);
+  }
+  if (choice?.finish_reason === "length") {
+    const error = new Error(`OpenAI 回覆被長度上限截斷（finish_reason=length，上限 ${opts?.maxTokens || "供應商預設"} tokens）`);
+    logAIParseFailure("OpenAI truncated response", error, opts?.report, text);
+    throw error;
+  }
+  logAIModelResult(opts?.report);
+  return text;
 }
 
 // 2. Gemini 實作
-async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: boolean): Promise<string> {
+async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: boolean, opts?: ProviderCallOptions): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
 
   const model = config.geminiModel || process.env.GEMINI_MODEL || "gemini-flash-latest";
-  const keyPrefix = apiKey.substring(0, 10);
-  console.log(`[Gemini Call] Using model: ${model}, key prefix: ${keyPrefix}... (length: ${apiKey.length})`);
+  console.log(`[Gemini Call] Using model: ${model}`);
 
   // Gemini API 格式轉換
   const contents = messages
@@ -1123,6 +1205,7 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
   const generationConfig: any = {
     temperature: 0.7
   };
+  if (opts?.maxTokens) generationConfig.maxOutputTokens = opts.maxTokens;
   if (jsonMode) {
     generationConfig.responseMimeType = "application/json";
   }
@@ -1142,15 +1225,29 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errText}`);
+    if (opts?.report) opts.report.httpStatus = response.status;
+    throw providerHTTPError("Gemini", model, response.status, errText);
   }
 
   const json = await response.json();
-  return json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const candidate = json.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text || "";
+  if (opts?.report) {
+    opts.report.httpStatus = response.status;
+    opts.report.finishReason = candidate?.finishReason || "unknown";
+    opts.report.responsePreview = safeResponsePreview(text);
+  }
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    const error = new Error(`Gemini 回覆被長度上限截斷（finish_reason=MAX_TOKENS，上限 ${opts?.maxTokens || "供應商預設"} tokens）`);
+    logAIParseFailure("Gemini truncated response", error, opts?.report, text);
+    throw error;
+  }
+  logAIModelResult(opts?.report);
+  return text;
 }
 
 // 3. Anthropic 實作
-async function callAnthropic(messages: any[], config: AIProviderConfig, opts?: { maxTokens?: number; timeoutMs?: number }): Promise<string> {
+async function callAnthropic(messages: any[], config: AIProviderConfig, opts?: ProviderCallOptions): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicApiKey || config.apiKey;
   if (!apiKey) throw new Error("Missing ANTHROPIC_API_KEY");
 
@@ -1182,14 +1279,24 @@ async function callAnthropic(messages: any[], config: AIProviderConfig, opts?: {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Anthropic API error: ${response.status} - ${errText}`);
+    if (opts?.report) opts.report.httpStatus = response.status;
+    throw providerHTTPError("Anthropic", model, response.status, errText);
   }
 
   const json = await response.json();
-  if (json.stop_reason === "max_tokens") {
-    throw new Error(`AI 回覆被長度上限截斷（上限 ${opts?.maxTokens || 4000} tokens），內容不完整`);
+  const text = json.content?.[0]?.text || "";
+  if (opts?.report) {
+    opts.report.httpStatus = response.status;
+    opts.report.finishReason = json.stop_reason || "unknown";
+    opts.report.responsePreview = safeResponsePreview(text);
   }
-  return json.content?.[0]?.text || "";
+  if (json.stop_reason === "max_tokens") {
+    const error = new Error(`AI 回覆被長度上限截斷（finish_reason=max_tokens，上限 ${opts?.maxTokens || 4000} tokens），內容不完整`);
+    logAIParseFailure("Anthropic truncated response", error, opts?.report, text);
+    throw error;
+  }
+  logAIModelResult(opts?.report);
+  return text;
 }
 
 // 4. n8n Webhook 實作
@@ -1409,50 +1516,37 @@ graph TD
 }
 
 // 解析 Erick 的 output，剝離並回傳 JSON
-function parseCOOOutput(text: string): AIServiceResponse {
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-  const match = text.match(jsonRegex);
-
+export function parseCOOOutput(text: string, report?: AIResponseReport): AIServiceResponse {
   let cleanContent = text;
   let dispatchData: any = undefined;
-
-  if (match && match[1]) {
-    try {
-      const parsed = JSON.parse(match[1].trim());
-      if (parsed) {
-        if (parsed.dispatch) {
-          dispatchData = parsed.dispatch;
-        } else if (parsed.social_copy || parsed.web_architecture || parsed.seo_keywords || parsed.ad_data) {
-          dispatchData = parsed;
-        }
-        
-        if (dispatchData) {
-          // 確保 seo_keywords 與 ad_data 的屬性正確，否則給予預設值，防範 AI 漏欄位
-          if (dispatchData.seo_keywords && Array.isArray(dispatchData.seo_keywords)) {
-            dispatchData.seo_keywords = dispatchData.seo_keywords.map((kw: any) => ({
-              keyword: kw.keyword || "",
-              volume: kw.volume || "0",
-              competition: kw.competition || "低",
-              outline: kw.outline || ""
-            }));
-          }
-          
-          if (dispatchData.ad_data && Array.isArray(dispatchData.ad_data)) {
-            dispatchData.ad_data = dispatchData.ad_data.map((ad: any) => ({
-              label: ad.label || "",
-              value: ad.value || "",
-              change: ad.change || "0%",
-              isPositive: ad.isPositive !== undefined ? ad.isPositive : !String(ad.change).startsWith("-")
-            }));
-          }
-
-          // 將 JSON 代碼區塊從對話泡泡中移除，讓聊天室更乾淨高雅
-          cleanContent = text.replace(jsonRegex, "").trim();
-        }
+  try {
+    const parsed = robustJSONParse(text);
+    if (parsed) {
+      if (parsed.dispatch) dispatchData = parsed.dispatch;
+      else if (parsed.sub_prompts || parsed.social_copy || parsed.web_architecture || parsed.seo_keywords || parsed.ad_data) dispatchData = parsed;
+      if (dispatchData?.seo_keywords && Array.isArray(dispatchData.seo_keywords)) {
+        dispatchData.seo_keywords = dispatchData.seo_keywords.map((kw: any) => ({
+          keyword: kw.keyword || "",
+          volume: kw.volume || "0",
+          competition: kw.competition || "低",
+          outline: kw.outline || ""
+        }));
       }
-    } catch (e) {
-      console.error("Failed to parse dispatch JSON from AI response:", e);
+      if (dispatchData?.ad_data && Array.isArray(dispatchData.ad_data)) {
+        dispatchData.ad_data = dispatchData.ad_data.map((ad: any) => ({
+          label: ad.label || "",
+          value: ad.value || "",
+          change: ad.change || "0%",
+          isPositive: ad.isPositive !== undefined ? ad.isPositive : !String(ad.change).startsWith("-")
+        }));
+      }
+      if (dispatchData) {
+        const jsonBlock = text.match(/```(?:json)?\s*[\s\S]*?(?:```|$)/i)?.[0] || extractFirstCompleteJSON(text) || "";
+        cleanContent = text.replace(jsonBlock, "").trim();
+      }
     }
+  } catch (error) {
+    logAIParseFailure("COO dispatch", error, report, text);
   }
 
   return {

@@ -1,4 +1,4 @@
-import { resolveProvider, getAIConfig } from "../src/lib/ai-provider";
+import { resolveProvider, getAIConfig, robustJSONParse, extractFirstCompleteJSON, parseCOOOutput } from "../src/lib/ai-provider";
 let pass = 0, fail = 0;
 const t = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`${cond ? "✓" : "✗"} ${name}`); };
 
@@ -14,5 +14,11 @@ c = getAIConfig();
 t("其他廠商不受影響", resolveProvider(c, "gemini") === "gemini" && c.model === base);
 c = getAIConfig();
 t("沒指定時用環境預設", resolveProvider(c, undefined) === c.provider);
+t("可解析純 JSON", robustJSONParse('{"social_copy":"ok"}').social_copy === "ok");
+t("可解析帶前後文字的 JSON", robustJSONParse('以下是結果：\n{"social_copy":"ok"}\n完成').social_copy === "ok");
+t("可解析未閉合程式碼區塊中的完整 JSON", robustJSONParse('```json\n{"social_copy":"ok"}').social_copy === "ok");
+t("忽略前置無效大括號並擷取第一個有效 JSON", robustJSONParse('提示 {不是 JSON} 結果 {"social_copy":"ok"}').social_copy === "ok");
+t("COO 可從說明文字及程式碼區塊解析派工", parseCOOOutput('已完成拆解。\n```json\n{"sub_prompts":{"maya":"寫短文"}}\n```').dispatchData?.sub_prompts?.maya === "寫短文");
+t("擷取器回傳第一個完整有效 JSON 片段", extractFirstCompleteJSON('前言 {壞格式} 然後 {"ok":true} 尾聲') === '{"ok":true}');
 console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);
