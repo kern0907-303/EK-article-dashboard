@@ -8,7 +8,7 @@ import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
-import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentSelection } from "../data/skills/story-argument";
+import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentSelection } from "../data/skills/story-argument";
 import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
 import { getKnowledgeNoteByCitation, getKnowledgeNoteById, getKnowledgeNoteDirectory } from "@/lib/knowledge-notes-server";
 
@@ -854,6 +854,24 @@ ${irisPrompt}
     const imgInstruction = `請在文章中提供一個符合該文章邏輯的完整 Mermaid 圖表代碼區塊（使用 \`\`\`mermaid 包覆），作為官網 Insights 頁面的結構流程圖。
 
 【重要】：不要自行插入任何 Markdown 圖片標籤（![...](...)）或圖片網址。社群貼文的配圖由發布流程自動處理，你寫的圖片網址不會被採用。`;
+    const diagramInstruction = shouldIncludeMayaDiagram(storyArgument) ? `4. ${imgInstruction}
+   Mermaid 圖表必須符合以下品牌配色規範：
+   - 當前品牌：${brandColors.name}，系統色為：${brandColors.colorName}。
+   - 請在 Mermaid 開頭注入以下高質感配色 %%{init: ... }%% 區塊，使圖表底色、文字、框線與系統色完美契合：
+     \`\`\`mermaid
+     %%{init: {
+       'theme': 'base',
+       'themeVariables': {
+         'primaryColor': '${brandColors.hexPrimary}',
+         'primaryTextColor': '#ffffff',
+         'primaryBorderColor': '${brandColors.hexAccent}',
+         'lineColor': '${brandColors.hexAccent}',
+         'secondaryColor': '#1e293b',
+         'tertiaryColor': '#0f172a'
+       }
+     }}%%
+     ...圖表內容...
+     \`\`\`` : "";
 
     let mayaPlatformRules = "";
     if (activePlatform === "threads") {
@@ -897,24 +915,7 @@ ${mayaPrompt}
 
 ### 寫作平台自適應限制 (當前發布平台: ${activePlatform.toUpperCase()})：
 ${mayaPlatformRules}
-4. ${imgInstruction}
-   Mermaid 圖表必須符合以下品牌配色規範：
-   - 當前品牌：${brandColors.name}，系統色為：${brandColors.colorName}。
-   - 請在 Mermaid 開頭注入以下高質感配色 %%{init: ... }%% 區塊，使圖表底色、文字、框線與系統色完美契合：
-     \`\`\`mermaid
-     %%{init: {
-       'theme': 'base',
-       'themeVariables': {
-         'primaryColor': '${brandColors.hexPrimary}',
-         'primaryTextColor': '#ffffff',
-         'primaryBorderColor': '${brandColors.hexAccent}',
-         'lineColor': '${brandColors.hexAccent}',
-         'secondaryColor': '#1e293b',
-         'tertiaryColor': '#0f172a'
-       }
-     }}%%
-     ...圖表內容...
-     \`\`\`
+${diagramInstruction}
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個：
    - Erick專欄：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
    - I8 (企業醫生)：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
@@ -997,14 +998,22 @@ ${brandContext}`;
     }
 
     const mayaResult = mayaOutcome.value.result;
+    const storyThesis = storyArgument
+      ? resolveStoryArgumentThesis(storyArgument.thesis, mayaResult.story_thesis || "")
+      : "";
     const storyCitation = storyArgument
-      ? applyValidatedKnowledgeCitation(
-          normalizeStoryArgumentCopy(mayaResult.social_copy || "", storyArgument.thesis || mayaResult.story_thesis || ""),
-          mayaResult.citation_title,
-          mayaResult.citation_author,
-          storyKnowledge.note,
-          storyKnowledge.required
-        )
+      ? (() => {
+          const normalizedCopy = normalizeStoryArgumentCopy(mayaResult.social_copy || "", storyThesis);
+          const citation = applyValidatedKnowledgeCitation(
+            normalizedCopy,
+            mayaResult.citation_title,
+            mayaResult.citation_author,
+            storyKnowledge.note,
+            storyKnowledge.required
+          );
+          // 引用驗證完成後再清理一次，讓引用或待補標記位於主題標籤之前。
+          return { ...citation, content: normalizeStoryArgumentCopy(citation.content, storyThesis) };
+        })()
       : null;
 
     let irisResult: any = { seo_keywords: [], aeo_faq: "", aeo_schema: "" };
@@ -1071,7 +1080,7 @@ ${brandContext}`;
         story_argument_meta: storyArgument
           ? {
               version: storyArgument.version,
-              thesis: (storyArgument.thesis || mayaResult.story_thesis || "").trim(),
+              thesis: storyThesis,
               prompt_version: STORY_ARGUMENT_PROMPT_VERSION,
               model_version: mayaReport.model || undefined,
               citationMode: storyArgument.citationMode || "auto",

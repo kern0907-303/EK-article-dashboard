@@ -1,7 +1,7 @@
 import { stripDashes, stripMarkdown } from "../../lib/plain-text";
 
 export const STORY_ARGUMENT_FRAMEWORK_ID = "story_argument";
-export const STORY_ARGUMENT_PROMPT_VERSION = "story-argument-v1";
+export const STORY_ARGUMENT_PROMPT_VERSION = "story-argument-v2";
 
 export type StoryArgumentVersion = "empathy" | "full";
 export type StoryArgumentCitationMode = "auto" | "selected" | "none";
@@ -68,6 +68,11 @@ export function resolveStoryArgumentSelection(
   return { version, thesis: thesis.trim(), citationMode, ...(citationMode === "selected" && noteId ? { noteId } : {}) };
 }
 
+/** 只有未選故事論點時才保留 Maya 原有的官網流程圖提示。 */
+export function shouldIncludeMayaDiagram(storyArgument?: StoryArgumentSelection): boolean {
+  return !storyArgument;
+}
+
 const SECTION_LABELS = ["切入現象", "故事", "論點支持", "解決方案"] as const;
 
 export function getStoryArgumentSections(version: StoryArgumentVersion): string[] {
@@ -84,17 +89,21 @@ export function buildStoryArgumentPrompt(
 ): string {
   const sections = getStoryArgumentSections(selection.version);
   const sectionRules = [
-    "切入現象：先寫讀者當下的感受或處境，讓讀者覺得被理解，不給建議。",
-    "故事：寫一個有場景細節的情境，轉折靠一句關鍵的話。優先使用使用者明確提供的品牌或專案故事素材；沒有素材時，用不涉及真人、沒有姓名的泛化場景，不得捏造具名個案或真實見證。",
-    "論點支持：只用一個概念支持全文論點。只可改寫與概括本次載入的指定筆記，不得照抄長段原文，直接引文最多一句短語；不得憑記憶引用其他書籍、作者、研究或數據。",
-    "解決方案：提供與單一論點直接相關、可理解的做法，不延伸成第二個觀點。",
+    "切入現象：用一個具體畫面或一句直接的話開場，前三句內進入主題，呈現讀者當下的感受或處境，不給建議，也不先用話題熱度鋪陳。",
+    "故事：有使用者提供的品牌或專案故事素材時，優先採用並去識別化；沒有素材時，只能寫明確非紀實的擬真情境，例如「想像一個場景」「有一種人」「如果是你」。不得聲稱真人真事，不得寫「我曾經遇過」「有位客戶」「我的學員」等經歷。場景要有具體細節，至少包含場景、一句對話與一個物件，轉折只靠一句關鍵話，不用口號式金句。",
+    "論點支持：只放一個概念支撐全文。在完整版中固定三步：一個通過既有驗證的知識庫引用、一句白話轉譯、回扣本篇故事。只可改寫與概括本次載入的筆記，不得照抄長段原文，直接引文最多一句短語；不得憑記憶引用其他書籍、作者、研究或數據。",
+    "解決方案：只提供與唯一論點直接相關的一個生活中可做的小動作，不延伸第二個觀點。",
   ];
   const versionRule = selection.version === "empathy"
-    ? "共情版只寫前三段，絕對不產出解決方案或第四段，結尾以陪伴與看見收束。"
-    : "完整版必須依序寫完四段，包含解決方案。";
+    ? "共情版只寫前三段，絕對不產出解決方案或第四段，不強制引用、不加出處與待補標記；論點支持最後用一句「把故事翻成一句看見」收束，再以陪伴結尾。"
+    : "完整版必須依序寫完四段，包含解決方案；論點支持必須依照引用、白話轉譯、回扣故事三步完成。";
   const thesisRule = selection.thesis
-    ? `使用者指定的一句話論點是：${selection.thesis}。全文只能支持這一個論點。`
-    : "使用者沒有提供一句話論點。先擬定一句精簡論點放入 JSON 的 story_thesis 欄位；文章本體不得另加論點標籤或把論點欄位重複貼進發佈文案。";
+    ? `使用者指定的一句話論點是：${selection.thesis}。以這句為唯一論點，全文只能支持它，不可替換成另一個主張。`
+    : "使用者沒有提供一句話論點。先擬定一個不超過 30 字的一句話論點，放入 JSON 的 story_thesis 欄位，並讓文章全文只支持同一論點；文章本體不得貼上該欄位或論點標籤。";
+  const singleArgumentRule = "寫作前先確認全文只有一個可用一句話複述的論點。寫完前自我檢查：若出現第二個獨立論點，刪除它。結尾不得拆成多個並列問題、條列檢核題或多種結局分支；回到故事，用一句話收束，再留一個讀者可帶走的想法或動作。";
+  const rhythmRule = "短句、短段落，每段最多三行。開頭使用具體畫面或直接的一句話，前三句內進入主題，不得用「最近這個話題一直被討論」等泛泛鋪陳。";
+  const sectionLabelRule = "下列四個名稱只代表內部寫作順序，不是小標題或標籤。輸出正文不得出現「切入現象」「故事」「論點支持」「解決方案」作為獨立標題或標籤，也不得加編號、括號、冒號或其他標點變體。只輸出段落正文。";
+  const hashtagRule = "依平台既有數量規則在文末另起一行放主題標籤，每個標籤都必須以 # 開頭，標籤之間只用空格，不用逗號；不得把 # 當成標題符號。";
   const genreRule = options.genreMode
     ? "【與文體同用】文體提示詞的段落骨架、漏斗層與格式限制優先。若文體與本框架的段落數或段落名稱衝突，遵守文體；仍須盡量維持單一論點、不得捏造來源及純文字要求。"
     : "";
@@ -119,26 +128,156 @@ export function buildStoryArgumentPrompt(
     versionRule,
     citationRule,
     knowledgeText,
-    "段落依序使用以下純文字段名，每段只承擔該段任務：",
-    ...sections.map((label, index) => `${label}：${sectionRules[index]}`),
-    "【品牌格式與事實】社群文案只輸出純文字，不得出現 Markdown 符號或任何破折號、橫線。停頓使用逗號或句號。遵守既有品牌規範與禁用詞，不得把一句話論點併入 social_copy 作為額外標籤。",
+    sectionLabelRule,
+    ...sections.map((label, index) => `寫作順序第 ${index + 1} 段（只供內部遵循，不輸出段名）：${label}。${sectionRules[index]}`),
+    singleArgumentRule,
+    rhythmRule,
+    hashtagRule,
+    "【品牌格式與事實】社群文案只輸出純文字，不得出現 Markdown 符號或任何破折號、橫線；只有文末主題標籤行可使用必要的 #。停頓使用逗號或句號。遵守既有品牌規範與禁用詞，不得把一句話論點併入 social_copy 作為額外標籤。",
     genreRule,
     "【輸出格式】只輸出合法 JSON 物件，不要程式碼區塊或前後說明。story_thesis 是供介面展示的一句話論點，不屬於文章；social_copy 只放可編輯的文章正文。",
     `{ "story_thesis": "一句話論點", "social_copy": "依規則完成的純文字文章"${citationJsonFields} }`,
   ].filter(Boolean).join("\n\n");
 }
 
+function isStoryArgumentSectionLabel(line: string): boolean {
+  const normalized = line.normalize("NFKC");
+  const withoutOrdinal = normalized
+    .replace(/^\s*(?:第)?[0-9一二三四五六七八九十]+段/u, "")
+    .replace(/^\s*[0-9一二三四五六七八九十]+(?=[.、)\s:：])/u, "");
+  const compact = withoutOrdinal.replace(/[\p{White_Space}\p{P}\p{S}\p{N}]/gu, "");
+  return (SECTION_LABELS as readonly string[]).includes(compact);
+}
+
+function isMermaidStart(line: string): boolean {
+  return /^\s*(?:%%\s*\{\s*init\b|flowchart(?:\s+(?:TD|LR|BT|RL|TB)\b|$)|graph(?:\s+(?:TD|LR|BT|RL|TB)\b|$))/i.test(line);
+}
+
+function isMermaidSyntaxLine(line: string): boolean {
+  return /^\s*(?:(?:subgraph|end|classDef|style|click|linkStyle)\b|[\w\p{L}\p{N}_]+(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?\s*(?:-->|---|-.->|==>|<--|--|-.))/u.test(line);
+}
+
+function removeStoryArgumentDiagramCode(input: string): string {
+  const lines = input.split(/\r?\n/);
+  const output: string[] = [];
+  for (let index = 0; index < lines.length;) {
+    const opening = lines[index].match(/^\s*```([^\s`]*)[^\n]*$/);
+    if (opening) {
+      const start = index;
+      let end = index + 1;
+      while (end < lines.length && !/^\s*```\s*$/.test(lines[end])) end++;
+      const hasClosingFence = end < lines.length;
+      const body = lines.slice(start + 1, hasClosingFence ? end : lines.length).join("\n");
+      const isDiagram = /^mermaid\b/i.test(opening[1]) || body.split("\n").some(isMermaidStart);
+      if (!isDiagram) output.push(...lines.slice(start, hasClosingFence ? end + 1 : lines.length));
+      index = hasClosingFence ? end + 1 : lines.length;
+      continue;
+    }
+
+    if (/^\s*%%\s*\{\s*init\b/i.test(lines[index])) {
+      if (!/\}%%/.test(lines[index])) {
+        index++;
+        while (index < lines.length && !/\}%%/.test(lines[index])) index++;
+      }
+      if (index < lines.length) index++;
+      continue;
+    }
+
+    if (isMermaidStart(lines[index])) {
+      index++;
+      while (index < lines.length && lines[index].trim() && isMermaidSyntaxLine(lines[index])) index++;
+      continue;
+    }
+
+    output.push(lines[index]);
+    index++;
+  }
+  return output.join("\n");
+}
+
+function parseStoryArgumentTagLine(line: string): string[] | null {
+  const trimmed = line.trim();
+  const label = trimmed.match(/^(?:主題標籤|標籤|hashtags?)\s*[：:]\s*(.*)$/i);
+  const hasHash = /[#＃]/u.test(trimmed);
+  const hasSeparators = /[\s、|｜]/u.test(trimmed);
+  if (!label && !hasHash && !hasSeparators) return null;
+
+  const candidate = label ? label[1] : trimmed;
+  if (!label && hasHash) {
+    const residue = candidate.replace(/[#＃][\p{L}\p{N}_]+/gu, "").replace(/[\s,，、|｜]/gu, "");
+    if (residue) return null;
+  }
+  if (!label && !hasHash && /[,，。！？；：]/u.test(candidate)) return null;
+
+  const separators = label ? /[\s,，、|｜]+/u : /[\s、|｜]+/u;
+  const tags = candidate.split(separators)
+    .map((tag) => tag.replace(/^[#＃]+/u, "").replace(/[^\p{L}\p{N}_]/gu, ""))
+    .filter(Boolean);
+  return !label && !hasHash && tags.length < 2 ? null : tags;
+}
+
+function isStoryArgumentFooter(line: string): boolean {
+  return /^\s*(?:出處\s*[：:]|【需補：引用來源】)/u.test(line);
+}
+
+function fallbackStoryArgumentTag(thesis: string): string {
+  const topic = [...thesis.replace(/[^\p{L}\p{N}]/gu, "")].slice(0, 12).join("");
+  return `#${topic || "故事論點"}`;
+}
+
 /** 故事論點限定清理，不影響其他框架；論點只留在獨立 metadata，不混入文章正文。 */
 export function normalizeStoryArgumentCopy(input: string, thesis = ""): string {
-  const unfenced = input
+  const withoutDiagram = removeStoryArgumentDiagramCode(input);
+  const rawLines = withoutDiagram
     .replace(/```(?:[a-z]+)?\s*/gi, "")
     .replace(/```/g, "");
-  const cleaned = stripDashes(stripMarkdown(unfenced));
-  const lines = cleaned.split("\n");
-  const first = lines[0]?.trim() || "";
-  const normalizedThesis = thesis.trim();
-  if (normalizedThesis && (first === normalizedThesis || first === `一句話論點：${normalizedThesis}`)) {
-    lines.shift();
+
+  const lines = rawLines.split("\n");
+  const footer: string[] = [];
+  let tail = lines.length - 1;
+  while (tail >= 0) {
+    if (!lines[tail].trim()) { tail--; continue; }
+    if (!isStoryArgumentFooter(lines[tail])) break;
+    footer.unshift(lines[tail].trim());
+    lines.splice(tail, 1);
+    tail--;
   }
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  let tags: string[] = [];
+  tail = lines.length - 1;
+  while (tail >= 0 && !lines[tail].trim()) tail--;
+  if (tail >= 0) {
+    const parsedTags = parseStoryArgumentTagLine(lines[tail]);
+    if (parsedTags !== null) {
+      tags = parsedTags;
+      lines.splice(tail, 1);
+    }
+  }
+
+  const cleaned = stripDashes(stripMarkdown(lines.join("\n")));
+  const cleanedFooter = footer.map((line) => stripDashes(stripMarkdown(line)));
+  const bodyLines = cleaned.split("\n")
+    .filter((line) => !isStoryArgumentSectionLabel(line))
+    .map((line) => line.trimEnd());
+  while (bodyLines.length && !bodyLines[0].trim()) bodyLines.shift();
+  while (bodyLines.length && !bodyLines[bodyLines.length - 1].trim()) bodyLines.pop();
+
+  const normalizedThesis = thesis.trim();
+  const first = bodyLines[0]?.trim() || "";
+  if (normalizedThesis && (first === normalizedThesis || first === `一句話論點：${normalizedThesis}`)) {
+    bodyLines.shift();
+  }
+
+  const uniqueTags = [...new Set(tags.map((tag) => tag.replace(/[^\p{L}\p{N}_]/gu, "")).filter(Boolean))];
+  if (!uniqueTags.length && normalizedThesis) uniqueTags.push(fallbackStoryArgumentTag(normalizedThesis).slice(1));
+  const hashtagLine = uniqueTags.length ? uniqueTags.map((tag) => `#${tag}`).join(" ") : "";
+  const resultLines = [...bodyLines, ...cleanedFooter.filter(Boolean), ...(hashtagLine ? [hashtagLine] : [])];
+  return resultLines.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 使用者論點原樣優先；AI 擬定值限制在 30 個 Unicode 字元內。 */
+export function resolveStoryArgumentThesis(userThesis: string, generatedThesis: string): string {
+  const supplied = userThesis.trim();
+  if (supplied) return supplied;
+  return [...generatedThesis.trim()].slice(0, 30).join("").replace(/[，、；：\s]+$/u, "");
 }
