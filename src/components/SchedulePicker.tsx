@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
+import { buildScheduleDateTime, DEFAULT_SCHEDULE_HOUR, DEFAULT_SCHEDULE_MINUTE } from "@/lib/schedule-time";
 import {
   buildDayMarks,
   dayKey,
@@ -46,6 +47,8 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
   const maxDate = useMemo(() => max ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), [max]);
 
   const selected = value ? new Date(value) : null;
+  const selectedHour = selected?.getHours() ?? DEFAULT_SCHEDULE_HOUR;
+  const selectedMinute = selected?.getMinutes() ?? DEFAULT_SCHEDULE_MINUTE;
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [align, setAlign] = useState<PopoverAlign>("left");
@@ -88,12 +91,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
 
   /** 選了日期後，時間若早於最早可選時間，自動校正到最早可選時間 */
   const pickDay = (d: Date) => {
-    const base = selected ?? minDate;
-    let next = new Date(d.getFullYear(), d.getMonth(), d.getDate(), base.getHours(), base.getMinutes());
-    if (next < minDate) {
-      next = new Date(minDate);
-      next.setMinutes(Math.ceil(next.getMinutes() / 5) * 5, 0, 0);
-    }
+    const next = buildScheduleDateTime(d, selected, minDate);
     onChange(toValue(next));
   };
 
@@ -109,7 +107,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
 
   const label = selected
     ? `${selected.getMonth() + 1}/${selected.getDate()}（${WEEK[selected.getDay()]}）${p2(selected.getHours())}:${p2(selected.getMinutes())}`
-    : "選擇日期與時間";
+    : `選擇日期與時間（預設 ${p2(DEFAULT_SCHEDULE_HOUR)}:${p2(DEFAULT_SCHEDULE_MINUTE)}）`;
 
   return (
     <div className="relative">
@@ -227,7 +225,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
               <div className="flex items-center justify-center gap-2">
                 <div ref={hourRef} className="h-32 w-16 overflow-y-auto snap-y rounded-lg border border-slate-800 bg-slate-900/60 py-12">
                   {Array.from({ length: 24 }, (_, h) => {
-                    const sel = selected?.getHours() === h;
+                    const sel = selectedHour === h;
                     const dis = !selected ? false : timeDisabled(h, 55);
                     return (
                       <button
@@ -235,7 +233,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
                         type="button"
                         data-sel={sel ? "1" : undefined}
                         disabled={dis}
-                        onClick={() => pickTime(h, selected ? selected.getMinutes() : 0)}
+                        onClick={() => pickTime(h, selectedMinute)}
                         className={`snap-center block w-full h-7 text-sm ${
                           sel ? "text-white font-bold bg-slate-700" : "text-slate-300 hover:bg-slate-800"
                         } disabled:text-slate-700 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer`}
@@ -248,7 +246,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
                 <span className="text-slate-400 font-bold">:</span>
                 <div ref={minuteRef} className="h-32 w-16 overflow-y-auto snap-y rounded-lg border border-slate-800 bg-slate-900/60 py-12">
                   {MINUTES.map((m) => {
-                    const sel = selected?.getMinutes() === m;
+                    const sel = selectedMinute === m;
                     const dis = !selected ? false : timeDisabled(selected.getHours(), m);
                     return (
                       <button
@@ -256,7 +254,7 @@ export default function SchedulePicker({ value, onChange, min, max, accentClass 
                         type="button"
                         data-sel={sel ? "1" : undefined}
                         disabled={dis}
-                        onClick={() => pickTime(selected ? selected.getHours() : minDate.getHours(), m)}
+                        onClick={() => pickTime(selectedHour, m)}
                         className={`snap-center block w-full h-7 text-sm ${
                           sel ? "text-white font-bold bg-slate-700" : "text-slate-300 hover:bg-slate-800"
                         } disabled:text-slate-700 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer`}

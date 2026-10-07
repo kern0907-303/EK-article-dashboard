@@ -5,6 +5,7 @@ import Link from "next/link";
 import { applyDateRule, parsePipelineBatch, type BatchSource, type PipelineEntry } from "@/lib/auto-pipeline";
 import { parsePastedTopics, materialFor } from "@/lib/topic-parse";
 import { buildGenrePrompt, GENRES, type BrandKey, type FunnelLevel, type GenreId } from "@/data/skills/genres";
+import { DEFAULT_SCHEDULE_TIME } from "@/lib/schedule-time";
 
 const BRANDS = [
   { id: "nas", name: "NAS" }, { id: "abl", name: "ABL" }, { id: "i8", name: "I8" }, { id: "erick", name: "Erick" },
@@ -28,7 +29,7 @@ export default function AutoPipelinePage() {
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
   const [startDate, setStartDate] = useState("");
   const [weekdays, setWeekdays] = useState<number[]>([1, 3, 5]);
-  const [time, setTime] = useState("10:00");
+  const [time, setTime] = useState(DEFAULT_SCHEDULE_TIME);
   const [projectId, setProjectId] = useState("");
   const [jobs, setJobs] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
@@ -123,7 +124,7 @@ export default function AutoPipelinePage() {
       <section className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">建立批次預覽</h2><select value={source} onChange={(e) => { setSource(e.target.value as BatchSource); setResearch(e.target.value === "research"); }} className="rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm"><option value="manual">手動貼上</option><option value="file">檔案上傳</option><option value="research">品牌調研選題</option></select></div>
-          <label className="block text-sm text-slate-300">貼上內容或調研結果<textarea value={text} onChange={(e) => setText(e.target.value)} rows={9} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" placeholder={'品牌：NAS\n日期：2026-11-01 10:00\n這篇貼文的提示詞\n=====\n品牌：ABL\n另一篇提示詞'} /></label>
+          <label className="block text-sm text-slate-300">貼上內容或調研結果<textarea value={text} onChange={(e) => setText(e.target.value)} rows={9} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" placeholder={'品牌：NAS\n日期：2026-11-01 10:10\n這篇貼文的提示詞\n=====\n品牌：ABL\n另一篇提示詞'} /></label>
           <label className="text-sm text-slate-300">上傳 .txt 檔<input type="file" accept=".txt,text/plain" onChange={(e) => void handleFile(e.target.files?.[0])} className="mt-2 block w-full text-xs" /></label>
           {research && topics.length > 0 && <div className="rounded-lg border border-slate-800 p-3"><p className="mb-2 text-sm">勾選要處理的選題</p>{topics.map((topic) => <label key={topic.index} className="flex gap-2 py-1 text-xs"><input type="checkbox" checked={selectedTopics.includes(topic.index)} onChange={(e) => setSelectedTopics((s) => e.target.checked ? [...s, topic.index] : s.filter((n) => n !== topic.index))} /><span>{topic.title || `選題 ${topic.index}`}　{topic.genreRaw}</span></label>)}</div>}
           <label className="block text-sm text-slate-300">所屬專案 ID（可留空）<input value={projectId} onChange={(e) => setProjectId(e.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2" /></label>
