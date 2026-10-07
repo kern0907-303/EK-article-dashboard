@@ -1,3 +1,4 @@
+import "server-only";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 import { toKnowledgeNoteDirectoryEntry, type KnowledgeNoteDirectoryEntry, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
 

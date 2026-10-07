@@ -8,6 +8,7 @@ import BrandSelector, { BRANDS } from "@/components/BrandSelector";
 import ProjectSelector from "@/components/ProjectSelector";
 import ChatBox from "@/components/ChatBox";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
+import DerivativesEntry from "@/components/DerivativesEntry";
 import { readProjects, subscribeToProjects } from "@/lib/projects-store";
 
 export default function DashboardPage() {
@@ -105,6 +106,7 @@ export default function DashboardPage() {
             系統主大腦連線中
           </div>
           {autoPipelineEnabled && <Link href="/auto-pipeline" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20 sm:text-xs">自動流水線</Link>}
+          <DerivativesEntry />
         </div>
       </header>
 
