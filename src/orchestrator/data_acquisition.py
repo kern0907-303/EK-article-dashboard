@@ -9,6 +9,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..database import save_object, add_relation, get_objects_by_type, get_object
 
+OPENAI_COMPATIBILITY_NOTES = []
+
 # A list of 100 extremely reliable, open websites/blogs that rarely block script crawlers
 REAL_DOMAINS = [
     ("Wikipedia", "https://www.wikipedia.org", "Website", "education"),
@@ -674,6 +676,120 @@ def validate_content_relevance(content, parent_source):
         
     return True, "valid"
 
+
+def _safe_plain_text(value, limit=None):
+    """Redact credentials and remove markup/dashes before persisting or alerting."""
+    text = str(value or "")
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN"):
+        secret = os.environ.get(name, "")
+        if len(secret) >= 8:
+            text = text.replace(secret, "憑證已遮蔽")
+    text = re.sub(r"(?i)\bbearer\s+[^\s,;]+", "授權憑證已遮蔽", text)
+    text = re.sub(r"(?i)\b(?:sk|rk)-[A-Za-z0-9_-]{8,}", "API憑證已遮蔽", text)
+    text = re.sub(r"(?i)\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN)\s*[:=]\s*[^\s,;]+", r"\1 已遮蔽", text)
+    text = re.sub(r"[\r\n\t\x00-\x1f]+", " ", text)
+    text = re.sub(r"[*#`_~\-\u2010-\u2015\u2500-\u257f]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit] if limit is not None else text
+
+
+class OpenAIRequestError(RuntimeError):
+    def __init__(self, status, message, compatibility_note=None):
+        self.status = status
+        self.error_message = _safe_plain_text(message, 200)
+        self.compatibility_note = compatibility_note
+        prefix = f"HTTP {status}" if status is not None else "連線錯誤"
+        detail = f"：{self.error_message}" if self.error_message else ""
+        super().__init__(f"OpenAI {prefix}{detail}")
+
+
+def _openai_error_fields(error):
+    raw = error.read().decode("utf-8", errors="replace")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError):
+        body = {}
+    details = body.get("error", {}) if isinstance(body, dict) else {}
+    if not isinstance(details, dict):
+        details = {}
+    message = details.get("message") or raw or error.reason
+    return details.get("param"), details.get("code"), message
+
+
+def _unsupported_openai_parameter(payload, param, code, message):
+    supported_names = ("max_tokens", "max_completion_tokens", "temperature", "response_format")
+    text = str(message or "").lower()
+    code = str(code or "").lower()
+    unsupported = any(term in text or term in code for term in (
+        "unsupported", "not supported", "does not support", "unknown parameter", "unrecognized parameter", "not allowed"
+    ))
+    if not unsupported:
+        return None
+    if param not in supported_names:
+        param = next((name for name in supported_names if name in payload and name in text), None)
+    return param if param in payload else None
+
+
+def _openai_compatibility_fallback(payload, param):
+    retry_payload = dict(payload)
+    if param == "max_completion_tokens":
+        retry_payload["max_tokens"] = retry_payload.pop(param)
+        return retry_payload, "max_completion_tokens 改用 max_tokens"
+    if param == "max_tokens":
+        retry_payload["max_completion_tokens"] = retry_payload.pop(param)
+        return retry_payload, "max_tokens 改用 max_completion_tokens"
+    if param in ("temperature", "response_format"):
+        retry_payload.pop(param, None)
+        return retry_payload, f"移除不支援的 {param} 參數"
+    return None, None
+
+
+def _openai_chat_completion(payload, api_key, timeout=45, retry_transient=False):
+    """Send one OpenAI request and allow one 400 unsupported-parameter fallback."""
+    request_payload = dict(payload)
+    compatibility_note = None
+    transient_retried = False
+    while True:
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                response_text = response.read().decode("utf-8", errors="replace")
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError:
+                raise OpenAIRequestError(200, response_text or "OpenAI 回應不是有效 JSON", compatibility_note) from None
+            return result, compatibility_note
+        except urllib.error.HTTPError as error:
+            param, code, message = _openai_error_fields(error)
+            if error.code == 400 and compatibility_note is None:
+                unsupported = _unsupported_openai_parameter(request_payload, param, code, message)
+                if unsupported:
+                    request_payload, compatibility_note = _openai_compatibility_fallback(request_payload, unsupported)
+                    continue
+            transient = error.code == 429 or 500 <= error.code <= 599
+            if retry_transient and transient and not transient_retried:
+                transient_retried = True
+                continue
+            raise OpenAIRequestError(error.code, message, compatibility_note) from None
+        except (TimeoutError, urllib.error.URLError):
+            if retry_transient and not transient_retried:
+                transient_retried = True
+                continue
+            raise OpenAIRequestError(None, "逾時或網路連線失敗", compatibility_note) from None
+
+
+def _record_openai_compatibility(context, note):
+    if note:
+        OPENAI_COMPATIBILITY_NOTES.append(_safe_plain_text(f"{context}：{note}"))
+
+
+def _openai_compatibility_summary():
+    return "；".join(OPENAI_COMPATIBILITY_NOTES) if OPENAI_COMPATIBILITY_NOTES else "未使用相容重試"
+
 def call_real_ai_daily_decision(top_5, config):
     import os
     if os.path.exists(".env"):
@@ -692,8 +808,6 @@ def call_real_ai_daily_decision(top_5, config):
     if not api_key:
         raise ValueError("Missing OPENAI_API_KEY. Real AI daily decision calculation failed.")
         
-    url = "https://api.openai.com/v1/chat/completions"
-    
     articles_text = ""
     for idx, c in enumerate(top_5):
         props = c["properties"]
@@ -741,36 +855,30 @@ You MUST return a JSON object with this exact format (do not include any markdow
             {"role": "user", "content": f"Articles:\n{articles_text}"}
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": 1500
+        "max_completion_tokens": 1500
     }
-    
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-    )
-    
-    with urllib.request.urlopen(req, timeout=45) as response:
-        res = json.loads(response.read().decode('utf-8'))
-        response_text = res['choices'][0]['message']['content'].strip()
+
+    res, compatibility_note = _openai_chat_completion(payload, api_key, timeout=45)
+    _record_openai_compatibility("每日決策", compatibility_note)
+    response_text = res['choices'][0]['message']['content'].strip()
+    try:
         data = json.loads(response_text)
-        
-        # Enforce forbidden terms replacement
-        for topic in data.get("recommended_topics", []):
-            for term in config["forbidden_terms"]:
-                if term in topic["topic"]:
-                    topic["topic"] = topic["topic"].replace(term, "狀態")
-                    
-        usage = res.get("usage", {})
-        prompt_tokens = usage.get("prompt_tokens", 0)
-        completion_tokens = usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-        cost = prompt_tokens * 0.00000015 + completion_tokens * 0.00000060
-        
-        return data, prompt_tokens, completion_tokens, total_tokens, cost
+    except json.JSONDecodeError:
+        raise OpenAIRequestError(200, response_text or "模型回覆不是有效 JSON", compatibility_note) from None
+
+    # Enforce forbidden terms replacement
+    for topic in data.get("recommended_topics", []):
+        for term in config["forbidden_terms"]:
+            if term in topic["topic"]:
+                topic["topic"] = topic["topic"].replace(term, "狀態")
+
+    usage = res.get("usage", {})
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens = usage.get("total_tokens", 0)
+    cost = prompt_tokens * 0.00000015 + completion_tokens * 0.00000060
+
+    return data, prompt_tokens, completion_tokens, total_tokens, cost
 
 def run_real_daily_decision():
     """Runs a real daily decision calculation on Level 1 and Level 2 data after relevance gates."""
@@ -1107,13 +1215,15 @@ def run_api_smoke_check():
         missing = [name for name, value in (("OPENAI_API_KEY", oa_key), ("OPENAI_MODEL", oa_model)) if not value]
         errors["OpenAI"] = "缺少 " + "、".join(missing)
     else:
-        payload = {"model": oa_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5}
-        req = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Authorization": f"Bearer {oa_key}", "Content-Type": "application/json"},
-        )
-        errors["OpenAI"] = _smoke_request(req)
+        payload = {"model": oa_model, "messages": [{"role": "user", "content": "ping"}], "max_completion_tokens": 64}
+        try:
+            _, compatibility_note = _openai_chat_completion(payload, oa_key, timeout=10, retry_transient=True)
+            _record_openai_compatibility("Smoke test", compatibility_note)
+        except OpenAIRequestError as error:
+            _record_openai_compatibility("Smoke test", error.compatibility_note)
+            errors["OpenAI"] = str(error)
+        except Exception as error:
+            errors["OpenAI"] = "OpenAI smoke test error：" + _safe_plain_text(error, 200)
 
     ant_key = os.environ.get("ANTHROPIC_API_KEY")
     if not ant_key:
@@ -1130,7 +1240,7 @@ def run_api_smoke_check():
 
 
 def _plain_telegram_alert(message):
-    return re.sub(r"[*#`_~\-\u2010-\u2015\u2500-\u257f]", "，", message)
+    return _safe_plain_text(message)
 
 
 def send_daily_api_alert(today_str, errors, continuing):
@@ -1153,6 +1263,15 @@ def send_daily_api_alert(today_str, errors, continuing):
         return "SUCCESS"
     except Exception:
         return "FAILED：Telegram 警示送出失敗"
+
+
+def _daily_telegram_delivery_status(stdout, stderr, returncode=0):
+    output = f"{stdout or ''}\n{stderr or ''}"
+    if "TELEGRAM_DISABLED" in output:
+        return "DISABLED"
+    if "TELEGRAM_SEND_FAILED" in output or returncode != 0:
+        return "TELEGRAM_SEND_FAILED"
+    return "SUCCESS"
 
 def fetch_real_content_eligible(limit_per_source=2):
     """Fetches real content only from verified and decision-eligible sources."""
@@ -1640,6 +1759,8 @@ def run_daily_production_run():
     import os
     import shutil
     import subprocess
+
+    OPENAI_COMPATIBILITY_NOTES.clear()
     
     # 1. Safe Env Loading
     if os.path.exists(".env"):
@@ -1684,13 +1805,14 @@ Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Database Backup: {db_backup_status}
 Report Provider: None
 Provider Switch: No
+OpenAI Compatibility: {_openai_compatibility_summary()}
 OpenAI Smoke Test: {smoke_errors['OpenAI']}
 Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
 Telegram Alert: {alert_status}
 Errors:
 """
         for err in failed_api_calls:
-            run_summary += f"- {err}\n"
+            run_summary += f"Error: {_safe_plain_text(err)}\n"
         with open(os.path.join(ops_dir, "run_summary.md"), "w", encoding="utf-8") as f:
             f.write(run_summary)
         print("Daily Production Run stopped because OpenAI smoke test failed.")
@@ -1757,7 +1879,31 @@ Errors:
     eligible_contents.sort(key=lambda x: x["properties"].get("word_count", 0), reverse=True)
     top_5 = eligible_contents[:5]
     
-    decision_data, prompt_tokens, completion_tokens, total_tokens, cost = call_real_ai_daily_decision(top_5, config)
+    try:
+        decision_data, prompt_tokens, completion_tokens, total_tokens, cost = call_real_ai_daily_decision(top_5, config)
+    except OpenAIRequestError as error:
+        _record_openai_compatibility("每日決策", error.compatibility_note)
+        daily_error = str(error)
+        daily_errors = {"OpenAI": daily_error, "Anthropic": smoke_errors["Anthropic"]}
+        alert_status = send_daily_api_alert(today_str, daily_errors, False)
+        run_summary = f"""# Run Summary
+Run Status: DAILY_RUN_FAILED
+Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Database Backup: {db_backup_status}
+Report Provider: None
+Provider Switch: No
+OpenAI Compatibility: {_openai_compatibility_summary()}
+OpenAI Smoke Test: PASS
+OpenAI Daily Decision: {_safe_plain_text(daily_error)}
+Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
+Telegram Alert: {alert_status}
+Errors:
+Error: OpenAI：{_safe_plain_text(daily_error)}
+"""
+        with open(os.path.join(ops_dir, "run_summary.md"), "w", encoding="utf-8") as f:
+            f.write(run_summary)
+        print("Daily Production Run stopped because the OpenAI daily decision failed.")
+        return False
     
     rec_topics = decision_data.get("recommended_topics", [])
     rejected_topics = decision_data.get("rejected_topics", [])
@@ -2046,6 +2192,7 @@ Database Backup: {db_backup_status}
 Telegram Delivery: PENDING
 Report Provider: OpenAI
 Provider Switch: No
+OpenAI Compatibility: {_openai_compatibility_summary()}
 OpenAI Smoke Test: PASS
 Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
 Telegram Alert: {alert_status}
@@ -2135,14 +2282,14 @@ Generated on: {timestamp}
     telegram_status = "SUCCESS"
     try:
         res = subprocess.run(["python3", "scripts/send_telegram_report.py", today_str], capture_output=True, text=True)
-        if "TELEGRAM_SEND_FAILED" in res.stdout or "TELEGRAM_SEND_FAILED" in res.stderr:
-            telegram_status = "TELEGRAM_SEND_FAILED"
+        telegram_status = _daily_telegram_delivery_status(res.stdout, res.stderr, res.returncode)
+        if telegram_status == "TELEGRAM_SEND_FAILED":
             with open(os.path.join(ops_dir, "run_summary.md"), "a", encoding="utf-8") as f:
-                f.write(f"\nTelegram Send Warning: {res.stdout.strip()} {res.stderr.strip()}\n")
+                f.write(f"\nTelegram Send Warning: {_safe_plain_text(res.stdout.strip() + ' ' + res.stderr.strip(), 200)}\n")
     except Exception as e:
-        telegram_status = f"TELEGRAM_SEND_FAILED: {str(e)}"
+        telegram_status = "TELEGRAM_SEND_FAILED"
         with open(os.path.join(ops_dir, "run_summary.md"), "a", encoding="utf-8") as f:
-            f.write(f"\nTelegram Send Error: {str(e)}\n")
+            f.write(f"\nTelegram Send Error: {_safe_plain_text(e, 200)}\n")
             
     # Update Telegram Delivery status
     with open(os.path.join(ops_dir, "run_summary.md"), "r", encoding="utf-8") as f:
