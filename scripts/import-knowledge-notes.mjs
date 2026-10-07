@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { buildKnowledgeImportPlan, normalizeKnowledgeRecord } from "../src/lib/knowledge-note-core.mjs";
+import { parseKnowledgeImportResponse } from "../src/lib/knowledge-import-response.mjs";
 
 const inputPath = process.argv[2];
 if (!inputPath) throw new Error("用法：node --env-file=.env.local scripts/import-knowledge-notes.mjs <JSONL 路徑>");
@@ -23,8 +24,7 @@ const baseUrl = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/knowledge_notes`;
 const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" };
 async function request(url, init = {}) {
   const response = await fetch(url, { ...init, headers: { ...headers, ...(init.headers || {}) }, cache: "no-store" });
-  if (!response.ok) throw new Error(`Supabase 知識筆記操作失敗，HTTP ${response.status}。請確認 SQL schema 與伺服器端連線設定。`);
-  return response.status === 204 ? null : response.json();
+  return parseKnowledgeImportResponse(response);
 }
 
 const existingRows = await request(`${baseUrl}?select=source_file,content_md5,domain&limit=1000`);
