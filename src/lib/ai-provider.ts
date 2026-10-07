@@ -9,6 +9,8 @@ import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
 import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentSelection } from "../data/skills/story-argument";
+import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
+import { getKnowledgeNoteByCitation, getKnowledgeNoteById, getKnowledgeNoteDirectory } from "@/lib/knowledge-notes-server";
 
 // Erick COO Router System Prompt (OpenAI)
 export const ERICK_SYSTEM_PROMPT = `你是一個人工智慧團隊總指揮「Erick 營運長」(COO)。
@@ -293,6 +295,46 @@ async function runQueryWithFallback(
   }
 
   throw new Error(`所有可用 AI 服務均呼叫失敗。最後一個錯誤為: ${lastError?.message || lastError}`);
+}
+
+async function resolveStoryArgumentKnowledge(
+  selection: StoryArgumentSelection,
+  topic: string,
+  config: AIProviderConfig
+): Promise<{ required: boolean; note: KnowledgeNoteRecord | null; content: string }> {
+  const citationMode = selection.citationMode || "auto";
+  const required = selection.version === "full" && citationMode !== "none";
+  if (!required) return { required: false, note: null, content: "" };
+
+  try {
+    let note: KnowledgeNoteRecord | null = null;
+    if (citationMode === "selected" && selection.noteId) {
+      note = await getKnowledgeNoteById(selection.noteId);
+    } else if (citationMode === "auto") {
+      const directory = await getKnowledgeNoteDirectory();
+      if (directory.length > 0) {
+        // 只把 title/author/domain/subdomain 交給選書模型，全文只在選定後由伺服器讀取。
+        const catalog = directory.map(({ title, author, domain, subdomain }) => ({ title, author, domain, subdomain }));
+        const selectionPrompt = [
+          "請從以下知識筆記目錄挑選一本最貼近使用者主題的筆記。目錄只有書名、作者、domain、subdomain，不含全文。",
+          "只回傳 JSON，欄位必須是 title、author、domain、subdomain，四個值必須逐字取自同一筆目錄。不要補充其他書籍或理由。",
+          `文章主題與任務：${topic.slice(0, 10000)}`,
+          `可選目錄：${JSON.stringify(catalog)}`,
+        ].join("\n\n");
+        const response = await runQueryWithFallback(selectionPrompt, config, true, "anthropic", { maxTokens: 1200, timeoutMs: 60000 });
+        const parsed = robustJSONParse(response);
+        const candidate = directory.filter((entry) =>
+          parsed?.title === entry.title && parsed?.author === entry.author &&
+          parsed?.domain === entry.domain && parsed?.subdomain === entry.subdomain
+        );
+        if (candidate.length === 1) note = await getKnowledgeNoteByCitation(candidate[0]);
+      }
+    }
+    return { required, note, content: note ? selectRelevantKnowledgeContent(note.content, topic, 20_000) : "" };
+  } catch (error) {
+    console.warn("故事論點引用來源選取或讀取失敗，文章將保留引用待補標記。", error instanceof Error ? error.message : "unknown error");
+    return { required, note: null, content: "" };
+  }
 }
 
 async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
@@ -897,8 +939,26 @@ ${mayaPlatformRules}
 【事實邊界（品牌既有規範。語氣與格式衝突時，以上方文體提示詞為準；事實、紅線與不可宣稱的內容，以此為準）】
 ${brandContext}`;
     }
+    let storyKnowledge: { required: boolean; note: KnowledgeNoteRecord | null; content: string } = {
+      required: false,
+      note: null,
+      content: "",
+    };
     if (storyArgument) {
-      finalMayaPrompt += `\n\n${buildStoryArgumentPrompt(storyArgument, { genreMode: Boolean(genre?.settings) })}`;
+      const historyTopic = history.filter((message) => message.role === "user").slice(-3).map((message) => message.content).join("\n");
+      const assignedMayaPrompt = typeof subPromptsInput === "string"
+        ? subPromptsInput
+        : typeof subPromptsInput?.maya === "string" ? subPromptsInput.maya : JSON.stringify(subPromptsInput || {});
+      storyKnowledge = await resolveStoryArgumentKnowledge(storyArgument, `${historyTopic}\n${assignedMayaPrompt}`, config);
+      finalMayaPrompt += `\n\n${buildStoryArgumentPrompt(storyArgument, {
+        genreMode: Boolean(genre?.settings),
+        citationRequired: storyKnowledge.required,
+        knowledgeNote: storyKnowledge.note ? {
+          title: storyKnowledge.note.title,
+          author: storyKnowledge.note.author,
+          content: storyKnowledge.content,
+        } : null,
+      })}`;
     }
 
     const irisReport: AIResponseReport = { label: "Iris" };
@@ -909,7 +969,7 @@ ${brandContext}`;
       for (let attempt = 0; attempt < 2; attempt++) {
         const prompt = attempt === 0
           ? finalMayaPrompt
-          : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy${storyArgument ? "，並依框架格式包含 story_thesis 欄位" : ""}。`;
+          : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy${storyArgument ? "，並依框架格式包含 story_thesis 欄位" : ""}${storyKnowledge.required ? "，並包含 citation_title 與 citation_author 欄位" : ""}。`;
         const response = await runQueryWithFallback(prompt, config, true, "anthropic", mayaOptions);
         try {
           const result = robustJSONParse(response);
@@ -937,6 +997,15 @@ ${brandContext}`;
     }
 
     const mayaResult = mayaOutcome.value.result;
+    const storyCitation = storyArgument
+      ? applyValidatedKnowledgeCitation(
+          normalizeStoryArgumentCopy(mayaResult.social_copy || "", storyArgument.thesis || mayaResult.story_thesis || ""),
+          mayaResult.citation_title,
+          mayaResult.citation_author,
+          storyKnowledge.note,
+          storyKnowledge.required
+        )
+      : null;
 
     let irisResult: any = { seo_keywords: [], aeo_faq: "", aeo_schema: "" };
     if (irisOutcome.status === "fulfilled") {
@@ -985,7 +1054,7 @@ ${brandContext}`;
       dispatchData: {
         // 文體模式整篇清成純文字；其他框架（如品牌形象與故事）保留文案內容，但一律去掉破折號分隔線與小標記號
         social_copy: storyArgument
-          ? normalizeStoryArgumentCopy(mayaResult.social_copy || "", storyArgument.thesis || mayaResult.story_thesis || "")
+          ? storyCitation?.content || ""
           : genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : stripDashes(mayaResult.social_copy || ""),
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
@@ -1005,6 +1074,12 @@ ${brandContext}`;
               thesis: (storyArgument.thesis || mayaResult.story_thesis || "").trim(),
               prompt_version: STORY_ARGUMENT_PROMPT_VERSION,
               model_version: mayaReport.model || undefined,
+              citationMode: storyArgument.citationMode || "auto",
+              knowledge_note_id: storyKnowledge.note?.id || null,
+              knowledge_content_md5: storyKnowledge.note?.content_md5 || null,
+              citation_title: storyKnowledge.note?.title || null,
+              citation_author: storyKnowledge.note?.author || null,
+              citation_valid: storyCitation?.valid ?? false,
             }
           : null,
       }

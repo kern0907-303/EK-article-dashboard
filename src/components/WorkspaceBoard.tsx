@@ -1746,6 +1746,15 @@ const SocialTabContent = memo(function SocialTabContent({
             <span className="text-slate-500">{storyArgumentMeta.version === "empathy" ? "共情版" : "完整版"}｜提示詞版本 {storyArgumentMeta.prompt_version}{storyArgumentMeta.model_version ? `｜模型 ${storyArgumentMeta.model_version}` : ""}</span>
           </div>
           <p className="mt-1.5 whitespace-pre-wrap text-slate-200">{storyArgumentMeta.thesis}</p>
+          {storyArgumentMeta.citation_title && (
+            <p className="mt-2 text-slate-400">引用來源：{storyArgumentMeta.citation_title}，{storyArgumentMeta.citation_author || "作者未記錄"}</p>
+          )}
+          {storyArgumentMeta.knowledge_note_id && storyArgumentMeta.knowledge_content_md5 && (
+            <p className="mt-1 break-all text-slate-500">筆記追溯：{storyArgumentMeta.knowledge_note_id}｜內容 MD5 {storyArgumentMeta.knowledge_content_md5}</p>
+          )}
+          {storyArgumentMeta.citation_valid === false && (
+            <p className="mt-1 text-amber-300">出處尚未通過驗證，發佈前需補齊引用來源。</p>
+          )}
         </div>
       )}
 

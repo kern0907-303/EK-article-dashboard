@@ -5,7 +5,8 @@ import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
-import { getWritingFrameworkOptions, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, type StoryArgumentVersion } from "@/data/skills/story-argument";
+import { getWritingFrameworkOptions, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
+import type { KnowledgeNoteDirectoryEntry } from "@/lib/knowledge-note-utils";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL, type BrandMismatch } from "@/lib/brand-guard";
@@ -96,6 +97,10 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [activeFramework, setActiveFramework] = useState<string>("default");
   const [storyArgumentVersion, setStoryArgumentVersion] = useState<StoryArgumentVersion>("empathy");
   const [storyArgumentThesis, setStoryArgumentThesis] = useState("");
+  const [storyCitationMode, setStoryCitationMode] = useState<StoryArgumentCitationMode>("auto");
+  const [selectedKnowledgeNoteId, setSelectedKnowledgeNoteId] = useState("");
+  const [knowledgeNotes, setKnowledgeNotes] = useState<KnowledgeNoteDirectoryEntry[]>([]);
+  const [knowledgeNotesError, setKnowledgeNotesError] = useState("");
   const [frameworkLoaded, setFrameworkLoaded] = useState(false);
   // 載入上次的框架選擇（放在 effect 內避免伺服器端渲染不一致）
   useEffect(() => {
@@ -110,6 +115,21 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     if (!frameworkLoaded) return;
     try { localStorage.setItem("ek_active_framework", activeFramework); } catch {}
   }, [activeFramework, frameworkLoaded]);
+
+  // 只有故事論點使用知識目錄；API 僅回傳書目欄位，全文不會送到瀏覽器。
+  useEffect(() => {
+    if (activeFramework !== STORY_ARGUMENT_FRAMEWORK_ID || storyCitationMode !== "selected" || storyArgumentVersion !== "full") return;
+    let active = true;
+    setKnowledgeNotesError("");
+    fetch("/api/knowledge-notes", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "無法載入引用來源目錄");
+        if (active) setKnowledgeNotes(Array.isArray(data.notes) ? data.notes : []);
+      })
+      .catch((error) => { if (active) setKnowledgeNotesError(error instanceof Error ? error.message : "無法載入引用來源目錄"); });
+    return () => { active = false; };
+  }, [activeFramework, storyCitationMode, storyArgumentVersion]);
 
   // 訂閱當前品牌的看板資料以獲取品牌說明與平台設定
   useEffect(() => {
@@ -164,7 +184,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     subPrompts: any,
     signal: AbortSignal,
     genre?: { settings: GenreSettings; brandKey: BrandKey },
-    storyArgument?: { version: StoryArgumentVersion; thesis: string }
+    storyArgument?: StoryArgumentSelection
   ) => {
 
     // 如果是 mockData 模式，直接一次性更新，省去後續請求
@@ -428,7 +448,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       role: "assistant",
       content: `收到。我用【${def.name}】的骨架直接交給 Maya 寫（Facebook 長文格式）。缺素材的地方她會標【需補】，不會代寫。`,
     });
-    const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis);
+    const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis, storyCitationMode, selectedKnowledgeNoteId);
     await dispatchExperts(subPrompts, signal, { settings, brandKey }, storyArgument);
   };
 
@@ -510,7 +530,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         await saveChatMessage(activeBrandId, { role: "assistant", content: `【系統狀態】${msg}` });
       }
       if (result.dispatchData && result.dispatchData.subPrompts) {
-        const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis);
+        const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis, storyCitationMode, selectedKnowledgeNoteId);
         await dispatchExperts(result.dispatchData.subPrompts, signal, undefined, storyArgument);
       }
     } catch (error: any) {
@@ -863,6 +883,48 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
                 />
               </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <label className="min-w-[150px] flex-1 text-[10px] text-slate-400">
+                引用來源
+                <select
+                  value={storyCitationMode}
+                  onChange={(e) => setStoryCitationMode(e.target.value as StoryArgumentCitationMode)}
+                  disabled={isLoading || isGenerating}
+                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                >
+                  {STORY_ARGUMENT_CITATION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                </select>
+              </label>
+              {storyCitationMode === "selected" && storyArgumentVersion === "full" && (
+                <label className="min-w-[220px] flex-[2] text-[10px] text-slate-400">
+                  指定書籍
+                  <select
+                    value={selectedKnowledgeNoteId}
+                    onChange={(e) => setSelectedKnowledgeNoteId(e.target.value)}
+                    disabled={isLoading || isGenerating || knowledgeNotes.length === 0}
+                    className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                  >
+                    <option value="">請選擇一本筆記</option>
+                    {[...new Set(knowledgeNotes.map((note) => note.domain))].map((domain) => (
+                      <optgroup key={domain} label={KNOWLEDGE_DOMAIN_LABELS[domain] || domain}>
+                        {knowledgeNotes.filter((note) => note.domain === domain).map((note) => (
+                          <option key={note.id} value={note.id}>{note.title}，{note.author}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {storyArgumentVersion === "empathy"
+                ? "共情版不強制引用，也不會加入出處或待補標記。"
+                : storyCitationMode === "none"
+                  ? "本篇不引用，不會加入出處或待補標記。"
+                  : storyCitationMode === "auto"
+                    ? "伺服器會先依書目挑選，再讀取相關內容；引用不符時會標示【需補：引用來源】。"
+                    : knowledgeNotesError || "書目依領域分組；全文僅由伺服器端讀取。若目錄尚未載入，請稍候再選。"}
             </div>
             <div className="text-[10px] text-amber-200/80">{STORY_ARGUMENT_GENRE_NOTICE}</div>
           </div>
