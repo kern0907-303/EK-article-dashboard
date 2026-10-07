@@ -4,7 +4,7 @@ import { isGuardBrandKey, scanChatPayload, describeMismatch, GUARD_BRAND_LABEL }
 
 export async function POST(req: NextRequest) {
   try {
-    const { history, brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre, brandKey, confirmBrandMismatch } = await req.json();
+    const { history, brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre, storyArgument, brandKey, confirmBrandMismatch } = await req.json();
 
     if (stage !== "expert" && stage !== "adapt" && (!history || !Array.isArray(history))) {
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 呼叫模組化 AI 服務（Erick 營運長）
-    const result = await callErickCOO(history || [], brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre);
+    const result = await callErickCOO(history || [], brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre, storyArgument);
 
     return NextResponse.json({
       content: result.content,

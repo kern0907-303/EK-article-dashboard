@@ -305,6 +305,7 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 seoKeywords={data.seo_keywords}
                 copyMeta={data.social_copy_meta}
                 genreMeta={data.genre_meta}
+                storyArgumentMeta={data.story_argument_meta}
                 webArticle={data.web_article}
                 webArticleMeta={data.web_article_meta}
                 webSourceCopy={pickWebSourceCopy(data)}
@@ -385,6 +386,7 @@ const SocialTabContent = memo(function SocialTabContent({
   seoKeywords,
   copyMeta,
   genreMeta,
+  storyArgumentMeta,
   webArticle,
   webArticleMeta,
   webSourceCopy
@@ -402,6 +404,7 @@ const SocialTabContent = memo(function SocialTabContent({
   seoKeywords?: any[];
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
   genreMeta?: GenreMeta | null;
+  storyArgumentMeta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
   webArticle?: string;
   webArticleMeta?: WebArticleMeta;
   webSourceCopy?: string;
@@ -438,6 +441,18 @@ const SocialTabContent = memo(function SocialTabContent({
   );
   // 擋住發佈的檢查：只看「禁用詞」與「【需補】」，這兩項與平台無關
   const requireGenreOk = (): boolean => {
+    if (!genreMeta && storyArgumentMeta) {
+      const storyMetaForExistingChecks = {
+        genre: "case" as const,
+        funnel: "warm" as const,
+        prompt_version: storyArgumentMeta.prompt_version,
+      };
+      const blocks = blockingIssues(checkGenreText(val, storyMetaForExistingChecks));
+      if (blocks.length > 0) {
+        alert("⚠️ 這篇文章還不能發佈：\n\n" + blocks.map((b) => "・" + b.message).join("\n"));
+        return false;
+      }
+    }
     if (!genreMeta) return true;
     const blocks = blockingIssues(checkGenreText(val, genreMeta));
     if (blocks.length === 0) return true;
@@ -1721,6 +1736,16 @@ const SocialTabContent = memo(function SocialTabContent({
               )}
             </ul>
           )}
+        </div>
+      )}
+
+      {storyArgumentMeta?.thesis && (
+        <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold text-amber-200">一句話論點（不併入發佈文案）</span>
+            <span className="text-slate-500">{storyArgumentMeta.version === "empathy" ? "共情版" : "完整版"}｜提示詞版本 {storyArgumentMeta.prompt_version}{storyArgumentMeta.model_version ? `｜模型 ${storyArgumentMeta.model_version}` : ""}</span>
+          </div>
+          <p className="mt-1.5 whitespace-pre-wrap text-slate-200">{storyArgumentMeta.thesis}</p>
         </div>
       )}
 

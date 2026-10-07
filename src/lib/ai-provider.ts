@@ -8,6 +8,7 @@ import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
+import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentSelection } from "../data/skills/story-argument";
 
 // Erick COO Router System Prompt (OpenAI)
 export const ERICK_SYSTEM_PROMPT = `你是一個人工智慧團隊總指揮「Erick 營運長」(COO)。
@@ -480,7 +481,8 @@ export async function callErickCOO(
   prevData?: any,
   platform?: string,
   copywritingFramework?: string,
-  genre?: { settings: GenreSettings; brandKey: BrandKey }
+  genre?: { settings: GenreSettings; brandKey: BrandKey },
+  storyArgument?: StoryArgumentSelection
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = resolveProvider(config, overrideProvider);
@@ -895,6 +897,9 @@ ${mayaPlatformRules}
 【事實邊界（品牌既有規範。語氣與格式衝突時，以上方文體提示詞為準；事實、紅線與不可宣稱的內容，以此為準）】
 ${brandContext}`;
     }
+    if (storyArgument) {
+      finalMayaPrompt += `\n\n${buildStoryArgumentPrompt(storyArgument, { genreMode: Boolean(genre?.settings) })}`;
+    }
 
     const irisReport: AIResponseReport = { label: "Iris" };
     console.log(`[callErickCOO] Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`);
@@ -910,6 +915,9 @@ ${brandContext}`;
           const result = robustJSONParse(response);
           if (!result || typeof result.social_copy !== "string" || !result.social_copy.trim()) {
             throw new Error("回覆缺少非空的 social_copy 欄位");
+          }
+          if (storyArgument && !storyArgument.thesis && (!result.story_thesis || typeof result.story_thesis !== "string" || !result.story_thesis.trim())) {
+            throw new Error("故事論點回覆缺少一句話 story_thesis 欄位");
           }
           return { result, response };
         } catch (error) {
@@ -976,7 +984,9 @@ ${brandContext}`;
       content: "",
       dispatchData: {
         // 文體模式整篇清成純文字；其他框架（如品牌形象與故事）保留文案內容，但一律去掉破折號分隔線與小標記號
-        social_copy: genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : stripDashes(mayaResult.social_copy || ""),
+        social_copy: storyArgument
+          ? normalizeStoryArgumentCopy(mayaResult.social_copy || "", storyArgument.thesis || mayaResult.story_thesis || "")
+          : genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : stripDashes(mayaResult.social_copy || ""),
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
         aeo_faq: stripMarkdown(irisResult.aeo_faq || ""),
@@ -986,6 +996,14 @@ ${brandContext}`;
               genre: genre.settings.genre,
               funnel: genre.settings.funnel,
               prompt_version: PROMPT_VERSION,
+              model_version: mayaReport.model || undefined,
+            }
+          : null,
+        story_argument_meta: storyArgument
+          ? {
+              version: storyArgument.version,
+              thesis: (storyArgument.thesis || mayaResult.story_thesis || "").trim(),
+              prompt_version: STORY_ARGUMENT_PROMPT_VERSION,
               model_version: mayaReport.model || undefined,
             }
           : null,

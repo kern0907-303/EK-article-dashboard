@@ -5,9 +5,12 @@ import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
+import { getWritingFrameworkOptions, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, type StoryArgumentVersion } from "@/data/skills/story-argument";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL, type BrandMismatch } from "@/lib/brand-guard";
+
+const WRITING_FRAMEWORK_OPTIONS = getWritingFrameworkOptions(Object.values(COPYWRITING_FRAMEWORKS));
 
 interface ChatBoxProps {
   activeBrandId: string;
@@ -91,12 +94,14 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
   const [activePlat, setActivePlat] = useState("threads");
   const [activeFramework, setActiveFramework] = useState<string>("default");
+  const [storyArgumentVersion, setStoryArgumentVersion] = useState<StoryArgumentVersion>("empathy");
+  const [storyArgumentThesis, setStoryArgumentThesis] = useState("");
   const [frameworkLoaded, setFrameworkLoaded] = useState(false);
   // 載入上次的框架選擇（放在 effect 內避免伺服器端渲染不一致）
   useEffect(() => {
     try {
       const saved = localStorage.getItem("ek_active_framework");
-      if (saved && COPYWRITING_FRAMEWORKS[saved]) setActiveFramework(saved);
+      if (saved && (COPYWRITING_FRAMEWORKS[saved] || saved === STORY_ARGUMENT_FRAMEWORK_ID)) setActiveFramework(saved);
     } catch {}
     setFrameworkLoaded(true);
   }, []);
@@ -158,7 +163,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const dispatchExperts = async (
     subPrompts: any,
     signal: AbortSignal,
-    genre?: { settings: GenreSettings; brandKey: BrandKey }
+    genre?: { settings: GenreSettings; brandKey: BrandKey },
+    storyArgument?: { version: StoryArgumentVersion; thesis: string }
   ) => {
 
     // 如果是 mockData 模式，直接一次性更新，省去後續請求
@@ -199,6 +205,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               brandGuidelines: mergedGuidelines,
               platform: activePlat,
               copywritingFramework: activeFramework,
+              ...(storyArgument ? { storyArgument } : {}),
               ...(genre ? { genre } : {})
             })
           });
@@ -421,7 +428,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       role: "assistant",
       content: `收到。我用【${def.name}】的骨架直接交給 Maya 寫（Facebook 長文格式）。缺素材的地方她會標【需補】，不會代寫。`,
     });
-    await dispatchExperts(subPrompts, signal, { settings, brandKey });
+    const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis);
+    await dispatchExperts(subPrompts, signal, { settings, brandKey }, storyArgument);
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -502,7 +510,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         await saveChatMessage(activeBrandId, { role: "assistant", content: `【系統狀態】${msg}` });
       }
       if (result.dispatchData && result.dispatchData.subPrompts) {
-        await dispatchExperts(result.dispatchData.subPrompts, signal);
+        const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis);
+        await dispatchExperts(result.dispatchData.subPrompts, signal, undefined, storyArgument);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -823,13 +832,41 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             title="選擇寫作框架 (大師模式)"
             className="text-xs bg-slate-800/80 text-slate-300 border border-slate-700/80 rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-50 cursor-pointer"
           >
-            {Object.values(COPYWRITING_FRAMEWORKS).map(fw => (
+            {WRITING_FRAMEWORK_OPTIONS.map(fw => (
               <option key={fw.id} value={fw.id} title={fw.description}>
                 {fw.name}
               </option>
             ))}
           </select>
         </div>
+        {activeFramework === STORY_ARGUMENT_FRAMEWORK_ID && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5 space-y-2">
+            <div className="flex gap-2">
+              <label className="flex-1 text-[10px] text-slate-400">
+                版本
+                <select
+                  value={storyArgumentVersion}
+                  onChange={(e) => setStoryArgumentVersion(e.target.value as StoryArgumentVersion)}
+                  disabled={isLoading || isGenerating}
+                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                >
+                  {STORY_ARGUMENT_VERSION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                </select>
+              </label>
+              <label className="flex-[2] text-[10px] text-slate-400">
+                一句話論點（可留空，由 AI 擬定）
+                <input
+                  value={storyArgumentThesis}
+                  onChange={(e) => setStoryArgumentThesis(e.target.value)}
+                  disabled={isLoading || isGenerating}
+                  placeholder="留空時會顯示在文章上方，不併入發佈內容"
+                  className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
+                />
+              </label>
+            </div>
+            <div className="text-[10px] text-amber-200/80">{STORY_ARGUMENT_GENRE_NOTICE}</div>
+          </div>
+        )}
         <div className="flex gap-2.5">
           <input
             type="text"

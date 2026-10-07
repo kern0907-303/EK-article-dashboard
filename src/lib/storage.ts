@@ -93,6 +93,8 @@ export interface WorkspaceData {
   web_article_meta?: { generated_at?: number; edited_at?: number; from_hash?: number; from_platform?: string };
   /** 這篇文章是用哪個文體生成的（null 代表一般生成）。發文前的檢查會用到 */
   genre_meta?: import("@/data/skills/genres").GenreMeta | null;
+  /** 故事論點框架的一句話論點，獨立顯示，不屬於社群文案正文 */
+  story_argument_meta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
   /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */
   social_copy_meta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }
