@@ -909,7 +909,7 @@ ${brandContext}`;
       for (let attempt = 0; attempt < 2; attempt++) {
         const prompt = attempt === 0
           ? finalMayaPrompt
-          : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy。`;
+          : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy${storyArgument ? "，並依框架格式包含 story_thesis 欄位" : ""}。`;
         const response = await runQueryWithFallback(prompt, config, true, "anthropic", mayaOptions);
         try {
           const result = robustJSONParse(response);
