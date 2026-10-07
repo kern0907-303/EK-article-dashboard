@@ -1,4 +1,8 @@
-import { normalizeStoryArgumentCopy } from "@/data/skills/story-argument";
+import {
+  getStoryArgumentMainBookTitle,
+  normalizeStoryArgumentBookTitle,
+  normalizeStoryArgumentCopy,
+} from "@/data/skills/story-argument";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 export { buildKnowledgeImportPlan, contentMd5, normalizeKnowledgeRecord, normalizeKnowledgeTags } from "./knowledge-note-core.mjs";
 
@@ -74,11 +78,17 @@ export function applyValidatedKnowledgeCitation(
     .join("\n")
     .trim();
   if (!required) return { content: body, valid: true };
-  const valid = !!note && !!note.title.trim() && !!note.author.trim() && citedTitle === note.title && citedAuthor === note.author &&
-    sourceLines.every((line) => line.trim() === `出處：${note.title}，${note.author}`) &&
-    referencedTitles.every((title) => title === note.title);
+  const sourceLinesMatch = !!note && sourceLines.every((line) => {
+    const value = line.trim().replace(/^出處\s*[：:]\s*/u, "");
+    const match = value.match(/^(.*?)[，,]\s*(.+)$/u);
+    return !!match && normalizeStoryArgumentBookTitle(match[1]) === normalizeStoryArgumentBookTitle(note.title) && match[2].trim() === note.author.trim();
+  });
+  const valid = !!note && !!note.title.trim() && !!note.author.trim() &&
+    typeof citedTitle === "string" && normalizeStoryArgumentBookTitle(citedTitle) === normalizeStoryArgumentBookTitle(note.title) &&
+    citedAuthor === note.author && sourceLinesMatch &&
+    referencedTitles.every((title) => normalizeStoryArgumentBookTitle(title) === normalizeStoryArgumentBookTitle(note.title));
   const source = valid
-    ? stripDashes(stripMarkdown(`出處：${note!.title}，${note!.author}`))
+    ? stripDashes(stripMarkdown(`出處：${getStoryArgumentMainBookTitle(note!.title)}，${note!.author}`))
     : "【需補：引用來源】";
   return { content: [body, source].filter(Boolean).join("\n\n"), valid };
 }

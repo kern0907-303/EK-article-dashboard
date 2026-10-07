@@ -64,6 +64,21 @@ t("來源不存在時強制標示待補，不接受未讀入書籍", applyValida
 t("本篇不引用時不產生【需補】或出處行", !applyValidatedKnowledgeCitation("正文\n出處：編造，作者", "編造", "作者", null, false).content.includes("需補") && !applyValidatedKnowledgeCitation("正文", "", "", null, false).content.includes("出處："));
 t("驗證通過時伺服器固定輸出實際讀入筆記的純文字出處", applyValidatedKnowledgeCitation("正文", record.title, record.author, record, true).content.endsWith(`出處：${record.title}，${record.author}`));
 
+const longTitleRecord = {
+  ...record,
+  title: "黑馬思維：哈佛最推崇的人生計畫，教你成就更好的自己（Dark Horse: Achieving Success Through the Pursuit of Fulfillment）",
+  author: "陶德·羅斯（Todd Rose）、奧吉·歐加斯（Ogi Ogas）",
+};
+const normalizedCitation = applyValidatedKnowledgeCitation(
+  `作者在《黑馬思維》提出一個觀點。\n出處：黑 馬 思維:出版補充，${longTitleRecord.author}`,
+  "《黑馬思維》",
+  longTitleRecord.author,
+  longTitleRecord,
+  true
+);
+t("正文主書名與資料庫長書名正規化後通過驗證，不再誤標需補", normalizedCitation.valid && !normalizedCitation.content.includes("【需補：引用來源】") && normalizedCitation.content.endsWith(`出處：黑馬思維，${longTitleRecord.author}`));
+t("書名標點、空白與副標題差異只正規化書名，不放寬作者驗證", !applyValidatedKnowledgeCitation("正文《黑馬思維》", "黑馬思維", "不同作者", longTitleRecord, true).valid);
+
 const plain = applyValidatedKnowledgeCitation("### **小標**\n情緒起伏——值得理解。", "", "", null, false).content;
 t("輸出清除破折號與 Markdown 符號", !/[—―─━═–－#*`]/.test(plain));
 
