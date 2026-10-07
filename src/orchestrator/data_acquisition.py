@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..database import save_object, add_relation, get_objects_by_type, get_object
 
 OPENAI_COMPATIBILITY_NOTES = []
+OPENAI_DAILY_DECISION_DIAGNOSTICS = []
 
 # A list of 100 extremely reliable, open websites/blogs that rarely block script crawlers
 REAL_DOMAINS = [
@@ -703,6 +704,20 @@ class OpenAIRequestError(RuntimeError):
         super().__init__(f"OpenAI {prefix}{detail}")
 
 
+class OpenAIDecisionResponseError(OpenAIRequestError):
+    def __init__(self, finish_reason, content, compatibility_note=None):
+        self.status = 200
+        self.finish_reason = _safe_plain_text(finish_reason or "unknown", 80)
+        self.content_length = len(content or "")
+        self.content_preview = _safe_plain_text(content or "", 200)
+        self.compatibility_note = compatibility_note
+        preview = self.content_preview or "（空白）"
+        self.error_message = _safe_plain_text(
+            f"每日決策 JSON 解析失敗，finish reason {self.finish_reason}，content 長度 {self.content_length}，content 前 200 字 {preview}"
+        )
+        RuntimeError.__init__(self, self.error_message)
+
+
 def _openai_error_fields(error):
     raw = error.read().decode("utf-8", errors="replace")
     try:
@@ -717,7 +732,7 @@ def _openai_error_fields(error):
 
 
 def _unsupported_openai_parameter(payload, param, code, message):
-    supported_names = ("max_tokens", "max_completion_tokens", "temperature", "response_format")
+    supported_names = ("max_tokens", "max_completion_tokens", "temperature", "response_format", "reasoning_effort")
     text = str(message or "").lower()
     code = str(code or "").lower()
     unsupported = any(term in text or term in code for term in (
@@ -741,7 +756,83 @@ def _openai_compatibility_fallback(payload, param):
     if param in ("temperature", "response_format"):
         retry_payload.pop(param, None)
         return retry_payload, f"移除不支援的 {param} 參數"
+    if param == "reasoning_effort":
+        retry_payload.pop(param, None)
+        return retry_payload, "移除不支援的 reasoning_effort 參數"
     return None, None
+
+
+def _extract_first_json_object(content):
+    text = re.sub(r"```\s*(?:json)?", "", str(content or ""), flags=re.IGNORECASE)
+    text = text.replace("```", "")
+    cursor = 0
+    while True:
+        index = text.find("{", cursor)
+        if index < 0:
+            break
+        depth = 0
+        in_string = False
+        escaped = False
+        end = None
+        for position in range(index, len(text)):
+            character = text[position]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    end = position + 1
+                    break
+        if end is None:
+            break
+        try:
+            value = json.loads(text[index:end])
+        except json.JSONDecodeError:
+            cursor = end
+            continue
+        if isinstance(value, dict):
+            return value
+        cursor = end
+    raise ValueError("回覆中找不到完整 JSON 物件")
+
+
+def _parse_first_json_object(content):
+    if not content or not str(content).strip():
+        raise ValueError("回覆內容為空")
+    try:
+        value = json.loads(content)
+        if isinstance(value, dict):
+            return value
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return _extract_first_json_object(content)
+
+
+def _openai_usage_diagnostic(usage):
+    usage = usage if isinstance(usage, dict) else {}
+    completion_details = usage.get("completion_tokens_details") or {}
+    if not isinstance(completion_details, dict):
+        completion_details = {}
+    return _safe_plain_text(
+        "prompt tokens " + str(usage.get("prompt_tokens", "unknown"))
+        + "，completion tokens " + str(usage.get("completion_tokens", "unknown"))
+        + "，total tokens " + str(usage.get("total_tokens", "unknown"))
+        + "，reasoning tokens " + str(completion_details.get("reasoning_tokens", "unknown"))
+    )
+
+
+def _openai_daily_diagnostic_summary():
+    return "；".join(OPENAI_DAILY_DECISION_DIAGNOSTICS) if OPENAI_DAILY_DECISION_DIAGNOSTICS else "尚未取得每日決策回應"
 
 
 def _openai_chat_completion(payload, api_key, timeout=45, retry_transient=False):
@@ -855,16 +946,39 @@ You MUST return a JSON object with this exact format (do not include any markdow
             {"role": "user", "content": f"Articles:\n{articles_text}"}
         ],
         "response_format": {"type": "json_object"},
-        "max_completion_tokens": 1500
+        "max_completion_tokens": 6000,
+        "reasoning_effort": "low",
     }
 
-    res, compatibility_note = _openai_chat_completion(payload, api_key, timeout=45)
-    _record_openai_compatibility("每日決策", compatibility_note)
-    response_text = res['choices'][0]['message']['content'].strip()
-    try:
-        data = json.loads(response_text)
-    except json.JSONDecodeError:
-        raise OpenAIRequestError(200, response_text or "模型回覆不是有效 JSON", compatibility_note) from None
+    data = None
+    final_res = None
+    for attempt in range(2):
+        res, compatibility_note = _openai_chat_completion(payload, api_key, timeout=45)
+        _record_openai_compatibility("每日決策", compatibility_note)
+        choices = res.get("choices") if isinstance(res, dict) else None
+        choice = choices[0] if isinstance(choices, list) and choices else {}
+        message = choice.get("message") if isinstance(choice, dict) else {}
+        response_text = message.get("content") if isinstance(message, dict) else ""
+        response_text = response_text if isinstance(response_text, str) else ""
+        finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else None
+        usage = res.get("usage", {}) if isinstance(res, dict) else {}
+        diagnostic = _safe_plain_text(
+            f"Attempt {attempt + 1}，finish reason {finish_reason or 'unknown'}，{_openai_usage_diagnostic(usage)}"
+        )
+        OPENAI_DAILY_DECISION_DIAGNOSTICS.append(diagnostic)
+        try:
+            data = _parse_first_json_object(response_text)
+            final_res = res
+            break
+        except ValueError:
+            if finish_reason == "length" and attempt == 0:
+                payload["max_completion_tokens"] = 8000
+                continue
+            raise OpenAIDecisionResponseError(finish_reason, response_text, compatibility_note) from None
+
+    if data is None or final_res is None:
+        last_choice = choice if isinstance(choice, dict) else {}
+        raise OpenAIDecisionResponseError(last_choice.get("finish_reason"), response_text, compatibility_note)
 
     # Enforce forbidden terms replacement
     for topic in data.get("recommended_topics", []):
@@ -872,7 +986,7 @@ You MUST return a JSON object with this exact format (do not include any markdow
             if term in topic["topic"]:
                 topic["topic"] = topic["topic"].replace(term, "狀態")
 
-    usage = res.get("usage", {})
+    usage = final_res.get("usage", {})
     prompt_tokens = usage.get("prompt_tokens", 0)
     completion_tokens = usage.get("completion_tokens", 0)
     total_tokens = usage.get("total_tokens", 0)
@@ -1761,6 +1875,7 @@ def run_daily_production_run():
     import subprocess
 
     OPENAI_COMPATIBILITY_NOTES.clear()
+    OPENAI_DAILY_DECISION_DIAGNOSTICS.clear()
     
     # 1. Safe Env Loading
     if os.path.exists(".env"):
@@ -1794,10 +1909,9 @@ def run_daily_production_run():
     smoke_errors = run_api_smoke_check()
     failed_api_calls = [f"{provider}: {reason}" for provider, reason in smoke_errors.items() if reason]
     alert_status = "NOT_NEEDED"
-    if failed_api_calls:
-        alert_status = send_daily_api_alert(today_str, smoke_errors, not bool(smoke_errors["OpenAI"]))
 
     if smoke_errors["OpenAI"]:
+        alert_status = send_daily_api_alert(today_str, smoke_errors, False)
         status = "DAILY_RUN_FAILED"
         run_summary = f"""# Run Summary
 Run Status: {status}
@@ -1806,6 +1920,7 @@ Database Backup: {db_backup_status}
 Report Provider: None
 Provider Switch: No
 OpenAI Compatibility: {_openai_compatibility_summary()}
+OpenAI Daily Decision Response: {_openai_daily_diagnostic_summary()}
 OpenAI Smoke Test: {smoke_errors['OpenAI']}
 Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
 Telegram Alert: {alert_status}
@@ -1894,6 +2009,7 @@ Report Provider: None
 Provider Switch: No
 OpenAI Compatibility: {_openai_compatibility_summary()}
 OpenAI Smoke Test: PASS
+OpenAI Daily Decision Response: {_openai_daily_diagnostic_summary()}
 OpenAI Daily Decision: {_safe_plain_text(daily_error)}
 Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
 Telegram Alert: {alert_status}
@@ -1904,6 +2020,9 @@ Error: OpenAI：{_safe_plain_text(daily_error)}
             f.write(run_summary)
         print("Daily Production Run stopped because the OpenAI daily decision failed.")
         return False
+
+    if smoke_errors["Anthropic"]:
+        alert_status = send_daily_api_alert(today_str, smoke_errors, True)
     
     rec_topics = decision_data.get("recommended_topics", [])
     rejected_topics = decision_data.get("rejected_topics", [])
@@ -2193,6 +2312,7 @@ Telegram Delivery: PENDING
 Report Provider: OpenAI
 Provider Switch: No
 OpenAI Compatibility: {_openai_compatibility_summary()}
+OpenAI Daily Decision Response: {_openai_daily_diagnostic_summary()}
 OpenAI Smoke Test: PASS
 Anthropic Smoke Test: {smoke_errors['Anthropic'] or 'PASS'}
 Telegram Alert: {alert_status}

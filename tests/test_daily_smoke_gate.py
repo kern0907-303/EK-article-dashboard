@@ -47,7 +47,7 @@ class DailySmokeGateTests(unittest.TestCase):
         self.assertEqual(payload["max_completion_tokens"], 64)
         self.assertNotIn("max_tokens", payload)
 
-    def test_daily_decision_uses_max_completion_tokens_1500_without_legacy_default(self):
+    def test_daily_decision_uses_max_completion_tokens_6000_and_reasoning_low(self):
         requests = []
         response_body = json.dumps({"choices": [{"message": {"content": '{"recommended_topics": [], "rejected_topics": []}'}}], "usage": {}}).encode()
 
@@ -62,7 +62,8 @@ class DailySmokeGateTests(unittest.TestCase):
         with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock", "OPENAI_MODEL": "mock-model"}, clear=True), mock.patch.object(daily.urllib.request, "urlopen", side_effect=urlopen):
             daily.call_real_ai_daily_decision([], config)
         payload = json.loads(requests[0].data)
-        self.assertEqual(payload["max_completion_tokens"], 1500)
+        self.assertEqual(payload["max_completion_tokens"], 6000)
+        self.assertEqual(payload["reasoning_effort"], "low")
         self.assertNotIn("max_tokens", payload)
 
     def test_unsupported_parameter_compatibility_fallback_retries_once(self):
@@ -71,6 +72,7 @@ class DailySmokeGateTests(unittest.TestCase):
             ("max_tokens", 64, "max_completion_tokens"),
             ("temperature", 0.2, None),
             ("response_format", {"type": "json_object"}, None),
+            ("reasoning_effort", "low", None),
         )
         for param, value, replacement in cases:
             with self.subTest(param=param):
@@ -132,6 +134,82 @@ class DailySmokeGateTests(unittest.TestCase):
                 daily.call_real_ai_daily_decision([], config)
         self.assertIn("not json", raised.exception.error_message)
         self.assertNotIn("mock-openai-credential", raised.exception.error_message)
+
+    def test_empty_daily_decision_content_has_finish_usage_and_safe_preview(self):
+        config = {
+            "focus_brand": "NAS", "campaign": "campaign", "target_audience": "audience",
+            "focus_product": "product", "cta": "cta", "forbidden_terms": [],
+        }
+        body = json.dumps({
+            "choices": [{"finish_reason": "stop", "message": {"content": ""}}],
+            "usage": {"prompt_tokens": 31, "completion_tokens": 22, "total_tokens": 53,
+                      "completion_tokens_details": {"reasoning_tokens": 17}},
+        }).encode()
+        daily.OPENAI_DAILY_DECISION_DIAGNOSTICS.clear()
+        with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock", "OPENAI_MODEL": "mock-model"}, clear=True), \
+             mock.patch.object(daily.urllib.request, "urlopen", return_value=_Response(body)):
+            with self.assertRaises(daily.OpenAIDecisionResponseError) as raised:
+                daily.call_real_ai_daily_decision([], config)
+        self.assertIn("finish reason stop", raised.exception.error_message)
+        self.assertIn("content 長度 0", raised.exception.error_message)
+        self.assertIn("content 前 200 字", raised.exception.error_message)
+        self.assertIn("reasoning tokens 17", daily._openai_daily_diagnostic_summary())
+
+    def test_fenced_json_is_extracted_without_retry(self):
+        config = {
+            "focus_brand": "NAS", "campaign": "campaign", "target_audience": "audience",
+            "focus_product": "product", "cta": "cta", "forbidden_terms": [],
+        }
+        result = {"recommended_topics": [], "rejected_topics": []}
+        body = json.dumps({"choices": [{"finish_reason": "stop", "message": {
+            "content": "結果如下：\n```json\n" + json.dumps(result) + "\n```\n完成"
+        }}], "usage": {}}).encode()
+        daily.OPENAI_DAILY_DECISION_DIAGNOSTICS.clear()
+        with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock", "OPENAI_MODEL": "mock-model"}, clear=True), \
+             mock.patch.object(daily.urllib.request, "urlopen", return_value=_Response(body)) as opened:
+            parsed, *_ = daily.call_real_ai_daily_decision([], config)
+        self.assertEqual(parsed, result)
+        self.assertEqual(opened.call_count, 1)
+
+    def test_length_response_retries_once_with_8000_tokens(self):
+        config = {
+            "focus_brand": "NAS", "campaign": "campaign", "target_audience": "audience",
+            "focus_product": "product", "cta": "cta", "forbidden_terms": [],
+        }
+        truncated = json.dumps({"choices": [{"finish_reason": "length", "message": {"content": '{"recommended_topics":[{"topic":"truncated"}]'}}],
+                               "usage": {"completion_tokens_details": {"reasoning_tokens": 410}}}).encode()
+        success = json.dumps({"choices": [{"finish_reason": "stop", "message": {
+            "content": '{"recommended_topics": [], "rejected_topics": []}'
+        }}], "usage": {"completion_tokens_details": {"reasoning_tokens": 28}}}).encode()
+        requests = []
+
+        def urlopen(request, timeout):
+            requests.append(json.loads(request.data))
+            return _Response(truncated if len(requests) == 1 else success)
+
+        daily.OPENAI_DAILY_DECISION_DIAGNOSTICS.clear()
+        with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock", "OPENAI_MODEL": "mock-model"}, clear=True), \
+             mock.patch.object(daily.urllib.request, "urlopen", side_effect=urlopen):
+            daily.call_real_ai_daily_decision([], config)
+        self.assertEqual([payload["max_completion_tokens"] for payload in requests], [6000, 8000])
+        self.assertEqual(len(requests), 2)
+        summary = daily._openai_daily_diagnostic_summary()
+        self.assertIn("reasoning tokens 410", summary)
+        self.assertIn("reasoning tokens 28", summary)
+
+    def test_length_response_stops_after_one_8000_token_retry(self):
+        config = {
+            "focus_brand": "NAS", "campaign": "campaign", "target_audience": "audience",
+            "focus_product": "product", "cta": "cta", "forbidden_terms": [],
+        }
+        body = json.dumps({"choices": [{"finish_reason": "length", "message": {"content": ""}}], "usage": {}}).encode()
+        with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock", "OPENAI_MODEL": "mock-model"}, clear=True), \
+             mock.patch.object(daily.urllib.request, "urlopen", side_effect=[_Response(body), _Response(body), _Response(body)]) as opened:
+            with self.assertRaises(daily.OpenAIDecisionResponseError) as raised:
+                daily.call_real_ai_daily_decision([], config)
+        self.assertEqual(opened.call_count, 2)
+        self.assertIn("finish reason length", raised.exception.error_message)
+        self.assertIn("content 長度 0", raised.exception.error_message)
 
     def test_telegram_disabled_is_not_reported_as_delivered(self):
         self.assertEqual(daily._daily_telegram_delivery_status("TELEGRAM_DISABLED: disabled", "", 0), "DISABLED")
@@ -195,15 +273,24 @@ class DailySmokeGateTests(unittest.TestCase):
                 finally:
                     os.chdir(old)
 
-    def test_anthropic_only_failure_continues_and_warns_once(self):
+    def test_anthropic_warning_and_decision_error_share_one_alert(self):
         with tempfile.TemporaryDirectory() as directory:
             old = daily.os.getcwd()
             daily.os.chdir(directory)
+            decision_error = daily.OpenAIRequestError(400, "決策回覆失敗")
             try:
-                with mock.patch.object(daily, "run_api_smoke_check", return_value={"OpenAI": None, "Anthropic": "餘額不足 (HTTP 400)"}), mock.patch.object(daily, "send_daily_api_alert", return_value="SUCCESS") as alert, mock.patch.object(daily, "verify_sources"), mock.patch.object(daily, "fetch_real_content_eligible", return_value=(0, [])), mock.patch.object(daily, "load_brand_strategy_config", return_value={}), mock.patch.object(daily, "get_objects_by_type", return_value=[]), mock.patch.object(daily, "call_real_ai_daily_decision", side_effect=RuntimeError("reached report stage")):
-                    with self.assertRaisesRegex(RuntimeError, "reached report stage"):
-                        daily.run_daily_production_run()
+                with mock.patch.object(daily, "run_api_smoke_check", return_value={"OpenAI": None, "Anthropic": "餘額不足 (HTTP 400)"}), \
+                     mock.patch.object(daily, "send_daily_api_alert", return_value="SUCCESS") as alert, \
+                     mock.patch.object(daily, "verify_sources"), \
+                     mock.patch.object(daily, "fetch_real_content_eligible", return_value=(0, [])), \
+                     mock.patch.object(daily, "load_brand_strategy_config", return_value={}), \
+                     mock.patch.object(daily, "get_objects_by_type", return_value=[]), \
+                     mock.patch.object(daily, "call_real_ai_daily_decision", side_effect=decision_error) as decision:
+                    self.assertFalse(daily.run_daily_production_run())
+                decision.assert_called_once()
                 self.assertEqual(alert.call_count, 1)
+                self.assertIn("決策回覆失敗", alert.call_args.args[1]["OpenAI"])
+                self.assertIn("餘額不足", alert.call_args.args[1]["Anthropic"])
             finally:
                 daily.os.chdir(old)
 
@@ -211,7 +298,14 @@ class DailySmokeGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             old = daily.os.getcwd()
             daily.os.chdir(directory)
-            error = daily.OpenAIRequestError(400, "unsupported mock-openai-credential " + "x" * 240)
+            error = daily.OpenAIDecisionResponseError("length", "mock-openai-credential " + "x" * 240)
+
+            def fail_daily_decision(*_args):
+                daily.OPENAI_DAILY_DECISION_DIAGNOSTICS.append(
+                    "Attempt 1，finish reason length，reasoning tokens 17"
+                )
+                raise error
+
             try:
                 with mock.patch.dict(daily.os.environ, {"OPENAI_API_KEY": "mock-openai-credential"}), \
                      mock.patch.object(daily, "run_api_smoke_check", return_value={"OpenAI": None, "Anthropic": None}), \
@@ -220,7 +314,7 @@ class DailySmokeGateTests(unittest.TestCase):
                      mock.patch.object(daily, "fetch_real_content_eligible", return_value=(0, [])), \
                      mock.patch.object(daily, "load_brand_strategy_config", return_value={}), \
                      mock.patch.object(daily, "get_objects_by_type", return_value=[]), \
-                     mock.patch.object(daily, "call_real_ai_daily_decision", side_effect=error):
+                     mock.patch.object(daily, "call_real_ai_daily_decision", side_effect=fail_daily_decision):
                     self.assertFalse(daily.run_daily_production_run())
                 self.assertEqual(alert.call_count, 1)
                 alert_errors = alert.call_args.args[1]
@@ -230,6 +324,9 @@ class DailySmokeGateTests(unittest.TestCase):
                 self.assertIn(error.error_message, summary)
                 self.assertNotIn("mock-openai-credential", summary)
                 self.assertIn("DAILY_RUN_FAILED", summary)
+                self.assertIn("finish reason length", summary)
+                self.assertIn("content 長度 263", summary)
+                self.assertIn("reasoning tokens 17", summary)
             finally:
                 daily.os.chdir(old)
 
