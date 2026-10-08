@@ -5,7 +5,7 @@ import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
-import { getWritingFrameworkOptions, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
+import { getWritingFrameworkOptions, getStoryArgumentSelectionError, isStoryArgumentCitationEligible, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
 import type { KnowledgeNoteDirectoryEntry } from "@/lib/knowledge-note-utils";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
@@ -54,6 +54,16 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const brandOverrideRef = useRef(false);
   const currentBrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
   const guardBody = () => ({ brandKey: currentBrandKey, confirmBrandMismatch: brandOverrideRef.current });
+  const validateStoryArgumentSelection = () => {
+    const selection = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis, storyCitationMode, selectedKnowledgeNoteId);
+    let error = getStoryArgumentSelectionError(selection);
+    if (!error && selection?.version === "full" && selection.citationMode === "selected") {
+      const selected = knowledgeNotes.find((note) => note.id === selection.noteId);
+      if (!isStoryArgumentCitationEligible(selected)) error = "指定書籍模式請先選擇一筆中文資料已確認的筆記。";
+    }
+    setStorySelectionError(error || "");
+    return !error;
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -101,6 +111,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [selectedKnowledgeNoteId, setSelectedKnowledgeNoteId] = useState("");
   const [knowledgeNotes, setKnowledgeNotes] = useState<KnowledgeNoteDirectoryEntry[]>([]);
   const [knowledgeNotesError, setKnowledgeNotesError] = useState("");
+  const [storySelectionError, setStorySelectionError] = useState("");
   const [frameworkLoaded, setFrameworkLoaded] = useState(false);
   // 載入上次的框架選擇（放在 effect 內避免伺服器端渲染不一致）
   useEffect(() => {
@@ -379,6 +390,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
   // 文體生成：不經過營運長，直接把「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」送給 Maya
   const handleGenreGenerate = async () => {
+    if (!validateStoryArgumentSelection()) return;
     if (isLoading || isGenerating) return;
     const def = GENRES[genreId];
     if (!def.enabled) {
@@ -414,6 +426,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   };
 
   const runGenreGenerate = async () => {
+    if (!validateStoryArgumentSelection()) return;
     const def = GENRES[genreId];
     const settings: GenreSettings = {
       genre: genreId,
@@ -455,6 +468,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading || isGenerating) return;
+    if (!validateStoryArgumentSelection()) return;
 
     const userText = inputValue.trim();
     const m = findTextMismatch(userText, currentBrandKey, "你的指令");
@@ -467,6 +481,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   };
 
   const runSend = async (userText: string) => {
+    if (!validateStoryArgumentSelection()) return;
     setInputValue("");
     setIsLoading(true);
     setIsGenerating(false);
@@ -908,9 +923,16 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                     <option value="">請選擇一本筆記</option>
                     {[...new Set(knowledgeNotes.map((note) => note.domain))].map((domain) => (
                       <optgroup key={domain} label={KNOWLEDGE_DOMAIN_LABELS[domain] || domain}>
-                        {knowledgeNotes.filter((note) => note.domain === domain).map((note) => (
-                          <option key={note.id} value={note.id}>{note.title}，{note.author}</option>
-                        ))}
+                        {knowledgeNotes.filter((note) => note.domain === domain).map((note) => {
+                          const eligible = isStoryArgumentCitationEligible(note);
+                          return (
+                            <option key={note.id} value={note.id} disabled={!eligible}>
+                              {eligible
+                                ? `《${note.title_zh}》，${note.author_zh}`
+                                : `${note.title_zh ? `《${note.title_zh}》` : "中文書名待確認"}，${note.author_zh || "中文作者待確認"}（中文資料待確認）`}
+                            </option>
+                          );
+                        })}
                       </optgroup>
                     ))}
                   </select>
@@ -918,14 +940,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               )}
             </div>
             <div className="text-[10px] text-slate-500">
-              {storyArgumentVersion === "empathy"
+              {storySelectionError || (storyArgumentVersion === "empathy"
                 ? "共情版不強制引用，也不會加入出處或待補標記。"
                 : storyCitationMode === "none"
                   ? "本篇不引用，不會加入出處或待補標記。"
                   : storyCitationMode === "auto"
                     ? "伺服器會先依書目挑選，再讀取相關內容；引用不符時會標示【需補：引用來源】。"
-                    : knowledgeNotesError || "書目依領域分組；全文僅由伺服器端讀取。若目錄尚未載入，請稍候再選。"}
+                    : knowledgeNotesError || "書目依領域分組；全文僅由伺服器端讀取。若目錄尚未載入，請稍候再選。")}
             </div>
+            {storySelectionError && <div role="alert" className="text-[10px] font-semibold text-rose-300">{storySelectionError}</div>}
             <div className="text-[10px] text-amber-200/80">{STORY_ARGUMENT_GENRE_NOTICE}</div>
           </div>
         )}

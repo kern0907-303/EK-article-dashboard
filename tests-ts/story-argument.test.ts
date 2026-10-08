@@ -1,13 +1,13 @@
 import {
   buildStoryArgumentPrompt,
   getStoryArgumentSections,
-  getStoryArgumentMainBookTitle,
   getStoryArgumentChineseAuthor,
   getStoryArgumentChineseBookTitle,
   getWritingFrameworkOptions,
-  normalizeStoryArgumentBookTitle,
   normalizeStoryArgumentCitationWording,
   normalizeStoryArgumentCopy,
+  isStoryArgumentCitationEligible,
+  getStoryArgumentSelectionError,
   resolveStoryArgumentSelection,
   resolveStoryArgumentThesis,
   shouldIncludeMayaDiagram,
@@ -38,12 +38,12 @@ const empathy = buildStoryArgumentPrompt({ version: "empathy", thesis: "陪伴�
 const full = buildStoryArgumentPrompt({ version: "full", thesis: "陪伴比急著給答案重要" });
 const citedBookPrompt = buildStoryArgumentPrompt(
   { version: "full", thesis: "陪伴比急著給答案重要" },
-  { knowledgeNote: { title: "黑馬思維：哈佛最推崇的人生計畫", author: "陶德·羅斯", content: "筆記全文" } }
+  { knowledgeNote: { title_zh: "黑馬思維", author_zh: "陶德·羅斯", zh_status: "confirmed", content: "筆記全文" } }
 );
 t("共情版只設定前三段且明確禁止第四段", getStoryArgumentSections("empathy").length === 3 && empathy.includes("共情版只寫前三段") && !getStoryArgumentSections("empathy").includes("解決方案"));
 t("完整版依序包含四段", getStoryArgumentSections("full").join("、") === "切入現象、故事、論點支持、解決方案" && full.includes("完整版必須依序寫完四段"));
 t("沒有來源時明確保留引用來源標記", full.includes("【需補：引用來源】") && full.includes("不得編造出處"));
-t("引用提示只要求正文使用主書名與自然作者說法，並讓全名只出現一次", citedBookPrompt.includes("陶德·羅斯在《黑馬思維》提出") && citedBookPrompt.includes("正文中作者全名只出現一次") && citedBookPrompt.includes("完整 title 與 author"));
+t("引用提示只要求正文使用已確認的中文欄位，英文欄位不參與引用", citedBookPrompt.includes("陶德·羅斯在《黑馬思維》提出") && citedBookPrompt.includes("正文中作者全名只出現一次") && citedBookPrompt.includes("只使用 title_zh 與 author_zh"));
 t("引用措辭提示統一使用提出並禁止評價書籍或觀點", full.includes("引用動詞一律使用「提出」") && full.includes("最著名的") && full.includes("一致認為"));
 t("提示詞要求單一論點、純文字及文體優先", full.includes("只講一個論點") && full.includes("不得出現 Markdown 符號或任何破折號") && buildStoryArgumentPrompt({ version: "full", thesis: "" }, { genreMode: true }).includes("文體提示詞的段落骨架"));
 t("提示詞禁止輸出段落標籤並要求單論點自我檢查", full.includes("不得出現「切入現象」「故事」「論點支持」「解決方案」作為獨立標題或標籤") && full.includes("若出現第二個獨立論點，刪除它") && full.includes("結尾不得拆成多個並列問題"));
@@ -84,9 +84,7 @@ const titleNormalizedCopy = normalizeStoryArgumentCopy(
   "陶德·羅斯在《黑馬思維：哈佛最推崇的人生計畫，教你成就更好的自己》提出一個觀點。正文外的時間：晚上八點，仍要保留。\n\n作者也在《黑馬思維:出版補充說明》提到相似概念。",
   "理解差異能幫助找到方向"
 );
-t("書名號內的全形與半形冒號副標題都會移除，書名號外正文冒號保留", titleNormalizedCopy.includes("《黑馬思維》") && !titleNormalizedCopy.includes("哈佛最推崇") && !titleNormalizedCopy.includes("出版補充") && titleNormalizedCopy.includes("時間：晚上八點"));
-t("主書名比對正規化會忽略書名號、空白與全半形差異", normalizeStoryArgumentBookTitle("《ＡＢＣ　書：副標》") === normalizeStoryArgumentBookTitle("ABC 書"));
-t("主書名提取只取第一個全形或半形冒號之前", getStoryArgumentMainBookTitle("《黑馬思維:副標題》") === "黑馬思維");
+t("故事論點後處理不再從引用正文剝除副標題，正文冒號照常保留", titleNormalizedCopy.includes("《黑馬思維：哈佛最推崇的人生計畫，教你成就更好的自己》") && titleNormalizedCopy.includes("《黑馬思維:出版補充說明》") && titleNormalizedCopy.includes("時間：晚上八點"));
 
 const evaluatedCitation = normalizeStoryArgumentCitationWording("作者在《某書》提出一個核心概念是：先辨認感受，再決定下一步。");
 t("含核心概念的引用句會安全改寫為提出", evaluatedCitation.includes("作者在《某書》提出") && !evaluatedCitation.includes("核心概念"));
@@ -102,11 +100,11 @@ const unsafeResult = normalizeStoryArgumentCitationWording(unsafeCitation);
 console.warn = originalWarn;
 t("無法安全改寫的引用句保留原文並記錄內部警告", unsafeResult === unsafeCitation && wordingWarnings === 1);
 
-const chineseTitle = getStoryArgumentChineseBookTitle("黑馬思維：哈佛最推崇的人生計畫（Dark Horse: Achieving Success）");
-const chineseAuthor = getStoryArgumentChineseAuthor("陶德·羅斯（Todd Rose）");
-t("知識庫書名與作者只擷取中文主名稱", chineseTitle === "黑馬思維" && chineseAuthor === "陶德·羅斯");
-t("括號內英文副標含冒號時仍保留中文主書名", getStoryArgumentChineseBookTitle("黑馬思維（Dark Horse: Achieving Success）") === "黑馬思維");
-t("沒有中文書名或作者時不翻譯並回傳空值", getStoryArgumentChineseBookTitle("The Book: Subtitle") === null && getStoryArgumentChineseAuthor("Todd Rose") === null);
+const chineseTitle = getStoryArgumentChineseBookTitle("黑馬思維");
+const chineseAuthor = getStoryArgumentChineseAuthor("陶德·羅斯");
+t("書名與作者只直接使用提供欄位，不解析括號或翻譯英文內容", chineseTitle === "黑馬思維" && chineseAuthor === "陶德·羅斯" && getStoryArgumentChineseBookTitle("黑馬思維（Dark Horse）") === "黑馬思維（Dark Horse）" && getStoryArgumentChineseAuthor("Todd Rose") === "Todd Rose");
+t("只有中文書名、作者皆存在且狀態 confirmed 才符合引用資格", isStoryArgumentCitationEligible({ title_zh: "黑馬思維", author_zh: "陶德·羅斯", zh_status: "confirmed" }) && !isStoryArgumentCitationEligible({ title_zh: "黑馬思維", author_zh: "陶德·羅斯", zh_status: "unverified" }));
+t("指定書籍模式未選書會回傳阻擋提示", getStoryArgumentSelectionError({ version: "full", thesis: "論點", citationMode: "selected" })?.includes("請先選擇") === true);
 
 const originalStory = [
   "開頭段落，原字保留。",

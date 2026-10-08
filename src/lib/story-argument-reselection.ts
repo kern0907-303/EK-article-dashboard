@@ -1,8 +1,11 @@
-import { normalizeStoryArgumentCopy } from "@/data/skills/story-argument";
+import { isStoryArgumentCitationEligible, normalizeStoryArgumentCopy } from "@/data/skills/story-argument";
 
 export interface StoryArgumentNoteIdentity {
   id: string;
   source_file: string;
+  title_zh: string | null;
+  author_zh: string | null;
+  zh_status: string | null;
 }
 
 /** 自動選書排除已用 source_file；明確指定的候選不套用排除規則。 */
@@ -11,9 +14,12 @@ export function chooseStoryArgumentNote<T extends StoryArgumentNoteIdentity>(
   excludedSourceFiles: Iterable<string>,
   selectedNoteId?: string
 ): T | null {
-  if (selectedNoteId) return notes.find((note) => note.id === selectedNoteId) || null;
+  if (selectedNoteId) {
+    const selected = notes.find((note) => note.id === selectedNoteId);
+    return selected && isStoryArgumentCitationEligible(selected) ? selected : null;
+  }
   const excluded = new Set(excludedSourceFiles);
-  return notes.find((note) => !excluded.has(note.source_file)) || null;
+  return notes.find((note) => isStoryArgumentCitationEligible(note) && !excluded.has(note.source_file)) || null;
 }
 
 function isCitationFooter(block: string): boolean {
@@ -53,14 +59,14 @@ export function replaceStoryArgumentSupportParagraph(
 }
 
 /** 只以書目欄位做字面排序，候選摘句會另由伺服器從筆記原文擷取。 */
-export function rankStoryArgumentNoteDirectory<T extends { title: string; author: string; domain: string; subdomain: string }>(
+export function rankStoryArgumentNoteDirectory<T extends { title_zh: string | null; author_zh: string | null; domain: string; subdomain: string }>(
   notes: T[],
   idea: string,
   limit = 5
 ): T[] {
   const terms = idea.toLocaleLowerCase().match(/[a-z0-9]{2,}|[\p{Script=Han}]{2,}/gu) || [];
   const scored = notes.map((note, index) => {
-    const haystack = `${note.title} ${note.author} ${note.domain} ${note.subdomain}`.toLocaleLowerCase();
+    const haystack = `${note.title_zh || ""} ${note.author_zh || ""} ${note.domain} ${note.subdomain}`.toLocaleLowerCase();
     const score = terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
     return { note, index, score };
   });

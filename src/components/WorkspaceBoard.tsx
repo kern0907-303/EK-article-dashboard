@@ -439,7 +439,7 @@ const SocialTabContent = memo(function SocialTabContent({
   const [storyReselectIdea, setStoryReselectIdea] = useState("");
   const [storyReselectMode, setStoryReselectMode] = useState<"auto" | "candidate">("auto");
   const [storyReselectFull, setStoryReselectFull] = useState(false);
-  const [storyCandidates, setStoryCandidates] = useState<Array<{ id: string; title: string; author: string; domain: string; subdomain: string; highlight: string }>>([]);
+  const [storyCandidates, setStoryCandidates] = useState<Array<{ id: string; title_zh: string | null; author_zh: string | null; domain: string; subdomain: string; zh_status: string | null; selectable: boolean; highlight: string }>>([]);
   const [selectedStoryCandidateId, setSelectedStoryCandidateId] = useState("");
   const [isLoadingStoryCandidates, setIsLoadingStoryCandidates] = useState(false);
   const [isReselectingStoryCitation, setIsReselectingStoryCitation] = useState(false);
@@ -1943,7 +1943,7 @@ const SocialTabContent = memo(function SocialTabContent({
       )}
 
       {activeStoryArgumentMeta?.version === "full" && (
-        <section className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-4 space-y-3">
+        <section className="rounded-xl border-2 border-indigo-400/50 bg-indigo-500/10 p-4 shadow-lg shadow-indigo-950/20 ring-1 ring-indigo-400/15 space-y-3">
           <div>
             <h3 className="text-xs font-bold text-indigo-200">重新挑選引用</h3>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-400">用你自己的話寫這篇想表達的重點，系統會依此重新從知識庫挑選。這欄只用於本次生成，不會併入文章或儲存。</p>
@@ -1977,14 +1977,16 @@ const SocialTabContent = memo(function SocialTabContent({
                   type="button"
                   key={candidate.id}
                   onClick={() => setSelectedStoryCandidateId(candidate.id)}
-                  className={`block w-full rounded-lg border p-3 text-left transition ${selectedStoryCandidateId === candidate.id ? "border-indigo-400 bg-indigo-500/10" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}
+                  disabled={!candidate.selectable}
+                  className={`block w-full rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${selectedStoryCandidateId === candidate.id ? "border-indigo-400 bg-indigo-500/10" : candidate.selectable ? "border-slate-800 bg-slate-950/50 hover:border-slate-600" : "border-slate-800 bg-slate-950/30 grayscale"}`}
                 >
                   <span className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-200">
-                    <span>{candidate.title}</span><span className="text-slate-400">作者：{candidate.author}</span>
+                    <span>{candidate.title_zh ? `《${candidate.title_zh}》` : "中文書名待確認"}</span><span className="text-slate-400">作者：{candidate.author_zh || "中文作者待確認"}</span>
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400">{candidate.domain}{candidate.subdomain ? `／${candidate.subdomain}` : ""}</span>
+                    {!candidate.selectable && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-500">中文資料待確認</span>}
                     {usedStoryNoteIds.current.has(candidate.id) && <span className="text-amber-300">剛才用過，仍可明確選取</span>}
                   </span>
-                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">筆記摘句：{candidate.highlight}</span>
+                  {candidate.selectable && <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">筆記摘句：{candidate.highlight}</span>}
                 </button>
               ))}
               {!isLoadingStoryCandidates && storyCandidates.length === 0 && <p className="text-[10px] text-slate-500">目前沒有可顯示的候選筆記。</p>}

@@ -8,9 +8,9 @@ import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
-import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
+import { buildStoryArgumentPrompt, isStoryArgumentCitationEligible, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
 import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
-import { getKnowledgeNoteByCitation, getKnowledgeNoteById, getKnowledgeNoteDirectory, getKnowledgeNoteSelectionDirectory } from "@/lib/knowledge-notes-server";
+import { getKnowledgeNoteById, getKnowledgeNoteDirectory, getKnowledgeNoteSelectionDirectory } from "@/lib/knowledge-notes-server";
 import { chooseStoryArgumentNote, replaceStoryArgumentSupportParagraph } from "@/lib/story-argument-reselection";
 
 // Erick COO Router System Prompt (OpenAI)
@@ -307,28 +307,35 @@ async function resolveStoryArgumentKnowledge(
   const required = selection.version === "full" && citationMode !== "none";
   if (!required) return { required: false, note: null, content: "" };
 
+  if (citationMode === "selected") {
+    if (!selection.noteId?.trim()) throw new Error("指定書籍模式請先選擇一筆中文資料已確認的筆記。");
+    const selected = await getKnowledgeNoteById(selection.noteId);
+    if (!isStoryArgumentCitationEligible(selected)) {
+      throw new Error("指定書籍的中文書名與作者尚未確認，請改選已確認的筆記。");
+    }
+    return { required, note: selected, content: selectRelevantKnowledgeContent(selected.content, topic, 20_000) };
+  }
+
   try {
     let note: KnowledgeNoteRecord | null = null;
-    if (citationMode === "selected" && selection.noteId) {
-      note = await getKnowledgeNoteById(selection.noteId);
-    } else if (citationMode === "auto") {
-      const directory = await getKnowledgeNoteDirectory();
+    if (citationMode === "auto") {
+      const directory = (await getKnowledgeNoteDirectory()).filter(isStoryArgumentCitationEligible);
       if (directory.length > 0) {
-        // 只把 title/author/domain/subdomain 交給選書模型，全文只在選定後由伺服器讀取。
-        const catalog = directory.map(({ title, author, domain, subdomain }) => ({ title, author, domain, subdomain }));
+        // 只把中文書目與分類交給選書模型，全文只在選定後由伺服器讀取。
+        const catalog = directory.map(({ id, title_zh, author_zh, domain, subdomain }) => ({ id, title_zh, author_zh, domain, subdomain }));
         const selectionPrompt = [
-          "請從以下知識筆記目錄挑選一本最貼近使用者主題的筆記。目錄只有書名、作者、domain、subdomain，不含全文。",
-          "只回傳 JSON，欄位必須是 title、author、domain、subdomain，四個值必須逐字取自同一筆目錄。不要補充其他書籍或理由。",
+          "請從以下知識筆記目錄挑選一本最貼近使用者主題且有中文書名與作者的筆記。目錄不含全文。若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。",
+          "若有合適筆記，只回傳 JSON：{\"matched\":true,\"id\":\"目錄中的 id\"}。",
           `文章主題與任務：${topic.slice(0, 10000)}`,
           `可選目錄：${JSON.stringify(catalog)}`,
         ].join("\n\n");
         const response = await runQueryWithFallback(selectionPrompt, config, true, "anthropic", { maxTokens: 1200, timeoutMs: 60000 });
         const parsed = robustJSONParse(response);
-        const candidate = directory.filter((entry) =>
-          parsed?.title === entry.title && parsed?.author === entry.author &&
-          parsed?.domain === entry.domain && parsed?.subdomain === entry.subdomain
-        );
-        if (candidate.length === 1) note = await getKnowledgeNoteByCitation(candidate[0]);
+        const candidate = directory.find((entry) => parsed?.matched === true && parsed?.id === entry.id);
+        if (candidate) {
+          const fetched = await getKnowledgeNoteById(candidate.id);
+          if (isStoryArgumentCitationEligible(fetched)) note = fetched;
+        }
       }
     }
     return { required, note, content: note ? selectRelevantKnowledgeContent(note.content, topic, 20_000) : "" };
@@ -352,7 +359,8 @@ async function resolveReselectionKnowledge(
     if (!directory.length) return { note: null, error: "no_matching_note", topic };
     if (request.mode === "candidate" && request.selectedNoteId) {
       const explicit = chooseStoryArgumentNote(directory, [], request.selectedNoteId);
-      return { note: explicit ? await getKnowledgeNoteById(explicit.id) : null, error: explicit ? null : "no_matching_note", topic };
+      const note = explicit ? await getKnowledgeNoteById(explicit.id) : null;
+      return { note: isStoryArgumentCitationEligible(note) ? note : null, error: isStoryArgumentCitationEligible(note) ? null : "no_matching_note", topic };
     }
 
     const excludedSourceFiles = directory
@@ -360,22 +368,21 @@ async function resolveReselectionKnowledge(
       .map((entry) => entry.source_file);
     const eligible = directory.filter((entry) => chooseStoryArgumentNote([entry], excludedSourceFiles) !== null);
     if (!eligible.length) return { note: null, error: "no_available_notes", topic };
-    const catalog = eligible.map(({ title, author, domain, subdomain }) => ({ title, author, domain, subdomain }));
+    const catalog = eligible.map(({ id, title_zh, author_zh, domain, subdomain }) => ({ id, title_zh, author_zh, domain, subdomain }));
     const selectionPrompt = [
       "你是故事論點框架的知識來源挑選器。僅依據目錄欄位判斷是否有筆記能支持使用者的想法，不得憑記憶補充來源。",
-      "若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。若有，回傳 matched=true 及 title、author、domain、subdomain，四欄必須逐字取自同一筆目錄。只輸出 JSON。",
+      "若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。若有，只回傳 {\"matched\":true,\"id\":\"目錄中的 id\"}。只輸出 JSON。",
       `使用者的想法（只作挑選依據，不得放入文章）：${topic.slice(0, 3000)}`,
       `可選目錄：${JSON.stringify(catalog)}`,
     ].join("\n\n");
     const raw = await runQueryWithFallback(selectionPrompt, config, true, "anthropic", { maxTokens: 1200, timeoutMs: 60000 });
     const parsed = robustJSONParse(raw);
     if (!parsed || parsed.matched !== true) return { note: null, error: "no_matching_note", topic };
-    const candidate = eligible.filter((entry) =>
-      parsed.title === entry.title && parsed.author === entry.author &&
-      parsed.domain === entry.domain && parsed.subdomain === entry.subdomain
-    );
-    if (candidate.length !== 1) return { note: null, error: "no_matching_note", topic };
-    return { note: await getKnowledgeNoteByCitation(candidate[0]), error: null, topic };
+    const candidate = eligible.find((entry) => parsed.id === entry.id);
+    if (!candidate) return { note: null, error: "no_matching_note", topic };
+    const note = await getKnowledgeNoteById(candidate.id);
+    if (!isStoryArgumentCitationEligible(note)) return { note: null, error: "no_matching_note", topic };
+    return { note, error: null, topic };
   } catch (error) {
     console.warn("故事論點重新選書失敗。", error instanceof Error ? error.message : "unknown error");
     return { note: null, error: "selection_failed", topic };
@@ -431,7 +438,7 @@ async function callStoryArgumentReselection(
     };
   }
 
-  const notePrompt = { title: resolved.note.title, author: resolved.note.author, content: noteContent };
+  const notePrompt = { title_zh: resolved.note.title_zh, author_zh: resolved.note.author_zh, zh_status: resolved.note.zh_status, content: noteContent };
   const basePrompt = buildStoryArgumentPrompt(activeSelection, { knowledgeNote: notePrompt, citationRequired: true });
   const taskPrompt = request.rewriteFull
     ? [
@@ -446,7 +453,7 @@ async function callStoryArgumentReselection(
         `原文章（僅供理解論點與故事，不得重寫或輸出）：\n<current_article>\n${request.currentCopy}\n</current_article>`,
         `唯一可用的知識筆記全文節錄：\n<knowledge_note_excerpt>\n${noteContent}\n</knowledge_note_excerpt>`,
         `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「中文作者名在《中文主書名》提出」句型，使用 ${activeSelection.noteId} 所代表筆記的中文書名與作者。不得輸出出處行；伺服器會驗證後補上。不得輸出英文姓名、英文書名、評價詞、Markdown 符號或破折號。若筆記沒有可驗證的中文來源，不得改用英文或自行翻譯。`,
-        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫完整 title\",\"citation_author\":\"知識庫完整 author\"}。citation_title 與 citation_author 必須逐字填入所附筆記欄位。",
+        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫 title_zh\",\"citation_author\":\"知識庫 author_zh\"}。citation_title 與 citation_author 必須逐字填入所附筆記的中文欄位。",
       ].join("\n\n");
 
   const raw = await runQueryWithFallback(`${brandContext}\n\n${taskPrompt}`, config, true, "anthropic", { maxTokens: 12000, timeoutMs: 120000 });
@@ -1105,8 +1112,9 @@ ${brandContext}`;
         genreMode: Boolean(genre?.settings),
         citationRequired: storyKnowledge.required,
         knowledgeNote: storyKnowledge.note ? {
-          title: storyKnowledge.note.title,
-          author: storyKnowledge.note.author,
+          title_zh: storyKnowledge.note.title_zh,
+          author_zh: storyKnowledge.note.author_zh,
+          zh_status: storyKnowledge.note.zh_status,
           content: storyKnowledge.content,
         } : null,
       })}`;

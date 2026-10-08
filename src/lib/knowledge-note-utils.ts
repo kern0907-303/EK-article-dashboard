@@ -1,8 +1,7 @@
 import {
   getStoryArgumentChineseAuthor,
   getStoryArgumentChineseBookTitle,
-  getStoryArgumentMainBookTitle,
-  normalizeStoryArgumentBookTitle,
+  isStoryArgumentCitationEligible,
   normalizeStoryArgumentCopy,
 } from "@/data/skills/story-argument";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
@@ -13,6 +12,9 @@ export interface KnowledgeNoteDirectoryEntry {
   domain: string;
   title: string;
   author: string;
+  title_zh: string | null;
+  author_zh: string | null;
+  zh_status: string | null;
   subdomain: string;
 }
 
@@ -28,7 +30,7 @@ export interface KnowledgeNoteRecord extends KnowledgeNoteDirectoryEntry {
 export type KnowledgeImportPlan<T extends { source_file: string; content_md5: string }> = import("./knowledge-note-core.mjs").KnowledgeImportPlan<T>;
 
 export function toKnowledgeNoteDirectoryEntry(note: KnowledgeNoteRecord): KnowledgeNoteDirectoryEntry {
-  return { id: note.id, domain: note.domain, title: note.title, author: note.author, subdomain: note.subdomain };
+  return { id: note.id, domain: note.domain, title: note.title, author: note.author, title_zh: note.title_zh, author_zh: note.author_zh, zh_status: note.zh_status, subdomain: note.subdomain };
 }
 
 function termsForTopic(topic: string): string[] {
@@ -69,160 +71,44 @@ export function applyValidatedKnowledgeCitation(
   input: string,
   citedTitle: unknown,
   citedAuthor: unknown,
-  note: Pick<KnowledgeNoteRecord, "title" | "author"> | null,
+  note: Pick<KnowledgeNoteRecord, "title_zh" | "author_zh" | "zh_status"> | null,
   required: boolean
 ): { content: string; valid: boolean; citationTitle: string | null; citationAuthor: string | null } {
-  const sourceLines = input.match(/^\s*出處\s*[：:].*$/gm) || [];
-  const body = normalizeStoryArgumentCopy(input)
-    .split("\n")
-    .filter((line) => !/^\s*(?:出處\s*[：:]|【需補：(?:引用來源|中文書名|中文作者名)】)/u.test(line))
-    .join("\n")
-    .trim();
-  if (!required) return { content: body, valid: true, citationTitle: null, citationAuthor: null };
+  const lines = normalizeStoryArgumentCopy(input).split("\n");
+  const isSourceLine = (line: string) => /^\s*出處\s*[：:]/u.test(line);
+  const isCitationLine = (line: string) => line.includes("《") || line.includes("需補");
+  const bodyLines = lines.filter((line) => !isSourceLine(line));
+  if (!required) {
+    return {
+      content: bodyLines.filter((line) => !line.includes("需補")).join("\n").trim(),
+      valid: true,
+      citationTitle: null,
+      citationAuthor: null,
+    };
+  }
 
-  const rawReferencedTitles = [...input.matchAll(/《([^》]{2,})》/gu)].map((match) => match[1].trim());
-  const chineseTitle = note ? getStoryArgumentChineseBookTitle(note.title) : null;
-  const chineseAuthor = note ? getStoryArgumentChineseAuthor(note.author) : null;
-  const titleAliases = note ? citationAliases(note.title) : [];
-  const authorAliases = note ? citationAuthorAliases(note.author) : [];
-  const authorAliasMappings = note ? citationAliasMappings(note.author, chineseAuthor) : [];
-  const sourceLinesMatch = !!note && sourceLines.every((line) => {
-    const value = line.trim().replace(/^出處\s*[：:]\s*/u, "");
-    const canonical = `${chineseAuthor || "【需補：中文作者名】"}，《${chineseTitle || "【需補：中文書名】"}》`;
-    const legacy = value.match(/^(.*?)[，,]\s*(.+)$/u);
-    const legacyTitleMatches = !!legacy && (
-      normalizeStoryArgumentBookTitle(legacy[1]) === normalizeStoryArgumentBookTitle(note.title) ||
-      titleAliases.some((alias) => normalizeAlias(legacy[1]) === normalizeAlias(alias))
-    );
-    const legacyAuthorMatches = !!legacy && (legacy[2].trim() === note.author.trim() || authorAliases.some((alias) => normalizeAlias(legacy[2]) === normalizeAlias(alias)));
-    const legacyMatches = legacyTitleMatches && legacyAuthorMatches;
-    return normalizeCitationLine(value) === normalizeCitationLine(canonical) || legacyMatches;
-  });
-  const citedTitleMatches = !!note && typeof citedTitle === "string" &&
-    normalizeStoryArgumentBookTitle(citedTitle) === normalizeStoryArgumentBookTitle(note.title);
-  const citedAuthorMatches = !!note && citedAuthor === note.author;
-  const rawReferencesMatch = !!note && rawReferencedTitles.every((title) =>
-    normalizeStoryArgumentBookTitle(title) === normalizeStoryArgumentBookTitle(note.title) ||
-    titleAliases.some((alias) => normalizeAlias(title) === normalizeAlias(alias))
-  );
-  const cleanedBody = note
-    ? normalizeCitationIdentifiers(body, note, titleAliases, authorAliasMappings, chineseTitle)
-    : normalizeUnmatchedCitationIdentifiers(body);
-  const referencedTitles = [...cleanedBody.matchAll(/《([^》]{2,})》/g)].map((match) => match[1].trim());
-  const referencesMatch = !!note && referencedTitles.every((title) =>
-    !!chineseTitle && normalizeStoryArgumentBookTitle(title) === normalizeStoryArgumentBookTitle(chineseTitle)
-  );
-  const valid = !!note && !!note.title.trim() && !!note.author.trim() && !!chineseTitle && !!chineseAuthor &&
-    citedTitleMatches && citedAuthorMatches && sourceLinesMatch && referencesMatch && !cleanedBody.includes("【需補：中文");
-  const source = note
-    ? `出處：${chineseAuthor || "【需補：中文作者名】"}，《${chineseTitle || "【需補：中文書名】"}》`
-    : "【需補：引用來源】";
-  const missingSource = note && (!citedTitleMatches || !citedAuthorMatches || !sourceLinesMatch || !referencesMatch)
-    ? (!rawReferencesMatch || !citedTitleMatches || !citedAuthorMatches || !sourceLinesMatch ? ["【需補：引用來源】"] : [])
-    : [];
-  const normalizedSource = stripDashes(stripMarkdown(source));
+  const titleZh = note ? getStoryArgumentChineseBookTitle(note.title_zh) : null;
+  const authorZh = note ? getStoryArgumentChineseAuthor(note.author_zh) : null;
+  const eligible = isStoryArgumentCitationEligible(note);
+  const citationLines = bodyLines.filter(isCitationLine);
+  const expectedPhrase = titleZh && authorZh ? `${authorZh}在《${titleZh}》提出` : "";
+  const citedTitles = citationLines.flatMap((line) => [...line.matchAll(/《([^》]+)》/gu)].map((match) => match[1].trim()));
+  const citationHasOnlyChinese = Boolean(titleZh && authorZh) && !/[A-Za-z]/u.test(`${titleZh}${authorZh}`);
+  const metadataMatches = Boolean(eligible && citedTitle === titleZh && citedAuthor === authorZh);
+  const bodyMatches = Boolean(expectedPhrase && citationLines.length > 0 && citedTitles.length > 0 &&
+    citedTitles.every((title) => title === titleZh) && citationLines.every((line) => line.includes(expectedPhrase)));
+  const noPartialMarkers = !bodyLines.some((line) => /【需補：(?:中文書名|中文作者名)/u.test(line));
+  const valid = Boolean(eligible && citationHasOnlyChinese && metadataMatches && bodyMatches && noPartialMarkers);
+  const bodyWithoutCitation = bodyLines.filter((line) => !isCitationLine(line)).join("\n").trim();
+  const body = valid ? bodyLines.join("\n").trim() : bodyWithoutCitation;
+  const source = valid ? `出處：${authorZh}，《${titleZh}》` : "【需補：引用來源】";
+  const canonical = stripDashes(stripMarkdown(source));
   return {
-    content: [cleanedBody, normalizedSource, ...missingSource].filter(Boolean).join("\n\n"),
+    content: [body, canonical].filter(Boolean).join("\n\n"),
     valid,
-    citationTitle: chineseTitle,
-    citationAuthor: chineseAuthor,
+    citationTitle: valid ? titleZh : null,
+    citationAuthor: valid ? authorZh : null,
   };
-}
-
-function normalizeCitationLine(value: string): string {
-  return value.normalize("NFKC").replace(/[\p{White_Space}《》]/gu, "").toLocaleLowerCase();
-}
-
-function citationAliases(value: string): string[] {
-  const aliases = new Set<string>();
-  for (const match of value.matchAll(/[（(]([^）)]*[A-Za-z][^）)]*)[）)]/gu)) {
-    const alias = match[1].trim();
-    if (alias) {
-      aliases.add(alias);
-      const main = alias.split(/[：:]/u)[0].trim();
-      if (main) aliases.add(main);
-    }
-  }
-  const withoutChinese = value.replace(/[\p{Script=Han}\p{P}\p{White_Space}]/gu, " ").trim();
-  if (/[A-Za-z]/u.test(withoutChinese)) aliases.add(withoutChinese.replace(/\s+/gu, " "));
-  return [...aliases].filter((alias) => /[A-Za-z]/u.test(alias)).sort((a, b) => b.length - a.length);
-}
-
-function citationAliasMappings(value: string, fallbackChinese: string | null): Array<{ alias: string; chinese: string | null }> {
-  const mappings = new Map<string, string | null>();
-  for (const part of value.split(/[、,，;；]/u)) {
-    const chinese = getStoryArgumentChineseAuthor(part) || fallbackChinese;
-    for (const alias of citationAuthorAliases(part)) mappings.set(alias, chinese);
-  }
-  return [...mappings.entries()].map(([alias, chinese]) => ({ alias, chinese })).sort((a, b) => b.alias.length - a.alias.length);
-}
-
-function citationAuthorAliases(value: string): string[] {
-  const aliases = new Set(citationAliases(value));
-  for (const match of value.matchAll(/[（(]([^）)]*[A-Za-z][^）)]*)[）)]/gu)) {
-    const words = match[1].trim().split(/\s+/u);
-    if (words.length > 1) aliases.add(words[words.length - 1]);
-  }
-  return [...aliases].sort((a, b) => b.length - a.length);
-}
-
-function replaceLiteralCaseInsensitive(text: string, from: string, to: string): string {
-  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return text.replace(new RegExp(escaped, "giu"), to);
-}
-
-/** 只清理含書名號的引用句；一般正文中的英文或冒號保持原樣。 */
-function normalizeCitationIdentifiers(
-  input: string,
-  note: Pick<KnowledgeNoteRecord, "title" | "author">,
-  titleAliases: string[],
-  authorAliasMappings: Array<{ alias: string; chinese: string | null }>,
-  chineseTitle: string | null
-): string {
-  return input.split("\n").map((line) => {
-    if (!line.includes("《")) return line;
-    let output = line;
-    const originalBook = output.match(/《([^》]+)》/u)?.[1]?.trim() || "";
-    const normalizedBook = normalizeStoryArgumentBookTitle(originalBook);
-    const knownBook = normalizedBook === normalizeStoryArgumentBookTitle(note.title) ||
-      normalizedBook === normalizeStoryArgumentBookTitle(getStoryArgumentMainBookTitle(note.title)) ||
-      titleAliases.some((alias) => normalizeAlias(originalBook) === normalizeAlias(alias));
-    if (/[A-Za-z]/u.test(originalBook)) {
-      output = output.replace(/《[^》]+》/u, `《${knownBook && chineseTitle ? chineseTitle : "【需補：中文書名】"}》`);
-    } else if (knownBook && chineseTitle) {
-      output = output.replace(/《[^》]+》/u, `《${chineseTitle}》`);
-    } else if (knownBook && !chineseTitle) {
-      output = output.replace(/《[^》]+》/u, "《【需補：中文書名】》");
-    }
-
-    for (const mapping of authorAliasMappings) output = replaceLiteralCaseInsensitive(output, mapping.alias, mapping.chinese || "【需補：中文作者名】");
-    output = output.replace(/\b(?:Dr\.?|Prof\.?)\s*(?=[\p{Script=Han}【])/giu, "");
-    const prefix = output.split("《")[0];
-    if (/[A-Za-z]/u.test(prefix)) {
-      const safePrefix = prefix.replace(/(?:Dr\.?|Prof\.?\s+)?[A-Za-z][A-Za-z.'’-]*(?:\s+[A-Za-z][A-Za-z.'’-]*)*/giu, "【需補：中文作者名】");
-      output = safePrefix + output.slice(prefix.length);
-    }
-    const remainingBook = output.match(/《([^》]+)》/u)?.[1] || "";
-    if (/[A-Za-z]/u.test(remainingBook)) output = output.replace(/《[^》]+》/u, "【需補：中文書名】");
-    return output;
-  }).join("\n");
-}
-
-function normalizeAlias(value: string): string {
-  return value.normalize("NFKC").replace(/[\p{White_Space}\p{P}]/gu, "").toLocaleLowerCase();
-}
-
-/** 沒有讀入筆記時，不讓未驗證的英文人名或書名出現在引用句。 */
-function normalizeUnmatchedCitationIdentifiers(input: string): string {
-  return input.split("\n").map((line) => {
-    if (!line.includes("《")) return line;
-    let output = line.replace(/《[^》]*[A-Za-z][^》]*》/gu, "《【需補：中文書名】》");
-    const beforeBook = output.split("《")[0];
-    if (/[A-Za-z]/u.test(beforeBook)) {
-      output = beforeBook.replace(/(?:Dr\.?|Prof\.?\s+)?[A-Za-z][A-Za-z.'’-]*(?:\s+[A-Za-z][A-Za-z.'’-]*)*/giu, "【需補：中文作者名】") + output.slice(beforeBook.length);
-    }
-    return output;
-  }).join("\n");
 }
 
 /** 取筆記正文第一句原文作候選摘句，不交由模型生成摘要。 */

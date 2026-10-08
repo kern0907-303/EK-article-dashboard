@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callErickCOO } from "@/lib/ai-provider";
 import { isGuardBrandKey, scanChatPayload, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
+import { getStoryArgumentSelectionError, type StoryArgumentSelection } from "@/data/skills/story-argument";
 
 export async function POST(req: NextRequest) {
   try {
     const { history, brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre, storyArgument, storyReselection, brandKey, confirmBrandMismatch } = await req.json();
+
+    const storySelectionError = getStoryArgumentSelectionError(storyArgument as StoryArgumentSelection | undefined);
+    if (storySelectionError) {
+      return NextResponse.json({ error: storySelectionError, code: "STORY_ARGUMENT_SELECTION_REQUIRED" }, { status: 400 });
+    }
 
     if (stage !== "expert" && stage !== "adapt" && (!history || !Array.isArray(history))) {
       return NextResponse.json(
