@@ -4,6 +4,7 @@ import {
   getStoryArgumentMainBookTitle,
   getWritingFrameworkOptions,
   normalizeStoryArgumentBookTitle,
+  normalizeStoryArgumentCitationWording,
   normalizeStoryArgumentCopy,
   resolveStoryArgumentSelection,
   resolveStoryArgumentThesis,
@@ -40,6 +41,7 @@ t("共情版只設定前三段且明確禁止第四段", getStoryArgumentSection
 t("完整版依序包含四段", getStoryArgumentSections("full").join("、") === "切入現象、故事、論點支持、解決方案" && full.includes("完整版必須依序寫完四段"));
 t("沒有來源時明確保留引用來源標記", full.includes("【需補：引用來源】") && full.includes("不得編造出處"));
 t("引用提示只要求正文使用主書名與自然作者說法，並讓全名只出現一次", citedBookPrompt.includes("陶德·羅斯在《黑馬思維》提出") && citedBookPrompt.includes("正文中作者全名只出現一次") && citedBookPrompt.includes("完整 title 與 author"));
+t("引用措辭提示統一使用提出並禁止評價書籍或觀點", full.includes("引用動詞一律使用「提出」") && full.includes("最著名的") && full.includes("一致認為"));
 t("提示詞要求單一論點、純文字及文體優先", full.includes("只講一個論點") && full.includes("不得出現 Markdown 符號或任何破折號") && buildStoryArgumentPrompt({ version: "full", thesis: "" }, { genreMode: true }).includes("文體提示詞的段落骨架"));
 t("提示詞禁止輸出段落標籤並要求單論點自我檢查", full.includes("不得出現「切入現象」「故事」「論點支持」「解決方案」作為獨立標題或標籤") && full.includes("若出現第二個獨立論點，刪除它") && full.includes("結尾不得拆成多個並列問題"));
 t("提示詞要求直接開場、短段落與擬真故事不得冒充真人", full.includes("前三句內進入主題") && full.includes("每段最多三行") && full.includes("不得聲稱真人真事") && full.includes("轉折只靠一句關鍵話"));
@@ -82,6 +84,20 @@ const titleNormalizedCopy = normalizeStoryArgumentCopy(
 t("書名號內的全形與半形冒號副標題都會移除，書名號外正文冒號保留", titleNormalizedCopy.includes("《黑馬思維》") && !titleNormalizedCopy.includes("哈佛最推崇") && !titleNormalizedCopy.includes("出版補充") && titleNormalizedCopy.includes("時間：晚上八點"));
 t("主書名比對正規化會忽略書名號、空白與全半形差異", normalizeStoryArgumentBookTitle("《ＡＢＣ　書：副標》") === normalizeStoryArgumentBookTitle("ABC 書"));
 t("主書名提取只取第一個全形或半形冒號之前", getStoryArgumentMainBookTitle("《黑馬思維:副標題》") === "黑馬思維");
+
+const evaluatedCitation = normalizeStoryArgumentCitationWording("作者在《某書》提出一個核心概念是：先辨認感受，再決定下一步。");
+t("含核心概念的引用句會安全改寫為提出", evaluatedCitation.includes("作者在《某書》提出") && !evaluatedCitation.includes("核心概念"));
+const plainCitation = "作者在《某書》提出一個整理方法，幫助讀者看見當下。";
+t("不含評價詞的引用句保持原樣", normalizeStoryArgumentCitationWording(plainCitation) === plainCitation);
+const unrelatedCoreSentence = "這是文章的核心概念，但這句不是引用。";
+t("非引用正文中的核心用語不受影響", normalizeStoryArgumentCitationWording(unrelatedCoreSentence) === unrelatedCoreSentence);
+const originalWarn = console.warn;
+let wordingWarnings = 0;
+console.warn = () => { wordingWarnings += 1; };
+const unsafeCitation = "作者在《某書》提出，這是最著名的核心概念。";
+const unsafeResult = normalizeStoryArgumentCitationWording(unsafeCitation);
+console.warn = originalWarn;
+t("無法安全改寫的引用句保留原文並記錄內部警告", unsafeResult === unsafeCitation && wordingWarnings === 1);
 
 console.log(`結果: ${passed} 通過 / ${failed} 失敗`);
 if (failed > 0) process.exitCode = 1;
