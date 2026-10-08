@@ -1590,14 +1590,14 @@ const SocialTabContent = memo(function SocialTabContent({
 
   return (
     <div className="flex flex-col min-h-full space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-3 shrink-0">
-        <div>
-          <h4 className="text-sm font-bold text-slate-200">社群行銷專家：Maya</h4>
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-2 shrink-0">
+        <div className="shrink-0">
+          <h4 className="text-sm font-bold text-slate-200 whitespace-nowrap">社群行銷專家：Maya</h4>
           <p className="text-[10px] text-slate-400">產出高轉換貼文與社群文案規劃</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
+          <div className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850 min-w-0">
             {val && (
               <>
                 <Button
