@@ -258,15 +258,16 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
   return (
     <div className="flex flex-col h-full bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Tabs Selector Header */}
-      <div className="flex bg-slate-900/40 border-b border-slate-800/60 p-2 gap-1 overflow-x-auto">
-        {TABS.map((tab) => {
+      {/* 七個分頁排成 4 + 3 兩列，不需要左右滑動 */}
+      <div className="grid grid-cols-12 bg-slate-900/40 border-b border-slate-800/60 p-2 gap-1">
+        {TABS.map((tab, tabIndex) => {
           const TabIcon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as TabType)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer whitespace-nowrap relative ${
+              className={`${tabIndex < 4 ? "col-span-3" : "col-span-4"} flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer whitespace-nowrap relative ${
                 isActive 
                   ? "text-slate-100 bg-slate-800/80 shadow-md shadow-slate-950/20" 
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/25"
