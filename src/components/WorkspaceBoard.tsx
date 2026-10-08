@@ -438,6 +438,9 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isPublishingWebsite, setIsPublishingWebsite] = useState(false);
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
   const [isPublishingSocial, setIsPublishingSocial] = useState(false);
+  const [igImageUrl, setIgImageUrl] = useState<string | null>(null);
+  const [igImagePrompt, setIgImagePrompt] = useState("");
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
@@ -1252,6 +1255,84 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
+  // Instagram：先依文章生成配圖（圖上不放字），預覽後才發佈
+  const handleGenerateImage = async () => {
+    if (!requireParentBrand()) return;
+    if (isGeneratingImage || !val) return;
+    const brandKey = brandKeyFromId(pubBrandId);
+    if (brandKey === "erick") {
+      alert("Erick 個人品牌還沒有串接 Instagram 帳號，請切換到 ABL、NAS 或 I8。");
+      return;
+    }
+    setIsGeneratingImage(true);
+    try {
+      const response = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: pubBrandId, content: val }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || "生成配圖失敗");
+      }
+      setIgImageUrl(resData.imageUrl);
+      setIgImagePrompt(resData.prompt || "");
+    } catch (error: any) {
+      console.error("Generate image error:", error);
+      alert(`❌ 生成配圖失敗：${error?.message || "請稍後再試"}`);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const handlePublishInstagram = async (force = false) => {
+    if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
+    if (isPublishingSocial || isPublishing || !val) return;
+    if (!igImageUrl) {
+      alert("請先按「生成配圖」，預覽圖片後再發佈。");
+      return;
+    }
+    const brandKey = brandKeyFromId(pubBrandId);
+    if (brandKey === "erick") {
+      alert("Erick 個人品牌還沒有串接 Instagram 帳號，請切換到 ABL、NAS 或 I8。");
+      return;
+    }
+    if (!force) {
+      const warns = genreIssues.filter((i) => i.level === "warn").map((i) => "・" + i.message);
+      const ok = confirm(
+        `確定要把這張配圖與說明文字發布到【Instagram ${brandKey.toUpperCase()}】嗎？\n發出後會立刻公開（約需 40 秒），要刪除請到 Instagram 自行刪除。\n說明文字 ${val.length} 字。` +
+          (warns.length > 0 ? "\n\n目前的提醒：\n" + warns.join("\n") : "")
+      );
+      if (!ok) return;
+    }
+    setIsPublishingSocial(true);
+    try {
+      const response = await fetch("/api/publish-social", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: pubBrandId, platform: "instagram", content: val, imageUrl: igImageUrl, force }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (response.status === 422 && resData.blocked) {
+        setIsPublishingSocial(false);
+        if (confirmGuardrail(resData)) {
+          return handlePublishInstagram(true);
+        }
+        return;
+      }
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || "Instagram 發布失敗");
+      }
+      alert(`🎉 已發布到 ${resData.account || "Instagram"}！${resData.url ? "\n" + resData.url : ""}`);
+    } catch (error: any) {
+      console.error("Instagram publish error:", error);
+      alert(`❌ Instagram 發布失敗：${error?.message || "請稍後再試"}`);
+    } finally {
+      setIsPublishingSocial(false);
+    }
+  };
+
   const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
     if (!requireParentBrand()) return;
     if (!requireGenreOk()) return;
@@ -1714,6 +1795,29 @@ const SocialTabContent = memo(function SocialTabContent({
                     </button>
                   )}
 
+                  {platform === "instagram" && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={isGeneratingImage || isPublishingSocial || !val}
+                        onClick={() => handleGenerateImage()}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 hover:bg-slate-850 disabled:text-slate-600 text-slate-200 border border-slate-700 transition-all duration-300 cursor-pointer"
+                      >
+                        {isGeneratingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "🖼 重新生成配圖" : "🖼 生成配圖"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!igImageUrl || isPublishingWebsite || isPublishing || isPublishingSocial || isGeneratingImage}
+                        onClick={() => handlePublishInstagram()}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-white disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 border border-slate-300/30 transition-all duration-300 cursor-pointer"
+                      >
+                        {isPublishingSocial ? <Loader2 className="w-3 h-3 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />}
+                        {isPublishingSocial ? "發布中，約 40 秒..." : "🚀 發布至 Instagram"}
+                      </button>
+                    </>
+                  )}
+
                   <button
                     disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
                     onClick={() => setShowDatePicker(true)}
@@ -1867,6 +1971,16 @@ const SocialTabContent = memo(function SocialTabContent({
           );
         })}
       </div>
+
+      {platform === "instagram" && igImageUrl && (
+        <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
+          <div className="font-bold text-slate-200 mb-2">配圖預覽（發佈前請確認）</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={igImageUrl} alt="Instagram 配圖預覽" className="w-48 rounded-lg border border-slate-800" />
+          {igImagePrompt && <p className="mt-2 text-slate-500 leading-relaxed">生成描述：{igImagePrompt}</p>}
+          <p className="mt-1 text-slate-600">圖片是 AI 生成的情境圖，圖上沒有文字。不滿意可按「重新生成配圖」。</p>
+        </div>
+      )}
 
       {genreMeta && (
         <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">

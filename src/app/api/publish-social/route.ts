@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripDashes } from "@/lib/plain-text";
 import { inspectForPublish, resolveBrandContext } from "@/lib/brand-guardrail";
 import { brandKeyFromId } from "@/data/skills/genres";
+import { publicImagePrefix } from "@/lib/social-image-server";
 
 export const dynamic = "force-dynamic";
 // n8n 建立貼文後會等 30 秒才發佈，所以整體請求要給足時間
@@ -32,8 +33,12 @@ export async function POST(req: NextRequest) {
     if (platform !== "threads" && platform !== "instagram") {
       return NextResponse.json({ error: "platform 必須是 threads 或 instagram" }, { status: 400 });
     }
-    if (platform === "instagram" && !(typeof imageUrl === "string" && imageUrl.startsWith("https://"))) {
-      return NextResponse.json({ error: "Instagram 發文必須附上 https 公開圖片網址" }, { status: 400 });
+    if (platform === "instagram") {
+      // 圖片必須是儀表板自己生成並存放的，不接受任意網址
+      const prefix = publicImagePrefix();
+      if (!prefix || typeof imageUrl !== "string" || !imageUrl.startsWith(prefix)) {
+        return NextResponse.json({ error: "Instagram 發文必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
+      }
     }
 
     const brandKey = brandKeyFromId(String(brandId));
