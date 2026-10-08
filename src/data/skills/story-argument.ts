@@ -1,7 +1,7 @@
 import { stripDashes, stripMarkdown } from "../../lib/plain-text";
 
 export const STORY_ARGUMENT_FRAMEWORK_ID = "story_argument";
-export const STORY_ARGUMENT_PROMPT_VERSION = "story-argument-v6";
+export const STORY_ARGUMENT_PROMPT_VERSION = "story-argument-v7";
 
 export type StoryArgumentVersion = "empathy" | "full";
 export type StoryArgumentCitationMode = "auto" | "selected" | "none";
@@ -141,9 +141,20 @@ export function buildStoryArgumentPrompt(
   const singleArgumentRule = "寫作前先確認全文只有一個可用一句話複述的論點。寫完前自我檢查：若出現第二個獨立論點，刪除它。結尾不得拆成多個並列問題、條列檢核題或多種結局分支；回到故事，用一句話收束，再留一個讀者可帶走的想法或動作。";
   const rhythmRule = "短句、短段落，每段最多三行。開頭使用具體畫面或直接的一句話，前三句內進入主題，不得用「最近這個話題一直被討論」等泛泛鋪陳。";
   const sectionLabelRule = "下列四個名稱只代表內部寫作順序，不是小標題或標籤。輸出正文不得出現「切入現象」「故事」「論點支持」「解決方案」作為獨立標題或標籤，也不得加編號、括號、冒號或其他標點變體。只輸出段落正文。";
+  const fullLengthRule = selection.version === "full"
+    ? "【完整版篇幅】正文（不含文末出處行與主題標籤行）必須為 900 到 1400 個中文字。寫完自行估算字數，不足就補寫；不得以拉長單句或加入空泛形容來湊字數。長度要靠增加段落與具體細節達成，每段仍維持短句、最多三行。"
+    : "";
+  const fullSectionDepthRule = selection.version === "full"
+    ? "【完整版各段段數與任務】切入現象 2 到 3 段，先給具體畫面，再寫讀者當下的感受或處境。故事 4 到 6 段，必須有場景、至少兩句對話、至少兩個物件與一個轉折，轉折仍只靠一句關鍵話。論點支持 3 到 4 段，依序完成引用（照現有規則）、白話轉譯、回扣本篇故事。解決方案 2 到 3 段，仍只能提出一個生活中可做的小動作，但要寫清楚在什麼時間、怎麼做、做完會看見什麼，不得只有一句行動呼籲，也不得延伸第二個觀點。段名只供內部遵循，不得輸出。"
+    : "";
+  const fullNumberEvidenceRule = selection.version === "full"
+    ? "【數字與事實】任何百分比、比例、年份、研究結果等具體數字，只有在所附筆記全文節錄中逐字出現時才可使用；節錄中沒有的數字一律不得寫出，改用不含數字的說法。"
+    : "";
   const hashtagRule = "依平台既有數量規則在文末另起一行放主題標籤，每個標籤都必須以 # 開頭，標籤之間只用空格，不用逗號；不得把 # 當成標題符號。";
   const genreRule = options.genreMode
-    ? "【與文體同用】文體提示詞的段落骨架、漏斗層與格式限制優先。若文體與本框架的段落數或段落名稱衝突，遵守文體；仍須盡量維持單一論點、不得捏造來源及純文字要求。"
+    ? selection.version === "full"
+      ? "【與文體同用】文體提示詞的段落骨架與字數限制優先；完整版的 900 到 1400 字規則及各段段數規則讓位給文體的段落骨架與字數限制。文體的漏斗層與格式限制也優先；若文體與本框架的段數或段名衝突，遵守文體；仍須盡量維持單一論點、不得捏造來源及純文字要求。"
+      : "【與文體同用】文體提示詞的段落骨架、漏斗層與格式限制優先。若文體與本框架的段落數或段落名稱衝突，遵守文體；仍須盡量維持單一論點、不得捏造來源及純文字要求。"
     : "";
   const citationRequired = options.citationRequired ?? (selection.version === "full" && selection.citationMode !== "none");
   const usableKnowledgeNote = isStoryArgumentCitationEligible(options.knowledgeNote) ? options.knowledgeNote : null;
@@ -171,6 +182,9 @@ export function buildStoryArgumentPrompt(
     knowledgeText,
     sectionLabelRule,
     ...sections.map((label, index) => `寫作順序第 ${index + 1} 段（只供內部遵循，不輸出段名）：${label}。${sectionRules[index]}`),
+    fullLengthRule,
+    fullSectionDepthRule,
+    fullNumberEvidenceRule,
     singleArgumentRule,
     rhythmRule,
     hashtagRule,
