@@ -33,6 +33,7 @@ import { NAS_BRAND_CONTEXT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import PublishQueuePanel from "./PublishQueuePanel";
+import PerformanceTab from "./PerformanceTab";
 import type { QueueItem } from "@/lib/publish-queue";
 
 // 沒有 API 憑證、無法排程的粉專（與 src/lib/publish-queue.ts 的 UNSCHEDULABLE_PAGE_IDS 保持一致；
@@ -190,7 +191,7 @@ interface WorkspaceBoardProps {
   aiProvider: string;
 }
 
-type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines" | "theo";
+type TabType = "social" | "architecture" | "seo" | "ads" | "guidelines" | "theo" | "performance";
 
 /**
  * getBrandTheme 每次呼叫都會配置一個全新的物件，導致任何吃 theme 的
@@ -207,7 +208,8 @@ const TABS = [
   { id: "seo", label: "SEO關鍵字", expert: "Iris", icon: Search, color: "from-emerald-500 to-teal-500", glow: "shadow-emerald-500/10" },
   { id: "ads", label: "廣告數據", expert: "Jack", icon: BarChart3, color: "from-purple-500 to-violet-500", glow: "shadow-violet-500/10" },
   { id: "guidelines", label: "品牌大腦", expert: "Erick", icon: Brain, color: "from-amber-500 to-orange-500", glow: "shadow-amber-500/10" },
-  { id: "theo", label: "流量預測", expert: "Theo", icon: Activity, color: "from-amber-500 to-yellow-500", glow: "shadow-amber-500/10" }
+  { id: "theo", label: "流量預測", expert: "Theo", icon: Activity, color: "from-amber-500 to-yellow-500", glow: "shadow-amber-500/10" },
+  { id: "performance", label: "成效", expert: "Data", icon: TrendingUp, color: "from-cyan-500 to-sky-500", glow: "shadow-sky-500/10" }
 ] as const;
 
 export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
@@ -350,8 +352,11 @@ export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceB
                 healthBusy={healthBusy.theo}
               />
             )}
+            {activeTab === "performance" && (
+              <PerformanceTab brandId={activeBrandId} />
+            )}
             {activeTab === "guidelines" && (
-              <GuidelinesTabContent 
+              <GuidelinesTabContent
                 brandId={activeBrandId} 
                 brandGuidelines={data.brand_guidelines || ""} 
               />
