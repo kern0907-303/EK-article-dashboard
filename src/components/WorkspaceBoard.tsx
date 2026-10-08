@@ -2066,10 +2066,6 @@ const SocialTabContent = memo(function SocialTabContent({
               )
             )}
           </div>
-
-          {(platform === "threads" || platform === "instagram") && (
-            <SocialQueuePanel brandId={pubBrandId} platform={platform} refreshKey={socialQueueTick} />
-          )}
         </div>
       )}
 
@@ -2373,6 +2369,9 @@ const SocialTabContent = memo(function SocialTabContent({
         onRefresh={fetchQueue}
         onCancel={handleCancelQueue}
       />
+
+      {/* 📅 Threads / Instagram 排程清單 (social_publish_queue) */}
+      <SocialQueuePanel brandId={pubBrandId} refreshKey={socialQueueTick} />
     </div>
   );
 });
