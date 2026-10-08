@@ -16,6 +16,7 @@ import {
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
+import Button from "@/components/ui/Button";
 import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
@@ -1599,20 +1600,19 @@ const SocialTabContent = memo(function SocialTabContent({
           {/* 🎯 目標 Facebook 粉絲專頁選擇器 (Target Facebook Fan Page Selector) */}
           {val && (
             <div className="relative">
-              <button
+              <Button
                 ref={pageSelectorBtnRef}
-                type="button"
+                variant="secondary"
                 onClick={togglePageSelector}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900/90 hover:bg-slate-850 text-slate-200 border border-slate-750 hover:border-slate-600 transition-all duration-200 cursor-pointer shadow-sm"
                 title="切換或多選發布目標 Facebook 粉絲專頁"
+                icon={<Facebook className="w-3.5 h-3.5 text-blue-400" />}
               >
-                <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                 <span className="text-slate-400 font-normal">目標粉專:</span>
                 <span className="font-bold text-slate-100 flex items-center gap-1">
                   {selectedTargetPages.length === 1 ? (
                     getFacebookPageById(selectedTargetPages[0])?.badge || "FB 粉專"
                   ) : selectedTargetPages.length > 1 ? (
-                    <span className="bg-blue-500/20 text-blue-300 px-1.5 py-0.2 rounded border border-blue-500/30">
+                    <span className="bg-blue-500/20 text-blue-300 px-1.5 rounded border border-blue-500/30">
                       {selectedTargetPages.length} 個粉專同步
                     </span>
                   ) : (
@@ -1620,7 +1620,7 @@ const SocialTabContent = memo(function SocialTabContent({
                   )}
                 </span>
                 <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showPageSelector ? "rotate-180" : ""}`} />
-              </button>
+              </Button>
 
               {/* 下拉選擇面板 */}
               {showPageSelector && (
@@ -1715,110 +1715,95 @@ const SocialTabContent = memo(function SocialTabContent({
 
           {/* Webhook Publish Action Buttons */}
           {val && (
-            <div className="flex gap-1.5 mr-2 border-r border-slate-800 pr-2">
+            <div className="flex flex-wrap items-center gap-2 mr-2 border-r border-slate-800 pr-3">
               {showDatePicker ? (
-                <div className="flex items-center gap-1.5 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex items-center gap-2 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
                   <SchedulePicker
                     value={scheduleTime}
                     onChange={setScheduleTime}
                     accentClass={theme.primaryBg}
                     items={allQueueItems}
                   />
-                  <button
-                    disabled={isScheduling || !scheduleTime}
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={isScheduling}
+                    disabled={!scheduleTime}
                     onClick={() => {
                       handleSchedule(scheduleTime);
                     }}
-                    className={`px-2 py-0.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} disabled:bg-slate-800 disabled:text-slate-500 text-[9px] font-bold rounded cursor-pointer transition`}
                   >
                     {isScheduling ? "排程中..." : "確定"}
-                  </button>
-                  <button
-                    onClick={() => setShowDatePicker(false)}
-                    className="px-2 py-0.5 bg-slate-850 hover:bg-slate-800 text-slate-400 text-[9px] font-bold rounded cursor-pointer transition"
-                  >
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowDatePicker(false)}>
                     取消
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    disabled={isPublishingWebsite || isPublishing}
+                  <Button
+                    variant="primary"
+                    loading={isPublishingWebsite}
+                    disabled={isPublishing}
                     onClick={() => handlePublishWebsite()}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-slate-850 text-slate-100 border border-blue-500/25 transition-all duration-300 cursor-pointer hover:shadow-lg hover:shadow-blue-500/15"
+                    icon={<Network className="w-3.5 h-3.5" />}
                   >
-                    {isPublishingWebsite ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Network className="w-3.5 h-3.5 text-slate-150" />
-                    )}
-                    {isPublishingWebsite ? "正在同步..." : "🚀 發布至官網"}
-                  </button>
+                    {isPublishingWebsite ? "正在同步..." : "發布至官網"}
+                  </Button>
 
-                  <button
-                    disabled={isPublishingWebsite || isPublishing}
+                  <Button
+                    variant={pubStatus === "success" ? "success" : pubStatus === "error" ? "danger" : "primary"}
+                    loading={isPublishing}
+                    disabled={isPublishingWebsite}
                     onClick={() => handlePublish("now")}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-300 border ${
-                      pubStatus === "success"
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                        : pubStatus === "error"
-                        ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                        : `bg-gradient-to-r ${theme.gradientFromTo} ${theme.primaryBtnText} ${theme.btnBorder} hover:shadow-lg hover:${theme.glowShadow} cursor-pointer`
-                    }`}
+                    icon={pubStatus === "success" ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
                   >
-                    {isPublishing ? (
-                      <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                    ) : pubStatus === "success" ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Send className="w-3 h-3 text-slate-950" />
-                    )}
                     {pubStatus === "success"
                       ? "已發布至 Meta"
                       : pubStatus === "error"
                       ? "發布失敗"
                       : selectedTargetPages.length === 1
-                      ? `🚀 發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
-                      : `🚀 發布至 Meta (${selectedTargetPages.length} 粉專)`}
-                  </button>
+                      ? `發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
+                      : `發布至 Meta (${selectedTargetPages.length} 粉專)`}
+                  </Button>
 
                   {platform === "threads" && (
-                    <button
-                      type="button"
-                      disabled={isPublishingWebsite || isPublishing || isPublishingSocial}
+                    <Button
+                      variant="primary"
+                      loading={isPublishingSocial}
+                      disabled={isPublishingWebsite || isPublishing}
                       onClick={() => handlePublishThreads()}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-white disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 border border-slate-300/30 transition-all duration-300 cursor-pointer"
+                      icon={<AtSign className="w-3.5 h-3.5" />}
                     >
-                      {isPublishingSocial ? <Loader2 className="w-3 h-3 animate-spin" /> : <AtSign className="w-3.5 h-3.5" />}
-                      {isPublishingSocial ? "發布中，約 40 秒..." : "🚀 發布至 Threads"}
-                    </button>
+                      {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Threads"}
+                    </Button>
                   )}
 
                   {platform === "instagram" && (
                     <>
-                      <button
-                        type="button"
-                        disabled={isGeneratingImage || isPublishingSocial || !val}
+                      <Button
+                        variant="secondary"
+                        loading={isGeneratingImage}
+                        disabled={isPublishingSocial || !val}
                         onClick={() => handleGenerateImage()}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-900 hover:bg-slate-850 disabled:text-slate-600 text-slate-200 border border-slate-700 transition-all duration-300 cursor-pointer"
+                        icon={<Sparkles className="w-3.5 h-3.5" />}
                       >
-                        {isGeneratingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "🖼 重新生成配圖" : "🖼 生成配圖"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!igImageUrl || isPublishingWebsite || isPublishing || isPublishingSocial || isGeneratingImage}
+                        {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
+                      </Button>
+                      <Button
+                        variant="primary"
+                        loading={isPublishingSocial}
+                        disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
                         onClick={() => handlePublishInstagram()}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-white disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 border border-slate-300/30 transition-all duration-300 cursor-pointer"
+                        icon={<Instagram className="w-3.5 h-3.5" />}
                       >
-                        {isPublishingSocial ? <Loader2 className="w-3 h-3 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />}
-                        {isPublishingSocial ? "發布中，約 40 秒..." : "🚀 發布至 Instagram"}
-                      </button>
+                        {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Instagram"}
+                      </Button>
                     </>
                   )}
 
-                  <button
+                  <Button
+                    variant="secondary"
                     disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
                     onClick={() => setShowDatePicker(true)}
                     title={
@@ -1826,72 +1811,54 @@ const SocialTabContent = memo(function SocialTabContent({
                         ? "排程：現在先上架官網，時間到再自動發到勾選的粉專"
                         : "排程尚未啟用（等 n8n 排程執行器上線後開啟）"
                     }
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all duration-300 ${
-                      queueEnabled
-                        ? "bg-slate-900 hover:bg-slate-850 text-slate-350 border-slate-800 cursor-pointer"
-                        : "bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed"
-                    }`}
+                    icon={<Calendar className="w-3.5 h-3.5" />}
                   >
-                    <Calendar className={`w-3 h-3 ${queueEnabled ? "text-slate-400" : "text-slate-600"}`} />
-                    {queueEnabled ? "📅 排程" : "📅 排程（尚未啟用）"}
-                  </button>
+                    {queueEnabled ? "排程" : "排程（尚未啟用）"}
+                  </Button>
                 </>
               )}
             </div>
           )}
 
-          <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
             {val && (
               <>
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="ghost"
                   onClick={() => window.dispatchEvent(new CustomEvent("ek-switch-tab", { detail: "theo" }))}
-                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
                   title="前往 Theo 分頁，進行 Meta 演算法與病毒分數分析"
+                  icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-400" />}
                 >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  🦠 流量分析（Theo）
-                </button>
-                <button
-                  type="button"
-                  disabled={isAdapting}
+                  流量分析（Theo）
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={isAdapting}
                   onClick={() => handleAdaptPlatform(false)}
-                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-amber-400 hover:text-amber-350 hover:bg-amber-500/10 border border-amber-500/15"
                   title="將現有文案改寫並適配為當前選取的平台規格"
+                  icon={<Zap className="w-3.5 h-3.5 text-amber-400" />}
                 >
-                  {isAdapting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                  ) : (
-                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-current" />
-                  )}
-                  {isAdapting ? "正在轉化規格..." : `⚡ 一鍵改寫為 ${platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 規格`}
-                </button>
-                <button
-                  type="button"
+                  {isAdapting ? "正在轉化規格..." : `一鍵改寫為 ${platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"} 規格`}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
                   onClick={handleCopyCleanText}
-                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
                   title="複製純文案（已自動過濾圖表程式碼與圖片網址）"
+                  icon={<Copy className={`w-3.5 h-3.5 ${theme.copyIconColor}`} />}
                 >
-                  <Copy className={`w-3.5 h-3.5 ${theme.copyIconColor}`} /> 複製貼文
-                </button>
+                  複製貼文
+                </Button>
               </>
             )}
-            <button
-              onClick={() => setMode("preview")}
-              className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
-                mode === "preview" ? "bg-slate-800 text-slate-100" : "text-slate-400"
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" /> 預覽
-            </button>
-            <button
-              onClick={() => setMode("edit")}
-              className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
-                mode === "edit" ? "bg-slate-800 text-slate-100" : "text-slate-400"
-              }`}
-            >
-              <Edit2 className="w-3.5 h-3.5" /> 編輯
-            </button>
+            <Button size="sm" variant="ghost" active={mode === "preview"} onClick={() => setMode("preview")} icon={<Eye className="w-3.5 h-3.5" />}>
+              預覽
+            </Button>
+            <Button size="sm" variant="ghost" active={mode === "edit"} onClick={() => setMode("edit")} icon={<Edit2 className="w-3.5 h-3.5" />}>
+              編輯
+            </Button>
           </div>
         </div>
       </div>
