@@ -38,3 +38,5 @@ services:
         value: https://erick303.app.n8n.cloud/webhook/social-metrics
       - key: SOCIAL_METRICS_KEY
         sync: false
+      - key: SOCIAL_PUBLISH_URL
+        value: https://erick303.app.n8n.cloud/webhook/social-publish

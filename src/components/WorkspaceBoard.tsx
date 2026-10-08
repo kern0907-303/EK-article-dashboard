@@ -437,6 +437,7 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPublishingWebsite, setIsPublishingWebsite] = useState(false);
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
+  const [isPublishingSocial, setIsPublishingSocial] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
@@ -1206,6 +1207,51 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
+  // Threads 發文：由 n8n 的 social_publish_api 實際發出（Facebook 仍走上面的 handlePublish）
+  const handlePublishThreads = async (force = false) => {
+    if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
+    if (isPublishingSocial || isPublishing || !val) return;
+    const brandKey = brandKeyFromId(pubBrandId);
+    if (brandKey === "erick") {
+      alert("Erick 個人品牌還沒有串接 Threads 帳號，請切換到 ABL、NAS 或 I8。");
+      return;
+    }
+    if (!force) {
+      const warns = genreIssues.filter((i) => i.level === "warn").map((i) => "・" + i.message);
+      const ok = confirm(
+        `確定要把這篇文案發布到【Threads ${brandKey.toUpperCase()}】嗎？\n發出後會立刻公開（約需 40 秒），要刪除請到 Threads 自行刪除。\n目前 ${val.length} 字。` +
+          (warns.length > 0 ? "\n\n目前的提醒：\n" + warns.join("\n") : "")
+      );
+      if (!ok) return;
+    }
+    setIsPublishingSocial(true);
+    try {
+      const response = await fetch("/api/publish-social", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, force }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (response.status === 422 && resData.blocked) {
+        setIsPublishingSocial(false);
+        if (confirmGuardrail(resData)) {
+          return handlePublishThreads(true);
+        }
+        return;
+      }
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || "Threads 發布失敗");
+      }
+      alert(`🎉 已發布到 ${resData.account || "Threads"}！${resData.url ? "\n" + resData.url : ""}`);
+    } catch (error: any) {
+      console.error("Threads publish error:", error);
+      alert(`❌ Threads 發布失敗：${error?.message || "請稍後再試"}`);
+    } finally {
+      setIsPublishingSocial(false);
+    }
+  };
+
   const handlePublish = async (actionType: "now" | "schedule", targetTime?: string, force = false) => {
     if (!requireParentBrand()) return;
     if (!requireGenreOk()) return;
@@ -1655,6 +1701,18 @@ const SocialTabContent = memo(function SocialTabContent({
                       ? `🚀 發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
                       : `🚀 發布至 Meta (${selectedTargetPages.length} 粉專)`}
                   </button>
+
+                  {platform === "threads" && (
+                    <button
+                      type="button"
+                      disabled={isPublishingWebsite || isPublishing || isPublishingSocial}
+                      onClick={() => handlePublishThreads()}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-white disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 border border-slate-300/30 transition-all duration-300 cursor-pointer"
+                    >
+                      {isPublishingSocial ? <Loader2 className="w-3 h-3 animate-spin" /> : <AtSign className="w-3.5 h-3.5" />}
+                      {isPublishingSocial ? "發布中，約 40 秒..." : "🚀 發布至 Threads"}
+                    </button>
+                  )}
 
                   <button
                     disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
