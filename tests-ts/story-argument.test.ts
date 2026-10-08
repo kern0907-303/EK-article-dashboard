@@ -2,6 +2,8 @@ import {
   buildStoryArgumentPrompt,
   getStoryArgumentSections,
   getStoryArgumentMainBookTitle,
+  getStoryArgumentChineseAuthor,
+  getStoryArgumentChineseBookTitle,
   getWritingFrameworkOptions,
   normalizeStoryArgumentBookTitle,
   normalizeStoryArgumentCitationWording,
@@ -14,6 +16,7 @@ import {
 } from "../src/data/skills/story-argument";
 import { COPYWRITING_FRAMEWORKS } from "../src/data/skills/frameworks";
 import { blockingIssues, checkGenreText } from "../src/lib/genre-check";
+import { replaceStoryArgumentSupportParagraph } from "../src/lib/story-argument-reselection";
 
 let passed = 0;
 let failed = 0;
@@ -98,6 +101,26 @@ const unsafeCitation = "作者在《某書》提出，這是最著名的核心�
 const unsafeResult = normalizeStoryArgumentCitationWording(unsafeCitation);
 console.warn = originalWarn;
 t("無法安全改寫的引用句保留原文並記錄內部警告", unsafeResult === unsafeCitation && wordingWarnings === 1);
+
+const chineseTitle = getStoryArgumentChineseBookTitle("黑馬思維：哈佛最推崇的人生計畫（Dark Horse: Achieving Success）");
+const chineseAuthor = getStoryArgumentChineseAuthor("陶德·羅斯（Todd Rose）");
+t("知識庫書名與作者只擷取中文主名稱", chineseTitle === "黑馬思維" && chineseAuthor === "陶德·羅斯");
+t("括號內英文副標含冒號時仍保留中文主書名", getStoryArgumentChineseBookTitle("黑馬思維（Dark Horse: Achieving Success）") === "黑馬思維");
+t("沒有中文書名或作者時不翻譯並回傳空值", getStoryArgumentChineseBookTitle("The Book: Subtitle") === null && getStoryArgumentChineseAuthor("Todd Rose") === null);
+
+const originalStory = [
+  "開頭段落，原字保留。",
+  "故事段落，杯子仍放在桌上。",
+  "舊的論點支持段。",
+  "結尾回到故事。",
+  "出處：舊作者，《舊書》",
+  "#情緒覺察 #自我理解",
+].join("\n\n");
+const reselectedStory = replaceStoryArgumentSupportParagraph(originalStory, "新的論點支持段。\n\n出處：陶德·羅斯，《黑馬思維》", false);
+const originalBlocks = originalStory.split("\n\n");
+const reselectedBlocks = reselectedStory.split("\n\n");
+t("未勾全文重寫時只替換論點支持段與出處，其他段落逐字不變", reselectedBlocks[0] === originalBlocks[0] && reselectedBlocks[1] === originalBlocks[1] && reselectedBlocks[2] === "新的論點支持段。" && reselectedBlocks[3] === originalBlocks[3] && reselectedBlocks.includes("出處：陶德·羅斯，《黑馬思維》") && reselectedBlocks.at(-1) === originalBlocks.at(-1));
+t("想法欄位不會進入替換後文章", !reselectedStory.includes("只供本次選書的想法"));
 
 console.log(`結果: ${passed} 通過 / ${failed} 失敗`);
 if (failed > 0) process.exitCode = 1;

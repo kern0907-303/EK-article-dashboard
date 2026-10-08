@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { getKnowledgeNoteDirectory } from "@/lib/knowledge-notes-server";
+import { NextRequest, NextResponse } from "next/server";
+import { getKnowledgeNoteDirectory, getStoryArgumentKnowledgeCandidates } from "@/lib/knowledge-notes-server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +10,20 @@ export async function GET() {
   } catch (error) {
     console.error("GET /api/knowledge-notes failed:", error instanceof Error ? error.message : "unknown error");
     return NextResponse.json({ error: "目前無法讀取引用來源目錄。" }, { status: 503 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    if (body?.action !== "story-argument-candidates") {
+      return NextResponse.json({ error: "不支援的知識筆記操作。" }, { status: 400 });
+    }
+    const idea = typeof body.idea === "string" ? body.idea : "";
+    const candidates = await getStoryArgumentKnowledgeCandidates(idea, 5);
+    return NextResponse.json({ candidates });
+  } catch (error) {
+    console.error("POST /api/knowledge-notes failed:", error instanceof Error ? error.message : "unknown error");
+    return NextResponse.json({ error: "目前無法讀取引用候選。" }, { status: 503 });
   }
 }

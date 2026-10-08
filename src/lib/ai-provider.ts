@@ -8,9 +8,10 @@ import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
-import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentSelection } from "../data/skills/story-argument";
+import { buildStoryArgumentPrompt, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
 import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
-import { getKnowledgeNoteByCitation, getKnowledgeNoteById, getKnowledgeNoteDirectory } from "@/lib/knowledge-notes-server";
+import { getKnowledgeNoteByCitation, getKnowledgeNoteById, getKnowledgeNoteDirectory, getKnowledgeNoteSelectionDirectory } from "@/lib/knowledge-notes-server";
+import { chooseStoryArgumentNote, replaceStoryArgumentSupportParagraph } from "@/lib/story-argument-reselection";
 
 // Erick COO Router System Prompt (OpenAI)
 export const ERICK_SYSTEM_PROMPT = `你是一個人工智慧團隊總指揮「Erick 營運長」(COO)。
@@ -337,6 +338,146 @@ async function resolveStoryArgumentKnowledge(
   }
 }
 
+async function resolveReselectionKnowledge(
+  selection: StoryArgumentSelection,
+  request: StoryArgumentReselectRequest,
+  config: AIProviderConfig
+): Promise<{ note: KnowledgeNoteRecord | null; error: "no_matching_note" | "no_available_notes" | "selection_failed" | null; topic: string }> {
+  const excludedNoteIds = Array.isArray(request.excludeNoteIds)
+    ? request.excludeNoteIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const topic = request.idea.trim() || selection.thesis || request.currentCopy;
+  try {
+    const directory = await getKnowledgeNoteSelectionDirectory();
+    if (!directory.length) return { note: null, error: "no_matching_note", topic };
+    if (request.mode === "candidate" && request.selectedNoteId) {
+      const explicit = chooseStoryArgumentNote(directory, [], request.selectedNoteId);
+      return { note: explicit ? await getKnowledgeNoteById(explicit.id) : null, error: explicit ? null : "no_matching_note", topic };
+    }
+
+    const excludedSourceFiles = directory
+      .filter((entry) => excludedNoteIds.includes(entry.id))
+      .map((entry) => entry.source_file);
+    const eligible = directory.filter((entry) => chooseStoryArgumentNote([entry], excludedSourceFiles) !== null);
+    if (!eligible.length) return { note: null, error: "no_available_notes", topic };
+    const catalog = eligible.map(({ title, author, domain, subdomain }) => ({ title, author, domain, subdomain }));
+    const selectionPrompt = [
+      "你是故事論點框架的知識來源挑選器。僅依據目錄欄位判斷是否有筆記能支持使用者的想法，不得憑記憶補充來源。",
+      "若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。若有，回傳 matched=true 及 title、author、domain、subdomain，四欄必須逐字取自同一筆目錄。只輸出 JSON。",
+      `使用者的想法（只作挑選依據，不得放入文章）：${topic.slice(0, 3000)}`,
+      `可選目錄：${JSON.stringify(catalog)}`,
+    ].join("\n\n");
+    const raw = await runQueryWithFallback(selectionPrompt, config, true, "anthropic", { maxTokens: 1200, timeoutMs: 60000 });
+    const parsed = robustJSONParse(raw);
+    if (!parsed || parsed.matched !== true) return { note: null, error: "no_matching_note", topic };
+    const candidate = eligible.filter((entry) =>
+      parsed.title === entry.title && parsed.author === entry.author &&
+      parsed.domain === entry.domain && parsed.subdomain === entry.subdomain
+    );
+    if (candidate.length !== 1) return { note: null, error: "no_matching_note", topic };
+    return { note: await getKnowledgeNoteByCitation(candidate[0]), error: null, topic };
+  } catch (error) {
+    console.warn("故事論點重新選書失敗。", error instanceof Error ? error.message : "unknown error");
+    return { note: null, error: "selection_failed", topic };
+  }
+}
+
+async function callStoryArgumentReselection(
+  brandContext: string,
+  config: AIProviderConfig,
+  selection: StoryArgumentSelection,
+  request: StoryArgumentReselectRequest
+): Promise<AIServiceResponse> {
+  if (selection.version !== "full") throw new Error("共情版不強制引用，不能使用重新挑選引用。");
+  if (!request || typeof request.idea !== "string" || typeof request.currentCopy !== "string" || !Array.isArray(request.excludeNoteIds)) {
+    throw new Error("故事論點重新挑選引用的輸入格式不正確。");
+  }
+  if (request.mode !== "auto" && request.mode !== "candidate") throw new Error("重新挑選引用模式不正確。");
+  if (request.mode === "candidate" && !request.selectedNoteId) throw new Error("請先選擇一筆引用候選。");
+
+  const resolved = await resolveReselectionKnowledge(selection, request, config);
+  const activeSelection: StoryArgumentSelection = {
+    ...selection,
+    citationMode: "selected",
+    ...(resolved.note ? { noteId: resolved.note.id } : {}),
+  };
+  const noteContent = resolved.note
+    ? selectRelevantKnowledgeContent(resolved.note.content, resolved.topic, 20_000)
+    : "";
+  if (!resolved.note) {
+    const missing = applyValidatedKnowledgeCitation(
+      request.rewriteFull ? request.currentCopy : "",
+      "", "", null, true
+    );
+    const socialCopy = request.rewriteFull
+      ? normalizeStoryArgumentCopy(missing.content, selection.thesis)
+      : replaceStoryArgumentSupportParagraph(request.currentCopy, missing.content, false, selection.thesis);
+    return {
+      content: "",
+      dispatchData: {
+        social_copy: socialCopy,
+        citation_error: resolved.error || "no_matching_note",
+        story_argument_meta: {
+          ...selection,
+          prompt_version: STORY_ARGUMENT_PROMPT_VERSION,
+          knowledge_note_id: null,
+          knowledge_content_md5: null,
+          citation_title: null,
+          citation_author: null,
+          citation_valid: false,
+          citation_error: resolved.error || "no_matching_note",
+        },
+      },
+    };
+  }
+
+  const notePrompt = { title: resolved.note.title, author: resolved.note.author, content: noteContent };
+  const basePrompt = buildStoryArgumentPrompt(activeSelection, { knowledgeNote: notePrompt, citationRequired: true });
+  const taskPrompt = request.rewriteFull
+    ? [
+        basePrompt,
+        "【重新挑選引用，全文重寫】依照既有故事論點框架重寫全文，只以目前文章與本次讀入筆記為事實依據。保留原有核心論點，不要把使用者想法原句複製進文章。使用者想法只作為論點支持挑選依據，不是輸出內容。",
+        `使用者想法（不得照抄到文章）：${request.idea.trim() || "未提供"}`,
+        `目前文章（只供保留原有主題與事實）：\n<current_article>\n${request.currentCopy}\n</current_article>`,
+      ].join("\n\n")
+    : [
+        `【故事論點框架，僅重寫論點支持段】使用者想法只作為本次支持論點與挑選筆記的指令，不得照抄或放入輸出。\n${request.idea.trim() ? `使用者想法：${request.idea.trim()}` : "使用者未補充想法，依原文章論點重新挑選支持內容。"}`,
+        `原文章論點：${selection.thesis}`,
+        `原文章（僅供理解論點與故事，不得重寫或輸出）：\n<current_article>\n${request.currentCopy}\n</current_article>`,
+        `唯一可用的知識筆記全文節錄：\n<knowledge_note_excerpt>\n${noteContent}\n</knowledge_note_excerpt>`,
+        `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「中文作者名在《中文主書名》提出」句型，使用 ${activeSelection.noteId} 所代表筆記的中文書名與作者。不得輸出出處行；伺服器會驗證後補上。不得輸出英文姓名、英文書名、評價詞、Markdown 符號或破折號。若筆記沒有可驗證的中文來源，不得改用英文或自行翻譯。`,
+        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫完整 title\",\"citation_author\":\"知識庫完整 author\"}。citation_title 與 citation_author 必須逐字填入所附筆記欄位。",
+      ].join("\n\n");
+
+  const raw = await runQueryWithFallback(`${brandContext}\n\n${taskPrompt}`, config, true, "anthropic", { maxTokens: 12000, timeoutMs: 120000 });
+  const result = robustJSONParse(raw);
+  const generatedCopy = request.rewriteFull ? result?.social_copy : result?.support_paragraph;
+  if (typeof generatedCopy !== "string" || !generatedCopy.trim()) throw new Error("重新挑選引用的模型回覆缺少文章或論點支持段。");
+  const citation = applyValidatedKnowledgeCitation(
+    generatedCopy,
+    result.citation_title,
+    result.citation_author,
+    resolved.note,
+    true
+  );
+  const socialCopy = request.rewriteFull
+    ? normalizeStoryArgumentCopy(citation.content, selection.thesis)
+    : replaceStoryArgumentSupportParagraph(request.currentCopy, citation.content, false, selection.thesis);
+  const meta = {
+    ...selection,
+    citationMode: "selected" as const,
+    noteId: resolved.note.id,
+    prompt_version: STORY_ARGUMENT_PROMPT_VERSION,
+    knowledge_note_id: resolved.note.id,
+    knowledge_content_md5: resolved.note.content_md5,
+    citation_title: citation.citationTitle,
+    citation_author: citation.citationAuthor,
+    citation_valid: citation.valid,
+    citation_error: null,
+  };
+  return { content: "", dispatchData: { social_copy: socialCopy, story_argument_meta: meta, citation_error: null } };
+}
+
 async function fetchLiveKeywordMetrics(keywords: string[]): Promise<any[]> {
   const dseoLogin = process.env.DATAFORSEO_API_LOGIN;
   const dseoPassword = process.env.DATAFORSEO_API_PASSWORD;
@@ -524,7 +665,8 @@ export async function callErickCOO(
   platform?: string,
   copywritingFramework?: string,
   genre?: { settings: GenreSettings; brandKey: BrandKey },
-  storyArgument?: StoryArgumentSelection
+  storyArgument?: StoryArgumentSelection,
+  storyReselection?: StoryArgumentReselectRequest
 ): Promise<AIServiceResponse> {
   const config = getAIConfig();
   const provider = resolveProvider(config, overrideProvider);
@@ -533,6 +675,9 @@ export async function callErickCOO(
   const activePlatform = platform || "threads";
   
   if (provider === "mock") {
+    if (stage === "story_argument_reselect") {
+      throw new Error("故事論點重新挑選引用需要可用的 AI 供應商，mock 模式不會呼叫模型。");
+    }
     if (stage === "adapt") {
       const sourceCopy = prevData?.social_copy || "";
       const targetPlatform = platform || "threads";
@@ -598,6 +743,11 @@ export async function callErickCOO(
 
   // 全品牌、全路徑通用：最後再提醒一次（放在最後，模型最容易遵守）
   brandContext += "\n\n" + NO_DASH_LAYOUT_RULE;
+
+  if (stage === "story_argument_reselect") {
+    if (!storyArgument || !storyReselection) throw new Error("缺少故事論點重新挑選引用資料。");
+    return callStoryArgumentReselection(brandContext, config, storyArgument, storyReselection);
+  }
 
   if (stage === "adapt") {
     const currentCopy = prevData?.social_copy || "";
@@ -1086,8 +1236,8 @@ ${brandContext}`;
               citationMode: storyArgument.citationMode || "auto",
               knowledge_note_id: storyKnowledge.note?.id || null,
               knowledge_content_md5: storyKnowledge.note?.content_md5 || null,
-              citation_title: storyKnowledge.note?.title || null,
-              citation_author: storyKnowledge.note?.author || null,
+              citation_title: storyCitation?.citationTitle || null,
+              citation_author: storyCitation?.citationAuthor || null,
               citation_valid: storyCitation?.valid ?? false,
             }
           : null,

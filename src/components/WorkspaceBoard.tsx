@@ -435,6 +435,21 @@ const SocialTabContent = memo(function SocialTabContent({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
+  const [activeStoryArgumentMeta, setActiveStoryArgumentMeta] = useState(storyArgumentMeta || null);
+  const [storyReselectIdea, setStoryReselectIdea] = useState("");
+  const [storyReselectMode, setStoryReselectMode] = useState<"auto" | "candidate">("auto");
+  const [storyReselectFull, setStoryReselectFull] = useState(false);
+  const [storyCandidates, setStoryCandidates] = useState<Array<{ id: string; title: string; author: string; domain: string; subdomain: string; highlight: string }>>([]);
+  const [selectedStoryCandidateId, setSelectedStoryCandidateId] = useState("");
+  const [isLoadingStoryCandidates, setIsLoadingStoryCandidates] = useState(false);
+  const [isReselectingStoryCitation, setIsReselectingStoryCitation] = useState(false);
+  const [storyReselectMessage, setStoryReselectMessage] = useState("");
+  const [storyReselectError, setStoryReselectError] = useState("");
+  const usedStoryNoteIds = useRef<Set<string>>(new Set(storyArgumentMeta?.knowledge_note_id ? [storyArgumentMeta.knowledge_note_id] : []));
+  useEffect(() => {
+    setActiveStoryArgumentMeta(storyArgumentMeta || null);
+    if (storyArgumentMeta?.knowledge_note_id) usedStoryNoteIds.current.add(storyArgumentMeta.knowledge_note_id);
+  }, [storyArgumentMeta]);
   const genreIssues = useMemo(
     () => (genreMeta ? checkGenreText(val, genreMeta, platform) : []),
     [val, genreMeta, platform]
@@ -987,6 +1002,82 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handleSave = () => {
     saveWorkspace(brandId, { social_copy: val });
+  };
+
+  const loadStoryArgumentCandidates = async () => {
+    setIsLoadingStoryCandidates(true);
+    setStoryReselectError("");
+    try {
+      const response = await fetch("/api/knowledge-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ action: "story-argument-candidates", idea: storyReselectIdea }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "目前無法讀取知識筆記候選。");
+      setStoryCandidates(Array.isArray(result.candidates) ? result.candidates : []);
+      setSelectedStoryCandidateId("");
+    } catch (error) {
+      setStoryReselectError(error instanceof Error ? error.message : "讀取候選失敗。");
+    } finally {
+      setIsLoadingStoryCandidates(false);
+    }
+  };
+
+  const reselectStoryArgumentCitation = async () => {
+    if (!activeStoryArgumentMeta || !val.trim()) return;
+    if (storyReselectMode === "candidate" && !selectedStoryCandidateId) {
+      setStoryReselectError("請先選擇一筆候選筆記。");
+      return;
+    }
+    setIsReselectingStoryCitation(true);
+    setStoryReselectError("");
+    setStoryReselectMessage("");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history: [{ role: "user", content: val }],
+          brandName: getBrandOrProjectName(brandId),
+          aiProvider,
+          stage: "story_argument_reselect",
+          expertType: "story_argument_reselect",
+          storyArgument: activeStoryArgumentMeta,
+          storyReselection: {
+            idea: storyReselectIdea,
+            mode: storyReselectMode,
+            excludeNoteIds: [...usedStoryNoteIds.current],
+            ...(storyReselectMode === "candidate" ? { selectedNoteId: selectedStoryCandidateId } : {}),
+            rewriteFull: storyReselectFull,
+            currentCopy: val,
+          },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "重新挑選引用失敗。");
+      const dispatch = result.dispatchData || {};
+      if (typeof dispatch.social_copy !== "string") throw new Error("重新挑選引用沒有回傳文章內容。");
+      const nextMeta = dispatch.story_argument_meta || activeStoryArgumentMeta;
+      setVal(dispatch.social_copy);
+      setActiveStoryArgumentMeta(nextMeta);
+      if (nextMeta.knowledge_note_id) usedStoryNoteIds.current.add(nextMeta.knowledge_note_id);
+      await saveWorkspace(brandId, { social_copy: dispatch.social_copy, story_argument_meta: nextMeta });
+      if (dispatch.citation_error === "no_matching_note") {
+        setStoryReselectMessage("知識庫找不到支持這個想法的筆記，已在論點支持處保留待補標記。");
+      } else if (dispatch.citation_error === "no_available_notes") {
+        setStoryReselectMessage("沒有尚未使用的筆記可供自動重選，請列出候選或補充想法。");
+      } else if (dispatch.citation_error === "selection_failed") {
+        setStoryReselectMessage("本次未能完成知識庫選取，請重試；文章仍保留待補標記。");
+      } else {
+        setStoryReselectMessage(nextMeta.citation_valid ? "引用已重新挑選並通過筆記驗證。" : "引用已更新，但仍有欄位需要補齊；發佈阻擋規則仍生效。");
+      }
+    } catch (error) {
+      setStoryReselectError(error instanceof Error ? error.message : "重新挑選引用失敗。");
+    } finally {
+      setIsReselectingStoryCitation(false);
+    }
   };
 
   /**
@@ -1739,20 +1830,20 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       )}
 
-      {storyArgumentMeta?.thesis && (
+      {activeStoryArgumentMeta?.thesis && (
         <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-bold text-amber-200">一句話論點（不併入發佈文案）</span>
-            <span className="text-slate-500">{storyArgumentMeta.version === "empathy" ? "共情版" : "完整版"}｜提示詞版本 {storyArgumentMeta.prompt_version}{storyArgumentMeta.model_version ? `｜模型 ${storyArgumentMeta.model_version}` : ""}</span>
+            <span className="text-slate-500">{activeStoryArgumentMeta.version === "empathy" ? "共情版" : "完整版"}｜提示詞版本 {activeStoryArgumentMeta.prompt_version}{activeStoryArgumentMeta.model_version ? `｜模型 ${activeStoryArgumentMeta.model_version}` : ""}</span>
           </div>
-          <p className="mt-1.5 whitespace-pre-wrap text-slate-200">{storyArgumentMeta.thesis}</p>
-          {storyArgumentMeta.citation_title && (
-            <p className="mt-2 text-slate-400">引用來源：{storyArgumentMeta.citation_title}，{storyArgumentMeta.citation_author || "作者未記錄"}</p>
+          <p className="mt-1.5 whitespace-pre-wrap text-slate-200">{activeStoryArgumentMeta.thesis}</p>
+          {activeStoryArgumentMeta.citation_title && (
+            <p className="mt-2 text-slate-400">引用來源：{activeStoryArgumentMeta.citation_author || "【需補：中文作者名】"}，《{activeStoryArgumentMeta.citation_title}》</p>
           )}
-          {storyArgumentMeta.knowledge_note_id && storyArgumentMeta.knowledge_content_md5 && (
-            <p className="mt-1 break-all text-slate-500">筆記追溯：{storyArgumentMeta.knowledge_note_id}｜內容 MD5 {storyArgumentMeta.knowledge_content_md5}</p>
+          {activeStoryArgumentMeta.knowledge_note_id && activeStoryArgumentMeta.knowledge_content_md5 && (
+            <p className="mt-1 break-all text-slate-500">筆記追溯：{activeStoryArgumentMeta.knowledge_note_id}｜內容 MD5 {activeStoryArgumentMeta.knowledge_content_md5}</p>
           )}
-          {storyArgumentMeta.citation_valid === false && (
+          {activeStoryArgumentMeta.citation_valid === false && (
             <p className="mt-1 text-amber-300">出處尚未通過驗證，發佈前需補齊引用來源。</p>
           )}
         </div>
@@ -1849,6 +1940,78 @@ const SocialTabContent = memo(function SocialTabContent({
             )}
           </div>
         )
+      )}
+
+      {activeStoryArgumentMeta?.version === "full" && (
+        <section className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-4 space-y-3">
+          <div>
+            <h3 className="text-xs font-bold text-indigo-200">重新挑選引用</h3>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">用你自己的話寫這篇想表達的重點，系統會依此重新從知識庫挑選。這欄只用於本次生成，不會併入文章或儲存。</p>
+          </div>
+          <textarea
+            value={storyReselectIdea}
+            onChange={(event) => setStoryReselectIdea(event.target.value)}
+            placeholder="我的想法（可留空）"
+            rows={3}
+            className="w-full rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-xs text-slate-200 placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setStoryReselectMode("auto"); setStoryReselectError(""); }}
+              className={`rounded-lg border px-3 py-2 text-[10px] font-bold transition ${storyReselectMode === "auto" ? "border-indigo-400 bg-indigo-500/20 text-indigo-100" : "border-slate-700 bg-slate-900/60 text-slate-400"}`}
+            >自動重選（避開剛才用過的筆記）</button>
+            <button
+              type="button"
+              onClick={() => { setStoryReselectMode("candidate"); void loadStoryArgumentCandidates(); }}
+              className={`rounded-lg border px-3 py-2 text-[10px] font-bold transition ${storyReselectMode === "candidate" ? "border-indigo-400 bg-indigo-500/20 text-indigo-100" : "border-slate-700 bg-slate-900/60 text-slate-400"}`}
+            >列出候選讓我選</button>
+          </div>
+          {storyReselectMode === "candidate" && (
+            <div className="space-y-2">
+              <button type="button" onClick={() => void loadStoryArgumentCandidates()} disabled={isLoadingStoryCandidates} className="text-[10px] text-indigo-300 hover:text-indigo-200 disabled:opacity-50">
+                {isLoadingStoryCandidates ? "正在讀取候選…" : "重新整理候選"}
+              </button>
+              {storyCandidates.map((candidate) => (
+                <button
+                  type="button"
+                  key={candidate.id}
+                  onClick={() => setSelectedStoryCandidateId(candidate.id)}
+                  className={`block w-full rounded-lg border p-3 text-left transition ${selectedStoryCandidateId === candidate.id ? "border-indigo-400 bg-indigo-500/10" : "border-slate-800 bg-slate-950/50 hover:border-slate-600"}`}
+                >
+                  <span className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-200">
+                    <span>{candidate.title}</span><span className="text-slate-400">作者：{candidate.author}</span>
+                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400">{candidate.domain}{candidate.subdomain ? `／${candidate.subdomain}` : ""}</span>
+                    {usedStoryNoteIds.current.has(candidate.id) && <span className="text-amber-300">剛才用過，仍可明確選取</span>}
+                  </span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">筆記摘句：{candidate.highlight}</span>
+                </button>
+              ))}
+              {!isLoadingStoryCandidates && storyCandidates.length === 0 && <p className="text-[10px] text-slate-500">目前沒有可顯示的候選筆記。</p>}
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-[10px] text-slate-300">
+            <input type="checkbox" checked={storyReselectFull} onChange={(event) => setStoryReselectFull(event.target.checked)} />
+            全文重寫（未勾選時只替換論點支持段與出處，其他段落原樣保留）
+          </label>
+          {storyReselectMessage && <p className="text-[10px] text-emerald-300">{storyReselectMessage}</p>}
+          {storyReselectError && <p role="alert" className="text-[10px] text-rose-300">{storyReselectError}</p>}
+          {activeStoryArgumentMeta.citation_error === "no_matching_note" && (
+            <p className="text-[10px] text-amber-300">知識庫找不到支持這個想法的筆記。</p>
+          )}
+          {activeStoryArgumentMeta.citation_error === "selection_failed" && (
+            <p className="text-[10px] text-amber-300">知識庫選取暫時失敗，請重試。</p>
+          )}
+          <button
+            type="button"
+            disabled={isReselectingStoryCitation || !val.trim()}
+            onClick={() => void reselectStoryArgumentCitation()}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-[10px] font-bold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isReselectingStoryCitation && <Loader2 className="h-3 w-3 animate-spin" />}
+            {isReselectingStoryCitation ? "重新挑選並生成中…" : "重新挑選並生成"}
+          </button>
+        </section>
       )}
 
       {/* 📚 歷史上架文章庫 (Supabase Archive) */}
