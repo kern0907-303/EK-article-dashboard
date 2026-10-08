@@ -1597,229 +1597,6 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          {/* 🎯 目標 Facebook 粉絲專頁選擇器 (Target Facebook Fan Page Selector) */}
-          {val && (
-            <div className="relative">
-              <Button
-                ref={pageSelectorBtnRef}
-                variant="secondary"
-                onClick={togglePageSelector}
-                title="切換或多選發布目標 Facebook 粉絲專頁"
-                icon={<Facebook className="w-3.5 h-3.5 text-blue-400" />}
-              >
-                <span className="text-slate-400 font-normal">目標粉專:</span>
-                <span className="font-bold text-slate-100 flex items-center gap-1">
-                  {selectedTargetPages.length === 1 ? (
-                    getFacebookPageById(selectedTargetPages[0])?.badge || "FB 粉專"
-                  ) : selectedTargetPages.length > 1 ? (
-                    <span className="bg-blue-500/20 text-blue-300 px-1.5 rounded border border-blue-500/30">
-                      {selectedTargetPages.length} 個粉專同步
-                    </span>
-                  ) : (
-                    <span className="text-rose-400">未選擇</span>
-                  )}
-                </span>
-                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showPageSelector ? "rotate-180" : ""}`} />
-              </Button>
-
-              {/* 下拉選擇面板 */}
-              {showPageSelector && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowPageSelector(false)} />
-                  <div className={`absolute ${pageSelectorAlign === "right" ? "right-0" : "left-0"} mt-2 w-80 max-w-[calc(100vw-1rem)] bg-slate-950/95 border border-slate-800 rounded-xl shadow-2xl z-50 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 duration-200`}>
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-850">
-                      <div className="flex items-center gap-1.5">
-                        <Facebook className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold text-slate-100">選擇發布 Facebook 粉絲專頁</span>
-                      </div>
-                      <span className="text-[9px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">可多選發布</span>
-                    </div>
-
-                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                      {FACEBOOK_PAGES.map((page) => {
-                        const isChecked = selectedTargetPages.includes(page.id);
-                        const isCurrentBrand = getDefaultFacebookPage(pubBrandId).id === page.id;
-                        return (
-                          <div
-                            key={page.id}
-                            onClick={() => {
-                              setSelectedTargetPages((prev) => {
-                                if (prev.includes(page.id)) {
-                                  if (prev.length === 1) return prev; // 至少保留一個選擇
-                                  return prev.filter((id) => id !== page.id);
-                                } else {
-                                  return [...prev, page.id];
-                                }
-                              });
-                            }}
-                            className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${
-                              isChecked
-                                ? `${page.activeBgClass} ${page.activeBorderClass}`
-                                : "bg-slate-900/40 border-slate-800/80 hover:bg-slate-900 text-slate-400"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              className="mt-0.5 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0 cursor-pointer"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className={`text-xs font-bold ${isChecked ? "text-slate-100" : "text-slate-300"}`}>
-                                  {page.name}
-                                </span>
-                                {isCurrentBrand && (
-                                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-semibold">
-                                    當前品牌
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-400 truncate mt-0.5">{page.pageName}</p>
-                              <p className="text-[9px] text-slate-500 truncate mt-0.5">{page.category}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* 快捷操作列 */}
-                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-850 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTargetPages(FACEBOOK_PAGES.map((p) => p.id))}
-                        className="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
-                      >
-                        全選所有粉專
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTargetPages([getDefaultFacebookPage(pubBrandId).id])}
-                        className="text-slate-400 hover:text-slate-200 font-semibold cursor-pointer"
-                      >
-                        僅選當前品牌
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowPageSelector(false)}
-                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold cursor-pointer transition"
-                      >
-                        完成
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Webhook Publish Action Buttons */}
-          {val && (
-            <div className="flex flex-wrap items-center gap-2 mr-2 border-r border-slate-800 pr-3">
-              {showDatePicker ? (
-                <div className="flex items-center gap-2 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <SchedulePicker
-                    value={scheduleTime}
-                    onChange={setScheduleTime}
-                    accentClass={theme.primaryBg}
-                    items={allQueueItems}
-                  />
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    loading={isScheduling}
-                    disabled={!scheduleTime}
-                    onClick={() => {
-                      handleSchedule(scheduleTime);
-                    }}
-                  >
-                    {isScheduling ? "排程中..." : "確定"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setShowDatePicker(false)}>
-                    取消
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    variant="primary"
-                    loading={isPublishingWebsite}
-                    disabled={isPublishing}
-                    onClick={() => handlePublishWebsite()}
-                    icon={<Network className="w-3.5 h-3.5" />}
-                  >
-                    {isPublishingWebsite ? "正在同步..." : "發布至官網"}
-                  </Button>
-
-                  <Button
-                    variant={pubStatus === "success" ? "success" : pubStatus === "error" ? "danger" : "primary"}
-                    loading={isPublishing}
-                    disabled={isPublishingWebsite}
-                    onClick={() => handlePublish("now")}
-                    icon={pubStatus === "success" ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
-                  >
-                    {pubStatus === "success"
-                      ? "已發布至 Meta"
-                      : pubStatus === "error"
-                      ? "發布失敗"
-                      : selectedTargetPages.length === 1
-                      ? `發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
-                      : `發布至 Meta (${selectedTargetPages.length} 粉專)`}
-                  </Button>
-
-                  {platform === "threads" && (
-                    <Button
-                      variant="primary"
-                      loading={isPublishingSocial}
-                      disabled={isPublishingWebsite || isPublishing}
-                      onClick={() => handlePublishThreads()}
-                      icon={<AtSign className="w-3.5 h-3.5" />}
-                    >
-                      {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Threads"}
-                    </Button>
-                  )}
-
-                  {platform === "instagram" && (
-                    <>
-                      <Button
-                        variant="secondary"
-                        loading={isGeneratingImage}
-                        disabled={isPublishingSocial || !val}
-                        onClick={() => handleGenerateImage()}
-                        icon={<Sparkles className="w-3.5 h-3.5" />}
-                      >
-                        {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
-                      </Button>
-                      <Button
-                        variant="primary"
-                        loading={isPublishingSocial}
-                        disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
-                        onClick={() => handlePublishInstagram()}
-                        icon={<Instagram className="w-3.5 h-3.5" />}
-                      >
-                        {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Instagram"}
-                      </Button>
-                    </>
-                  )}
-
-                  <Button
-                    variant="secondary"
-                    disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
-                    onClick={() => setShowDatePicker(true)}
-                    title={
-                      queueEnabled
-                        ? "排程：現在先上架官網，時間到再自動發到勾選的粉專"
-                        : "排程尚未啟用（等 n8n 排程執行器上線後開啟）"
-                    }
-                    icon={<Calendar className="w-3.5 h-3.5" />}
-                  >
-                    {queueEnabled ? "排程" : "排程（尚未啟用）"}
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850">
             {val && (
               <>
@@ -1938,6 +1715,251 @@ const SocialTabContent = memo(function SocialTabContent({
           );
         })}
       </div>
+
+      {/* 發佈面板：內容跟著上方選取的平台切換，每個平台只顯示自己需要的操作 */}
+      {val && (platform === "threads" || platform === "facebook" || platform === "instagram") && (
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="font-bold text-slate-200">
+                發佈到 {platform === "threads" ? "Threads" : platform === "instagram" ? "Instagram" : "Facebook"}
+              </span>
+              <span className="px-2 py-0.5 rounded-md border border-slate-800 bg-slate-900 text-slate-400">
+                約 {countChars(val)} 字{platform === "threads" ? " / 上限 500" : platform === "instagram" ? " / 上限 2200" : ""}
+              </span>
+              {genreMeta && genreIssues.some((i) => i.level === "block") && (
+                <span className="px-2 py-0.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-300">
+                  有 {genreIssues.filter((i) => i.level === "block").length} 項擋住發佈
+                </span>
+              )}
+              {genreMeta && genreIssues.some((i) => i.level === "warn") && (
+                <span className="px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  {genreIssues.filter((i) => i.level === "warn").length} 項提醒
+                </span>
+              )}
+              {genreMeta && genreIssues.length === 0 && (
+                <span className="px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">檢查通過</span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={isPublishingWebsite}
+              disabled={isPublishing || isPublishingSocial}
+              onClick={() => handlePublishWebsite()}
+              icon={<Network className="w-3.5 h-3.5" />}
+              title="把這篇同步發布到官網"
+            >
+              {isPublishingWebsite ? "正在同步..." : "發布至官網"}
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {platform === "facebook" && (
+              <>
+          {/* 🎯 目標 Facebook 粉絲專頁選擇器 (Target Facebook Fan Page Selector) */}
+          {val && (
+            <div className="relative">
+              <Button
+                ref={pageSelectorBtnRef}
+                variant="secondary"
+                onClick={togglePageSelector}
+                title="切換或多選發布目標 Facebook 粉絲專頁"
+                icon={<Facebook className="w-3.5 h-3.5 text-blue-400" />}
+              >
+                <span className="text-slate-400 font-normal">目標粉專:</span>
+                <span className="font-bold text-slate-100 flex items-center gap-1">
+                  {selectedTargetPages.length === 1 ? (
+                    getFacebookPageById(selectedTargetPages[0])?.badge || "FB 粉專"
+                  ) : selectedTargetPages.length > 1 ? (
+                    <span className="bg-blue-500/20 text-blue-300 px-1.5 rounded border border-blue-500/30">
+                      {selectedTargetPages.length} 個粉專同步
+                    </span>
+                  ) : (
+                    <span className="text-rose-400">未選擇</span>
+                  )}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showPageSelector ? "rotate-180" : ""}`} />
+              </Button>
+
+              {/* 下拉選擇面板 */}
+              {showPageSelector && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowPageSelector(false)} />
+                  <div className={`absolute ${pageSelectorAlign === "right" ? "right-0" : "left-0"} mt-2 w-80 max-w-[calc(100vw-1rem)] bg-slate-950/95 border border-slate-800 rounded-xl shadow-2xl z-50 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 duration-200`}>
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-850">
+                      <div className="flex items-center gap-1.5">
+                        <Facebook className="w-4 h-4 text-blue-400" />
+                        <span className="text-xs font-bold text-slate-100">選擇發布 Facebook 粉絲專頁</span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">可多選發布</span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {FACEBOOK_PAGES.map((page) => {
+                        const isChecked = selectedTargetPages.includes(page.id);
+                        const isCurrentBrand = getDefaultFacebookPage(pubBrandId).id === page.id;
+                        return (
+                          <div
+                            key={page.id}
+                            onClick={() => {
+                              setSelectedTargetPages((prev) => {
+                                if (prev.includes(page.id)) {
+                                  if (prev.length === 1) return prev; // 至少保留一個選擇
+                                  return prev.filter((id) => id !== page.id);
+                                } else {
+                                  return [...prev, page.id];
+                                }
+                              });
+                            }}
+                            className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${
+                              isChecked
+                                ? `${page.activeBgClass} ${page.activeBorderClass}`
+                                : "bg-slate-900/40 border-slate-800/80 hover:bg-slate-900 text-slate-400"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="mt-0.5 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0 cursor-pointer"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs font-bold ${isChecked ? "text-slate-100" : "text-slate-300"}`}>
+                                  {page.name}
+                                </span>
+                                {isCurrentBrand && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-semibold">
+                                    當前品牌
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-400 truncate mt-0.5">{page.pageName}</p>
+                              <p className="text-[9px] text-slate-500 truncate mt-0.5">{page.category}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 快捷操作列 */}
+                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-850 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTargetPages(FACEBOOK_PAGES.map((p) => p.id))}
+                        className="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                      >
+                        全選所有粉專
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTargetPages([getDefaultFacebookPage(pubBrandId).id])}
+                        className="text-slate-400 hover:text-slate-200 font-semibold cursor-pointer"
+                      >
+                        僅選當前品牌
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowPageSelector(false)}
+                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold cursor-pointer transition"
+                      >
+                        完成
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+
+                {showDatePicker ? (
+                  <div className="flex items-center gap-2 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <SchedulePicker
+                      value={scheduleTime}
+                      onChange={setScheduleTime}
+                      accentClass={theme.primaryBg}
+                      items={allQueueItems}
+                    />
+                    <Button size="sm" variant="primary" loading={isScheduling} disabled={!scheduleTime} onClick={() => { handleSchedule(scheduleTime); }}>
+                      {isScheduling ? "排程中..." : "確定"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowDatePicker(false)}>取消</Button>
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      variant={pubStatus === "success" ? "success" : pubStatus === "error" ? "danger" : "primary"}
+                      loading={isPublishing}
+                      disabled={isPublishingWebsite}
+                      onClick={() => handlePublish("now")}
+                      icon={pubStatus === "success" ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
+                    >
+                      {pubStatus === "success"
+                        ? "已發布至 Meta"
+                        : pubStatus === "error"
+                        ? "發布失敗"
+                        : selectedTargetPages.length === 1
+                        ? `發布至 Meta (${getFacebookPageById(selectedTargetPages[0])?.badge || "粉專"})`
+                        : `發布至 Meta (${selectedTargetPages.length} 粉專)`}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={isPublishingWebsite || isPublishing || isScheduling || !queueEnabled}
+                      onClick={() => setShowDatePicker(true)}
+                      title={
+                        queueEnabled
+                          ? "排程：現在先上架官網，時間到再自動發到勾選的粉專"
+                          : "排程尚未啟用（等 n8n 排程執行器上線後開啟）"
+                      }
+                      icon={<Calendar className="w-3.5 h-3.5" />}
+                    >
+                      {queueEnabled ? "排程" : "排程（尚未啟用）"}
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+
+            {platform === "threads" && (
+              <Button
+                variant="primary"
+                loading={isPublishingSocial}
+                disabled={isPublishingWebsite || isPublishing}
+                onClick={() => handlePublishThreads()}
+                icon={<AtSign className="w-3.5 h-3.5" />}
+              >
+                {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Threads"}
+              </Button>
+            )}
+
+            {platform === "instagram" && (
+              <>
+                <Button
+                  variant="secondary"
+                  loading={isGeneratingImage}
+                  disabled={isPublishingSocial || !val}
+                  onClick={() => handleGenerateImage()}
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                >
+                  {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={isPublishingSocial}
+                  disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
+                  onClick={() => handlePublishInstagram()}
+                  icon={<Instagram className="w-3.5 h-3.5" />}
+                >
+                  {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Instagram"}
+                </Button>
+                {!igImageUrl && <span className="text-[11px] text-slate-500">請先生成配圖並確認預覽，才能發布</span>}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {platform === "instagram" && igImageUrl && (
         <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
