@@ -452,8 +452,8 @@ async function callStoryArgumentReselection(
         `原文章論點：${selection.thesis}`,
         `原文章（僅供理解論點與故事，不得重寫或輸出）：\n<current_article>\n${request.currentCopy}\n</current_article>`,
         `唯一可用的知識筆記全文節錄：\n<knowledge_note_excerpt>\n${noteContent}\n</knowledge_note_excerpt>`,
-        `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「中文作者名在《中文主書名》提出」句型，使用 ${activeSelection.noteId} 所代表筆記的中文書名與作者。不得輸出出處行；伺服器會驗證後補上。不得輸出英文姓名、英文書名、評價詞、Markdown 符號或破折號。若筆記沒有可驗證的中文來源，不得改用英文或自行翻譯。`,
-        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫 title_zh\",\"citation_author\":\"知識庫 author_zh\"}。citation_title 與 citation_author 必須逐字填入所附筆記的中文欄位。",
+        `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「作者欄位原文在《title_zh 欄位原文》提出」句型，使用 ${activeSelection.noteId} 所代表筆記的 title_zh 與 author_zh。不得輸出出處行；伺服器會驗證後補上。引用欄位即使含英文字母也必須逐字保留；引用以外的內容不得另加英文姓名或書名。不得輸出評價詞、Markdown 符號或破折號。若筆記沒有可驗證的來源，不得改用其他來源或自行翻譯。`,
+        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫 title_zh\",\"citation_author\":\"知識庫 author_zh\"}。citation_title 與 citation_author 必須逐字填入所附筆記的 title_zh 與 author_zh 欄位。",
       ].join("\n\n");
 
   const raw = await runQueryWithFallback(`${brandContext}\n\n${taskPrompt}`, config, true, "anthropic", { maxTokens: 12000, timeoutMs: 120000 });

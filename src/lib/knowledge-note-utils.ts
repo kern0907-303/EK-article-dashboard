@@ -93,12 +93,11 @@ export function applyValidatedKnowledgeCitation(
   const citationLines = bodyLines.filter(isCitationLine);
   const expectedPhrase = titleZh && authorZh ? `${authorZh}在《${titleZh}》提出` : "";
   const citedTitles = citationLines.flatMap((line) => [...line.matchAll(/《([^》]+)》/gu)].map((match) => match[1].trim()));
-  const citationHasOnlyChinese = Boolean(titleZh && authorZh) && !/[A-Za-z]/u.test(`${titleZh}${authorZh}`);
   const metadataMatches = Boolean(eligible && citedTitle === titleZh && citedAuthor === authorZh);
   const bodyMatches = Boolean(expectedPhrase && citationLines.length > 0 && citedTitles.length > 0 &&
     citedTitles.every((title) => title === titleZh) && citationLines.every((line) => line.includes(expectedPhrase)));
   const noPartialMarkers = !bodyLines.some((line) => /【需補：(?:中文書名|中文作者名)/u.test(line));
-  const valid = Boolean(eligible && citationHasOnlyChinese && metadataMatches && bodyMatches && noPartialMarkers);
+  const valid = Boolean(eligible && metadataMatches && bodyMatches && noPartialMarkers);
   const bodyWithoutCitation = bodyLines.filter((line) => !isCitationLine(line)).join("\n").trim();
   const body = valid ? bodyLines.join("\n").trim() : bodyWithoutCitation;
   const source = valid ? `出處：${authorZh}，《${titleZh}》` : "【需補：引用來源】";

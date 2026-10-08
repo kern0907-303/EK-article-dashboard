@@ -929,7 +929,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                             <option key={note.id} value={note.id} disabled={!eligible}>
                               {eligible
                                 ? `《${note.title_zh}》，${note.author_zh}`
-                                : `${note.title_zh ? `《${note.title_zh}》` : "中文書名待確認"}，${note.author_zh || "中文作者待確認"}（中文資料待確認）`}
+                                : `${note.title || "未提供英文書名"}（缺中文書名或作者）`}
                             </option>
                           );
                         })}

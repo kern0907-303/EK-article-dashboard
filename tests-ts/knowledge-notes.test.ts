@@ -49,7 +49,7 @@ t("伺服器目錄僅查書目欄位，全文另由伺服器函式讀取", serve
 t("中文欄位 migration 尚未套用時退回舊查詢，維持既有衍生功能可讀", serverDirectorySource.includes("fetchKnowledgeRowsWithLegacyFallback") && serverDirectorySource.includes("!error.message.includes(\"HTTP 400\")") && serverDirectorySource.includes("title_zh: null"));
 t("自動選書目錄只提供中文欄位且候選先過 confirmed 篩選", serverDirectorySource.includes("directory.filter(isStoryArgumentCitationEligible)") && serverDirectorySource.includes("title_zh: entry.title_zh") && serverDirectorySource.includes("selectable: false"));
 t("候選摘句取自筆記原文，API 不回傳全文或檔案路徑", extractKnowledgeNoteHighlight("# 標題\n第一句是筆記原文。第二句不需要。") === "第一句是筆記原文。" && serverDirectorySource.includes("highlight: extractKnowledgeNoteHighlight(note.content)") && knowledgeApiSource.includes("story-argument-candidates") && !knowledgeApiSource.includes("source_file") && !serverDirectorySource.includes("content: note.content"));
-t("指定書籍下拉顯示中文書目，未確認項目灰階且不可選", chatBoxSource.includes("《${note.title_zh}》，${note.author_zh}") && chatBoxSource.includes("disabled={!eligible}") && chatBoxSource.includes("中文資料待確認"));
+t("指定書籍下拉顯示中文書目，未確認項目以英文書名說明缺漏並灰階", chatBoxSource.includes("《${note.title_zh}》，${note.author_zh}") && chatBoxSource.includes("disabled={!eligible}") && chatBoxSource.includes("${note.title || \"未提供英文書名\"}（缺中文書名或作者）") && !chatBoxSource.includes("中文書名待確認"));
 t("重新挑選候選列出中文資料，未確認項目不可點選且區塊位於結果後", workspaceBoardSource.includes("candidate.title_zh") && workspaceBoardSource.includes("disabled={!candidate.selectable}") && workspaceBoardSource.includes("border-2 border-indigo-400/50"));
 t("指定書籍未選會在前端及 API 阻擋生成", chatBoxSource.includes("validateStoryArgumentSelection") && chatRouteSource.includes("STORY_ARGUMENT_SELECTION_REQUIRED"));
 t("我的想法只送本次 API 請求，不寫入 workspace 欄位", workspaceBoardSource.includes("idea: storyReselectIdea") && workspaceBoardSource.includes("saveWorkspace(brandId, { social_copy: dispatch.social_copy, story_argument_meta: nextMeta })") && !workspaceBoardSource.includes("storyReselectIdea:"));
@@ -76,6 +76,15 @@ t("超過 20,000 字時選取相關章節並限制上限", [...excerpt].length <
 
 const validCitation = applyValidatedKnowledgeCitation("陶德·羅斯在《黑馬思維》提出一個觀點。", "黑馬思維", "陶德·羅斯", record, true);
 t("引用句型與書名、作者完全取自已讀入的中文欄位", validCitation.valid && validCitation.content.endsWith("出處：陶德·羅斯，《黑馬思維》"));
+const englishCitationNote = { title_zh: "EQ", author_zh: "Isabella Price", zh_status: "confirmed" };
+const englishCitation = applyValidatedKnowledgeCitation("Isabella Price在《EQ》提出一個觀點。", "EQ", "Isabella Price", englishCitationNote, true);
+t("confirmed 的《EQ》與英文作者欄位逐字一致時引用合法", englishCitation.valid && englishCitation.content.endsWith("出處：Isabella Price，《EQ》"));
+const blankCitations = [
+  applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "", author_zh: "作者", zh_status: "confirmed" }, true),
+  applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "書名", author_zh: " ", zh_status: "confirmed" }, true),
+  applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "書名", author_zh: "作者", zh_status: "unverified" }, true),
+];
+t("書名或作者任一空白、或狀態非 confirmed 仍整句標記並阻擋", blankCitations.every((result) => !result.valid && result.content.endsWith("【需補：引用來源】")));
 const mismatch = applyValidatedKnowledgeCitation("情緒可能受到多種因素影響。\n\n出處：別本，錯誤作者", "別本", "錯誤作者", record, true);
 t("AI 出處與實際讀入筆記不一致時以完整引用來源標記阻擋", mismatch.content.endsWith("【需補：引用來源】") && !mismatch.content.includes("出處：別本") && !mismatch.valid);
 t("即使 metadata 正確，正文引用未讀入書籍仍以完整標記阻擋", applyValidatedKnowledgeCitation("正文提到《另一本書》", "黑馬思維", "陶德·羅斯", record, true).content.endsWith("【需補：引用來源】"));
