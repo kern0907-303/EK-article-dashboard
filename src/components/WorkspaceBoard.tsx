@@ -17,6 +17,7 @@ import {
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
 import Button from "@/components/ui/Button";
+import SocialQueuePanel from "@/components/SocialQueuePanel";
 import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
@@ -440,6 +441,11 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isPublishingWebsite, setIsPublishingWebsite] = useState(false);
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
   const [isPublishingSocial, setIsPublishingSocial] = useState(false);
+  // Threads / Instagram 排程（與 Facebook 排程分開）
+  const [showSocialPicker, setShowSocialPicker] = useState(false);
+  const [socialScheduleTime, setSocialScheduleTime] = useState("");
+  const [isSchedulingSocial, setIsSchedulingSocial] = useState(false);
+  const [socialQueueTick, setSocialQueueTick] = useState(0);
   const [igImageUrl, setIgImageUrl] = useState<string | null>(null);
   const [igImagePrompt, setIgImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -784,6 +790,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
   const handlePlatformChange = async (newPlatform: string) => {
     setPlatform(newPlatform);
+    setShowSocialPicker(false);
     await saveWorkspace(brandId, { active_platform: newPlatform });
   };
 
@@ -1257,6 +1264,76 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
+  // Threads / Instagram 排程：寫進 Supabase 佇列，到期由 n8n 的 Social Queue Runner 發出
+  const handleScheduleSocial = async (targetPlatform: "threads" | "instagram", force = false) => {
+    if (!requireParentBrand()) return;
+    if (!requireGenreOk()) return;
+    if (isSchedulingSocial || !val) return;
+    const brandKey = brandKeyFromId(pubBrandId);
+    if (brandKey === "erick") {
+      alert("Erick 個人品牌還沒有串接 Threads / Instagram 帳號，請切換到 ABL、NAS 或 I8。");
+      return;
+    }
+    if (targetPlatform === "instagram" && !igImageUrl) {
+      alert("請先按「生成配圖」，預覽圖片後再排程。");
+      return;
+    }
+    const when = new Date(socialScheduleTime);
+    if (!socialScheduleTime || Number.isNaN(when.getTime())) {
+      alert("❌ 請先選擇排程時間");
+      return;
+    }
+    if (when.getTime() - Date.now() < 5 * 60 * 1000) {
+      alert("❌ 排程時間至少要晚於現在 5 分鐘");
+      return;
+    }
+    const label = targetPlatform === "threads" ? "Threads" : "Instagram";
+    const whenText = when.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false });
+    if (!force) {
+      const warns = genreIssues.filter((i) => i.level === "warn").map((i) => "・" + i.message);
+      const ok = confirm(
+        `確定要排程在 ${whenText}（台北時間）發布到【${label} ${brandKey.toUpperCase()}】嗎？\n時間到會自動發出，發出前可以在排程清單取消。\n目前 ${val.length} 字。` +
+          (warns.length > 0 ? "\n\n目前的提醒：\n" + warns.join("\n") : "")
+      );
+      if (!ok) return;
+    }
+    setIsSchedulingSocial(true);
+    try {
+      const response = await fetch("/api/social-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId: pubBrandId,
+          platform: targetPlatform,
+          content: val,
+          imageUrl: targetPlatform === "instagram" ? igImageUrl : undefined,
+          scheduledAt: when.toISOString(),
+          force,
+        }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (response.status === 422 && resData.blocked) {
+        setIsSchedulingSocial(false);
+        if (confirmGuardrail(resData)) {
+          return handleScheduleSocial(targetPlatform, true);
+        }
+        return;
+      }
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || "排程失敗");
+      }
+      alert(`📅 已排程在 ${whenText}（台北時間）發布到 ${label}。可在下方「排程清單」查看或取消。`);
+      setShowSocialPicker(false);
+      setSocialScheduleTime("");
+      setSocialQueueTick((t) => t + 1);
+    } catch (error) {
+      console.error("Social schedule error:", error);
+      alert(`❌ 排程失敗：${error instanceof Error && error.message ? error.message : "未知錯誤"}`);
+    } finally {
+      setIsSchedulingSocial(false);
+    }
+  };
+
   // Instagram：先依文章生成配圖（圖上不放字），預覽後才發佈
   const handleGenerateImage = async () => {
     if (!requireParentBrand()) return;
@@ -1588,6 +1665,19 @@ const SocialTabContent = memo(function SocialTabContent({
     
     return elements;
   };
+
+  // Threads / Instagram 共用的排程時間選擇列
+  const socialPickerBlock = (targetPlatform: "threads" | "instagram") => (
+    <div className="flex items-center gap-2 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
+      <SchedulePicker value={socialScheduleTime} onChange={setSocialScheduleTime} accentClass={theme.primaryBg} />
+      <Button size="sm" variant="primary" loading={isSchedulingSocial} disabled={!socialScheduleTime} onClick={() => handleScheduleSocial(targetPlatform)}>
+        {isSchedulingSocial ? "排程中..." : "確定"}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setShowSocialPicker(false)}>
+        取消
+      </Button>
+    </div>
+  );
 
   return (
     <div className="flex flex-col min-h-full space-y-4">
@@ -1924,41 +2014,62 @@ const SocialTabContent = memo(function SocialTabContent({
             )}
 
             {platform === "threads" && (
-              <Button
-                variant="primary"
-                loading={isPublishingSocial}
-                disabled={isPublishingWebsite || isPublishing}
-                onClick={() => handlePublishThreads()}
-                icon={<AtSign className="w-3.5 h-3.5" />}
-              >
-                {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Threads"}
-              </Button>
+              showSocialPicker ? socialPickerBlock("threads") : (
+                <>
+                  <Button
+                    variant="primary"
+                    loading={isPublishingSocial}
+                    disabled={isPublishingWebsite || isPublishing}
+                    onClick={() => handlePublishThreads()}
+                    icon={<AtSign className="w-3.5 h-3.5" />}
+                  >
+                    {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Threads"}
+                  </Button>
+                  <Button variant="secondary" disabled={isPublishingSocial} onClick={() => setShowSocialPicker(true)} icon={<Calendar className="w-3.5 h-3.5" />}>
+                    排程
+                  </Button>
+                </>
+              )
             )}
 
             {platform === "instagram" && (
-              <>
-                <Button
-                  variant="secondary"
-                  loading={isGeneratingImage}
-                  disabled={isPublishingSocial || !val}
-                  onClick={() => handleGenerateImage()}
-                  icon={<Sparkles className="w-3.5 h-3.5" />}
-                >
-                  {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={isPublishingSocial}
-                  disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
-                  onClick={() => handlePublishInstagram()}
-                  icon={<Instagram className="w-3.5 h-3.5" />}
-                >
-                  {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Instagram"}
-                </Button>
-                {!igImageUrl && <span className="text-[11px] text-slate-500">請先生成配圖並確認預覽，才能發布</span>}
-              </>
+              showSocialPicker ? socialPickerBlock("instagram") : (
+                <>
+                  <Button
+                    variant="secondary"
+                    loading={isGeneratingImage}
+                    disabled={isPublishingSocial || !val}
+                    onClick={() => handleGenerateImage()}
+                    icon={<Sparkles className="w-3.5 h-3.5" />}
+                  >
+                    {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    loading={isPublishingSocial}
+                    disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
+                    onClick={() => handlePublishInstagram()}
+                    icon={<Instagram className="w-3.5 h-3.5" />}
+                  >
+                    {isPublishingSocial ? "發布中，約 40 秒..." : "發布至 Instagram"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!igImageUrl || isPublishingSocial || isGeneratingImage}
+                    onClick={() => setShowSocialPicker(true)}
+                    icon={<Calendar className="w-3.5 h-3.5" />}
+                  >
+                    排程
+                  </Button>
+                  {!igImageUrl && <span className="text-[11px] text-slate-500">請先生成配圖並確認預覽，才能發布或排程</span>}
+                </>
+              )
             )}
           </div>
+
+          {(platform === "threads" || platform === "instagram") && (
+            <SocialQueuePanel brandId={pubBrandId} platform={platform} refreshKey={socialQueueTick} />
+          )}
         </div>
       )}
 
