@@ -30,7 +30,10 @@ function estimateLines(paragraph: string): number {
     .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.trim().length / 28)), 0);
 }
 
-/** platform：目前檢視的平台。字數區間與長段落只針對 Facebook 長文檢查（Threads、IG 是改寫後的短版） */
+/**
+ * platform：目前檢視的平台。字數區間與長段落只針對 Facebook 長文檢查（Threads、IG 是改寫後的短版）。
+ * Threads、IG 另有各自的平台規則（字數上限、網址、標籤數），只在明確指定該平台時才檢查；沒指定平台時行為與以前相同。
+ */
 export function checkGenreText(text: string, meta: GenreMeta, platform?: string): GenreIssue[] {
   const issues: GenreIssue[] = [];
   const body = (text || "").trim();
@@ -63,7 +66,7 @@ export function checkGenreText(text: string, meta: GenreMeta, platform?: string)
     issues.push({
       level: "warn",
       code: "markdown",
-      message: "內文含有 ** 或 ## 這類 Markdown 符號，貼到 Facebook 會變亂碼，請刪除。",
+      message: "內文含有 ** 或 ## 這類 Markdown 符號，貼到社群平台會變亂碼，請刪除。",
     });
   }
 
@@ -107,6 +110,50 @@ export function checkGenreText(text: string, meta: GenreMeta, platform?: string)
     }
   }
 
+  // 7. Threads、IG 的平台規則（提醒；沒指定平台時不檢查，Facebook 規則不受影響）
+  if (platform === "threads" || platform === "instagram") {
+    issues.push(...checkShortPlatformRules(body, platform));
+  }
+
+  return issues;
+}
+
+const THREADS_LIMIT = 500;
+const INSTAGRAM_LIMIT = 2200;
+const URL_PATTERN = /https?:\/\/[^\s]+/g;
+
+function checkShortPlatformRules(body: string, platform: "threads" | "instagram"): GenreIssue[] {
+  const issues: GenreIssue[] = [];
+  // 字數用 body.length，與輸入框的計數一致
+  const limit = platform === "threads" ? THREADS_LIMIT : INSTAGRAM_LIMIT;
+  const label = platform === "threads" ? "Threads" : "Instagram";
+  if (body.length > limit) {
+    issues.push({
+      level: "warn",
+      code: "platform-limit",
+      message: `${label} 上限 ${limit} 字，目前 ${body.length} 字，超過 ${body.length - limit} 字。`,
+    });
+  }
+
+  const hasUrl = (body.match(URL_PATTERN) || []).length > 0;
+  if (platform === "threads" && hasUrl) {
+    issues.push({
+      level: "warn",
+      code: "threads-url",
+      message: "Threads 正文放外部網址會被降低觸及，建議改成「連結放在留言區第一則」。",
+    });
+  }
+
+  if (platform === "instagram") {
+    const tags = (body.replace(URL_PATTERN, "").match(/#[^\s#]+/g) || []).length;
+    if (tags < 5 || tags > 15) {
+      issues.push({
+        level: "warn",
+        code: "instagram-hashtags",
+        message: `Instagram 建議結尾放 5 到 15 個標籤，目前有 ${tags} 個。`,
+      });
+    }
+  }
   return issues;
 }
 
