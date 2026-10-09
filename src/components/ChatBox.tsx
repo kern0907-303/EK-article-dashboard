@@ -9,6 +9,7 @@ import { getWritingFrameworkOptions, getStoryArgumentSelectionError, isStoryArgu
 import type { KnowledgeNoteDirectoryEntry } from "@/lib/knowledge-note-utils";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
+import Button from "@/components/ui/Button";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL, type BrandMismatch } from "@/lib/brand-guard";
 
 const WRITING_FRAMEWORK_OPTIONS = getWritingFrameworkOptions(Object.values(COPYWRITING_FRAMEWORKS));
@@ -28,7 +29,10 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [progress, setProgress] = useState<{ stage: number; startedAt: number; note: string }>({ stage: 0, startedAt: 0, note: "" });
   const [tick, setTick] = useState(0);
   // 文體生成表單
-  const [genreOpen, setGenreOpen] = useState(false);
+  // 輸入框上方的設定區：分頁（一般指令／文體生成）與是否展開，預設都收起，選擇會記在瀏覽器
+  const [panelTab, setPanelTab] = useState<"general" | "genre">("general");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [genreId, setGenreId] = useState<GenreId>("case");
   const [funnel, setFunnel] = useState<FunnelLevel>("cold");
   const [gClaim, setGClaim] = useState("");
@@ -572,6 +576,45 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     }
   };
 
+  // 設定區的分頁與展開狀態記在瀏覽器；讀不到就用預設（一般指令、收起）
+  useEffect(() => {
+    try {
+      const tab = window.localStorage.getItem("ek_chat_panel_tab");
+      const open = window.localStorage.getItem("ek_chat_panel_open");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (tab === "general" || tab === "genre") setPanelTab(tab);
+      if (open === "1") setSettingsOpen(true);
+    } catch {
+      // 瀏覽器不允許儲存時，維持預設
+    }
+  }, []);
+  const remember = (tab: "general" | "genre", open: boolean) => {
+    try {
+      window.localStorage.setItem("ek_chat_panel_tab", tab);
+      window.localStorage.setItem("ek_chat_panel_open", open ? "1" : "0");
+    } catch {
+      // 忽略
+    }
+  };
+  const choosePanelTab = (tab: "general" | "genre") => {
+    setPanelTab(tab);
+    remember(tab, settingsOpen);
+  };
+  const toggleSettings = () => {
+    const next = !settingsOpen;
+    setSettingsOpen(next);
+    remember(panelTab, next);
+  };
+  // 一般指令分頁只有在選了「故事論點」框架時才有設定可展開；文體生成分頁一定有表單
+  const canExpandSettings = panelTab === "genre" || activeFramework === STORY_ARGUMENT_FRAMEWORK_ID;
+  const storySummary = [
+    STORY_ARGUMENT_VERSION_OPTIONS.find((o) => o.id === storyArgumentVersion)?.name,
+    "引用：" + (STORY_ARGUMENT_CITATION_OPTIONS.find((o) => o.id === storyCitationMode)?.name || ""),
+    storyArgumentThesis.trim() ? "論點已填" : "論點由 AI 擬定",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="flex flex-col h-full bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Header */}
@@ -726,26 +769,62 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         onSubmit={handleSend}
         className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
-            className="text-[10px] font-bold px-2 py-1 rounded-md border border-slate-700/80 bg-slate-800/80 text-slate-200 whitespace-nowrap"
+            className="text-[11px] font-bold h-7 inline-flex items-center px-2.5 rounded-lg border border-slate-700/80 bg-slate-800/80 text-slate-200 whitespace-nowrap"
             title="之後送出的指令與文體生成，都會以這個品牌的語氣與規範產出"
           >
             目前品牌：{GUARD_BRAND_LABEL[currentBrandKey]}
           </span>
-          <button
-            type="button"
-            onClick={() => setGenreOpen((o) => !o)}
-            disabled={isLoading || isGenerating}
-            className={`text-xs border rounded-md px-2 py-1 cursor-pointer disabled:opacity-50 transition-colors ${genreOpen ? "bg-amber-500/20 text-amber-300 border-amber-500/40" : "bg-slate-800/80 text-slate-300 border-slate-700/80"}`}
-            title="用文體骨架（案例文、拆解文、邀請文）直接生成"
-          >
-            文體生成 {genreOpen ? "▲" : "▼"}
-          </button>
+          <div className="flex items-center gap-1 bg-slate-950/60 p-0.5 rounded-lg border border-slate-800">
+            <Button size="sm" variant="ghost" active={panelTab === "general"} disabled={isLoading || isGenerating} onClick={() => choosePanelTab("general")}>
+              一般指令
+            </Button>
+            <Button size="sm" variant="ghost" active={panelTab === "genre"} disabled={isLoading || isGenerating} onClick={() => choosePanelTab("genre")} title="用文體骨架（案例文、拆解文、邀請文）直接生成">
+              文體生成
+            </Button>
+          </div>
+          {canExpandSettings && (
+            <Button size="sm" variant="secondary" className="ml-auto" disabled={isLoading || isGenerating} onClick={toggleSettings}>
+              {settingsOpen ? "收起設定 ▲" : "展開設定 ▼"}
+            </Button>
+          )}
         </div>
-        {genreOpen && (
-          <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
+        {panelTab === "general" && (
+          <div className="flex flex-wrap items-center gap-2">
+          <select 
+            value={activeFramework}
+            onChange={(e) => setActiveFramework(e.target.value)}
+            disabled={isLoading || isGenerating}
+            title="選擇寫作框架 (大師模式)"
+            className="h-7 min-w-0 max-w-[16rem] text-[11px] bg-slate-800/80 text-slate-300 border border-slate-700/80 rounded-lg px-2 outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-50 cursor-pointer"
+          >
+            {WRITING_FRAMEWORK_OPTIONS.map(fw => (
+              <option key={fw.id} value={fw.id} title={fw.description}>
+                {fw.name}
+              </option>
+            ))}
+          </select>
+            {activeFramework === STORY_ARGUMENT_FRAMEWORK_ID && !settingsOpen && (
+              <span className="text-[11px] text-amber-200/80 truncate" title={storySummary}>
+                {storySummary}
+              </span>
+            )}
+          </div>
+        )}
+        {panelTab === "genre" && settingsOpen && (
+          <div className="max-h-[40vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
             <div className="rounded-lg border border-slate-700/80 bg-slate-900/60 p-2 space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setPasteOpen((o) => !o)}
+                className="w-full flex items-center justify-between text-[11px] font-bold text-slate-300 cursor-pointer"
+              >
+                <span>貼上選題，自動填入下方欄位</span>
+                <span className="text-slate-500">{pasteOpen ? "收起 ▲" : "展開 ▼"}</span>
+              </button>
+              {pasteOpen && (
+                <div className="space-y-1.5">
               <div className="text-[10px] text-slate-400">貼上選題：把每週品牌調研的 Telegram 訊息整段貼進來，會自動填入下方的文體、漏斗層、主張與素材</div>
               <textarea
                 value={pasteText}
@@ -783,9 +862,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               {pasteNotes.map((n, i) => (
                 <div key={i} className="text-[10px] text-amber-300 leading-relaxed">• {n}</div>
               ))}
+                </div>
+              )}
             </div>
-            <div className="flex gap-2">
-              <label className="flex-1 text-[10px] text-slate-400">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[10px] text-slate-400">
                 文體
                 <select
                   value={genreId}
@@ -859,22 +940,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             </div>
           </div>
         )}
-        <div className="flex items-center">
-          <select 
-            value={activeFramework}
-            onChange={(e) => setActiveFramework(e.target.value)}
-            disabled={isLoading || isGenerating}
-            title="選擇寫作框架 (大師模式)"
-            className="text-xs bg-slate-800/80 text-slate-300 border border-slate-700/80 rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-50 cursor-pointer"
-          >
-            {WRITING_FRAMEWORK_OPTIONS.map(fw => (
-              <option key={fw.id} value={fw.id} title={fw.description}>
-                {fw.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {activeFramework === STORY_ARGUMENT_FRAMEWORK_ID && (
+        {panelTab === "general" && settingsOpen && activeFramework === STORY_ARGUMENT_FRAMEWORK_ID && (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5 space-y-2">
             <div className="flex gap-2">
               <label className="flex-1 text-[10px] text-slate-400">
