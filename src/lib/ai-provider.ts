@@ -1,5 +1,6 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
 import { stripMarkdown, stripDashes } from "@/lib/plain-text";
+import { friendlyLeonError, hasUsableSocialCopy, LEON_GENERATION_OPTIONS } from "@/lib/expert-routing";
 import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
@@ -703,6 +704,25 @@ export async function callErickCOO(
         }
       };
     }
+    if (stage === "expert" && expertType === "leon") {
+      if (!hasUsableSocialCopy(prevData?.social_copy)) throw new Error("請先生成社群文案，再生成網頁架構。");
+      return {
+        content: "",
+        dispatchData: {
+          web_architecture: `<div class="min-h-screen bg-slate-950 text-white p-8"><section class="mx-auto max-w-4xl py-24"><p class="text-amber-400">${brandName}</p><h1 class="mt-4 text-4xl font-bold">${prevData.social_copy.slice(0, 90)}</h1><p class="mt-6 text-slate-300">本地模擬預覽，尚未呼叫 AI 服務。</p></section></div>`,
+          visual_direction: { theme: "本地模擬預覽" },
+        },
+      };
+    }
+    if (stage === "expert" && expertType === "jack") {
+      return {
+        content: "",
+        dispatchData: {
+          ad_data: [{ label: "模擬曝光", value: "本地預覽", change: "未呼叫模型", isPositive: true }],
+          ad_strategy_notes: "本地模擬模式未呼叫廣告模型。",
+        },
+      };
+    }
     const mockResult = await callMockCOO(history[history.length - 1]?.content || "", brandName);
     const parsed = parseCOOOutput(mockResult);
     if (stage === "coo") {
@@ -956,6 +976,91 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
   const irisPrompt = subPrompts.iris || "請規劃適當的 SEO 關鍵字與大綱";
   const leonPrompt = subPrompts.leon || "請設計 Landing Page 銷售頁網頁架構";
   const jackPrompt = subPrompts.jack || "請提供預估的廣告數據指標";
+
+  if (stage === "expert" && expertType === "leon") {
+    const socialCopy = typeof prevData?.social_copy === "string" ? prevData.social_copy.trim().slice(0, 3000) : "";
+    if (!hasUsableSocialCopy(socialCopy)) throw new Error("請先生成社群文案，再生成網頁架構。");
+
+    const leonStepPrompt = `你是設計總監 Leon。根據目前這篇社群文案，為【${brandName}】製作一份可預覽的 Landing Page。
+
+【品牌規範】
+${brandContext}
+
+【目前社群文案，最多 3000 字，這是唯一內容依據】
+${socialCopy}
+
+【補充指示】
+${typeof subPromptsInput?.leon === "string" ? subPromptsInput.leon : "依社群文案整理成精簡 Landing Page。"}
+
+輸出限制：只產出單一精簡 HTML 片段，不含 html、head、body 標籤，樣式使用 Tailwind 類名。最多 5 個主要區塊，每區標題最多 12 個中文字、說明最多 2 句、行動按鈕最多 1 個。不得新增社群文案沒有提供的事實、案例、數據、客戶見證或承諾。用 HTML 文字節點呈現內容，不插入 Markdown，不產生 script、流程圖或長篇說明。
+
+只輸出一個 JSON 物件：{"web_architecture":"HTML 字串","visual_direction":{"palette":["顏色"],"fonts":"字體","theme":"風格"}}。HTML 必須完整且精簡。`;
+
+    const leonReport: AIResponseReport = { label: "Leon" };
+    try {
+      const response = await runQueryWithFallback(
+        leonStepPrompt,
+        config,
+        true,
+        "openai",
+        { ...LEON_GENERATION_OPTIONS, report: leonReport }
+      );
+      const result = robustJSONParse(response);
+      if (typeof result?.web_architecture !== "string" || !result.web_architecture.trim()) {
+        throw new Error("Leon 回覆格式不完整，缺少網頁內容。");
+      }
+      return {
+        content: "",
+        dispatchData: {
+          web_architecture: result.web_architecture,
+          visual_direction: result.visual_direction || {},
+        },
+      };
+    } catch (error) {
+      throw new Error(friendlyLeonError(error));
+    }
+  }
+
+  if (stage === "expert" && expertType === "jack") {
+    const keywordsStr = prevData?.seo_keywords ? JSON.stringify(prevData.seo_keywords) : "";
+    const socialCopyStr = typeof prevData?.social_copy === "string" ? prevData.social_copy.slice(0, 3000) : "";
+    const jackStepPrompt = `你現在是廣告策略師 Jack。你負責判讀行銷數據、規劃 Meta/Google 廣告素材方向與投放預算分配。
+
+【Erick 核心語氣與思考邏輯最高工作準則】
+${ERICK_PERSONA_SKILL}
+
+【品牌知識背景與限制】
+${brandContext}
+
+【上游專家規劃成果】
+1. Iris 關鍵字：${keywordsStr}
+2. Maya 社群貼文：${socialCopyStr || "目前社群文案未成功產生，請只依任務子提示詞完成可行的方向性估算，不要假設文章內容。"}
+
+【任務指派】
+${jackPrompt}
+
+只輸出 JSON：{"ad_data":[{"label":"數據指標","value":"估算值","change":"變化","isPositive":true}],"ad_strategy_notes":"具體判讀與素材建議"}。不得將估算寫成實際成效。`;
+    const response = await runQueryWithFallback(jackStepPrompt, config, true, "openai");
+    const result = robustJSONParse(response);
+    let adData = Array.isArray(result?.ad_data) ? result.ad_data : [];
+    const adAccountId = process.env.META_AD_ACCOUNT_ID || "";
+    const metaAccessToken = process.env.META_MARKETING_ACCESS_TOKEN || "";
+    if (adAccountId && metaAccessToken && !adAccountId.includes("YOUR_")) {
+      try {
+        const realInsights = await fetchMetaAdAccountInsights(adAccountId, metaAccessToken);
+        if (realInsights?.length) adData = [...realInsights, ...adData];
+      } catch (error) {
+        console.error("fetchMetaAdAccountInsights failed:", error);
+      }
+    }
+    return {
+      content: "",
+      dispatchData: {
+        ad_data: adData,
+        ad_strategy_notes: typeof result?.ad_strategy_notes === "string" ? stripDashes(result.ad_strategy_notes) : "",
+      },
+    };
+  }
 
   // ========== 第一條鏈：Maya (社群) + Iris (SEO) ==========
   if (stage === "expert" && expertType === "maya_iris") {
@@ -1409,7 +1514,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
       "Authorization": `Bearer ${config.apiKey}`
     },
     body: JSON.stringify(requestBody),
-    signal: getTimeoutSignal(60000)
+    signal: getTimeoutSignal(opts?.timeoutMs || 60000)
   });
 
   if (!response.ok) {
@@ -1480,7 +1585,7 @@ async function callGemini(messages: any[], config: AIProviderConfig, jsonMode?: 
       systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
       generationConfig
     }),
-    signal: getTimeoutSignal(60000)
+    signal: getTimeoutSignal(opts?.timeoutMs || 60000)
   });
 
   if (!response.ok) {

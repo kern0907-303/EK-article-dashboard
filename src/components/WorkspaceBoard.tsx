@@ -8,7 +8,7 @@ import {
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
   Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp,
   Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal,
-  ChevronDown, Activity, Maximize2
+  ChevronDown, Activity, Maximize2, RefreshCw
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -38,6 +38,7 @@ import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import PublishQueuePanel from "./PublishQueuePanel";
 import PerformanceTab from "./PerformanceTab";
 import type { QueueItem } from "@/lib/publish-queue";
+import { hasUsableSocialCopy, isSocialCopyPlaceholder } from "@/lib/expert-routing";
 
 // 沒有 API 憑證、無法排程的粉專（與 src/lib/publish-queue.ts 的 UNSCHEDULABLE_PAGE_IDS 保持一致；
 // 那個檔案含伺服器端金鑰讀取，不能在 client 元件裡當值 import，所以這裡另存一份常數）
@@ -333,6 +334,9 @@ function WorkspaceBoardInner({ activeBrandId, aiProvider }: WorkspaceBoardProps)
               <ArchitectureTabContent 
                 brandId={activeBrandId} 
                 architecture={data.web_architecture} 
+                socialCopy={data.social_copy}
+                seoKeywords={data.seo_keywords}
+                aiProvider={aiProvider}
               />
             )}
             {activeTab === "seo" && (
@@ -450,6 +454,11 @@ const SocialTabContent = memo(function SocialTabContent({
   const theme = useBrandTheme(pubBrandId);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [val, setVal] = useState(socialCopy);
+  const hasCopyForActions = !isSocialCopyPlaceholder(val);
+  const copyIsPending = val.trim().startsWith("⏳");
+  const copyFailureReason = val.trim().startsWith("❌")
+    ? val.trim().replace(/^❌\s*/, "").split("\n")[0]
+    : "";
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPublishingWebsite, setIsPublishingWebsite] = useState(false);
   const [pubStatus, setPubStatus] = useState<"idle" | "success" | "error">("idle");
@@ -927,7 +936,7 @@ const SocialTabContent = memo(function SocialTabContent({
   const handlePublishWebsite = async (force = false, resolvedContent?: string) => {
     if (!requireParentBrand()) return;
     if (!requireGenreOk()) return;
-    if (isPublishingWebsite || !val) return;
+    if (isPublishingWebsite || !hasCopyForActions) return;
     const webContent = resolvedContent ?? getWebContent();
     if (webContent === null) return;
     setIsPublishingWebsite(true);
@@ -1703,7 +1712,7 @@ const SocialTabContent = memo(function SocialTabContent({
         
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-850 min-w-0">
-            {val && (
+            {hasCopyForActions && (
               <>
                 <Button
                   size="sm"
@@ -1822,7 +1831,7 @@ const SocialTabContent = memo(function SocialTabContent({
       </div>
 
       {/* 發佈面板：內容跟著上方選取的平台切換，每個平台只顯示自己需要的操作 */}
-      {val && (platform === "threads" || platform === "facebook" || platform === "instagram") && (
+      {hasCopyForActions && (platform === "threads" || platform === "facebook" || platform === "instagram") && (
         <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -1854,6 +1863,7 @@ const SocialTabContent = memo(function SocialTabContent({
               onClick={() => handlePublishWebsite()}
               icon={<Network className="w-3.5 h-3.5" />}
               title="把這篇同步發布到官網"
+              className="max-sm:min-h-11 max-sm:shrink-0"
             >
               {isPublishingWebsite ? "正在同步..." : "發布至官網"}
             </Button>
@@ -1863,7 +1873,7 @@ const SocialTabContent = memo(function SocialTabContent({
             {platform === "facebook" && (
               <>
           {/* 🎯 目標 Facebook 粉絲專頁選擇器 (Target Facebook Fan Page Selector) */}
-          {val && (
+          {hasCopyForActions && (
             <div className="relative">
               <Button
                 ref={pageSelectorBtnRef}
@@ -2052,7 +2062,7 @@ const SocialTabContent = memo(function SocialTabContent({
                   <Button
                     variant="secondary"
                     loading={isGeneratingImage}
-                    disabled={isPublishingSocial || !val}
+                    disabled={isPublishingSocial || !hasCopyForActions}
                     onClick={() => handleGenerateImage()}
                     icon={<Sparkles className="w-3.5 h-3.5" />}
                   >
@@ -2090,6 +2100,14 @@ const SocialTabContent = memo(function SocialTabContent({
           <img src={igImageUrl} alt="Instagram 配圖預覽" className="w-48 rounded-lg border border-slate-800" />
           {igImagePrompt && <p className="mt-2 text-slate-500 leading-relaxed">生成描述：{igImagePrompt}</p>}
           <p className="mt-1 text-slate-600">圖片是 AI 生成的情境圖，圖上沒有文字。不滿意可按「重新生成配圖」。</p>
+        </div>
+      )}
+
+      {!hasCopyForActions && (
+        <div role="alert" className="mb-3 rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-200">
+          <p className="font-bold">{copyFailureReason ? "社群文案生成失敗" : copyIsPending ? "社群文案生成中" : "社群文案尚未生成"}</p>
+          {copyFailureReason && <p className="mt-1 whitespace-pre-wrap">{copyFailureReason}</p>}
+          {!copyIsPending && <p className="mt-1 text-red-200/80">請回到「對話」分頁重送指令，完成後再查看。</p>}
         </div>
       )}
 
@@ -2165,7 +2183,7 @@ const SocialTabContent = memo(function SocialTabContent({
           </button>
         </div>
       ) : (
-        val ? (
+        hasCopyForActions ? (
           <div className="flex-1 p-5 rounded-xl bg-slate-950/20 border border-slate-850/40 overflow-y-auto min-h-[300px] flex items-center justify-center">
             {renderPlatformPreview(val)}
           </div>
@@ -2614,13 +2632,30 @@ const TheoTabContent = memo(function TheoTabContent({
   );
 });
 
-const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, architecture }: { brandId: string; architecture: string }) {
+const ArchitectureTabContent = memo(function ArchitectureTabContent({
+  brandId,
+  architecture,
+  socialCopy,
+  seoKeywords,
+  aiProvider,
+}: {
+  brandId: string;
+  architecture: string;
+  socialCopy: string;
+  seoKeywords: SEOKeyword[];
+  aiProvider: string;
+}) {
   const theme = useBrandTheme(brandId);
   const [val, setVal] = useState(architecture);
   const [isEditing, setIsEditing] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const generationControllerRef = useRef<AbortController | null>(null);
+  const generationStartedAtRef = useRef(0);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const fullscreenCloseButtonRef = useRef<HTMLButtonElement>(null);
   const fullscreenIframeRef = useRef<HTMLIFrameElement>(null);
@@ -2690,6 +2725,76 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
   useEffect(() => {
     setVal(architecture);
   }, [architecture]);
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - generationStartedAtRef.current) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isGenerating]);
+
+  const trimmedArchitecture = val.trim();
+  const storedArchitectureError = trimmedArchitecture.startsWith("❌") ? trimmedArchitecture.replace(/^❌\s*/, "") : "";
+  const architectureError = generationError || storedArchitectureError;
+  const isArchitecturePending = trimmedArchitecture.startsWith("⏳");
+  const hasArchitecture = !!trimmedArchitecture && !storedArchitectureError && !isArchitecturePending && !trimmedArchitecture.startsWith("⚠️");
+  const canGenerate = hasUsableSocialCopy(socialCopy);
+
+  const generateArchitecture = useCallback(async (isRetry = false) => {
+    if (isGenerating || !canGenerate) return;
+    if (hasArchitecture && !isRetry && !window.confirm("重新生成會取代目前的網頁架構。確定嗎？")) return;
+
+    const controller = new AbortController();
+    generationControllerRef.current = controller;
+    generationStartedAtRef.current = Date.now();
+    setElapsedSeconds(0);
+    setGenerationError("");
+    setIsGenerating(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          stage: "expert",
+          expertType: "leon",
+          history: [],
+          brandName: getBrandOrProjectName(brandId),
+          brandGuidelines: getMergedBrandGuidelines(brandId),
+          aiProvider,
+          subPrompts: { leon: "請依提供的社群文案，製作精簡且主題一致的 Landing Page 預覽。" },
+          prevData: {
+            social_copy: socialCopy.slice(0, 3000),
+            seo_keywords: seoKeywords,
+          },
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || `HTTP ${response.status}`);
+      const html = result?.dispatchData?.web_architecture;
+      if (typeof html !== "string" || !html.trim()) throw new Error("Leon 沒有回傳可用的網頁內容，請再試一次。");
+      setVal(html);
+      setViewMode("preview");
+      setIsEditing(false);
+      saveWorkspace(brandId, { web_architecture: html });
+      setGenerationError("");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      const message = error instanceof Error ? error.message : "未知錯誤";
+      setGenerationError(message);
+    } finally {
+      generationControllerRef.current = null;
+      setIsGenerating(false);
+    }
+  }, [aiProvider, brandId, canGenerate, hasArchitecture, isGenerating, seoKeywords, socialCopy]);
+
+  const cancelArchitectureGeneration = useCallback(() => {
+    generationControllerRef.current?.abort();
+    generationControllerRef.current = null;
+    setIsGenerating(false);
+  }, []);
 
   const handleSave = () => {
     saveWorkspace(brandId, { web_architecture: val });
@@ -2804,7 +2909,7 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
         </div>
 
         <div className="flex items-center gap-3 max-sm:w-full max-sm:flex-wrap max-sm:justify-end max-sm:gap-2">
-          {isHtml && !isEditing && (
+          {hasArchitecture && isHtml && !isEditing && (
             <div className="flex p-0.5 bg-slate-950/60 border border-slate-850 rounded-lg">
               <Button variant="ghost" size="sm" active={viewMode === "preview"} onClick={() => setViewMode("preview")}>
                 預覽頁面
@@ -2815,7 +2920,7 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
             </div>
           )}
 
-          {isHtml && !isEditing && viewMode === "preview" && (
+          {hasArchitecture && isHtml && !isEditing && viewMode === "preview" && (
             <button
               ref={fullscreenButtonRef}
               type="button"
@@ -2827,24 +2932,80 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
             </button>
           )}
 
-          <Button
-            variant={isEditing ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => {
-              if (isEditing) {
-                handleSave();
-              } else {
-                setIsEditing(true);
-              }
-            }}
-            icon={isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
-          >
-            {isEditing ? "儲存" : "編輯結構"}
-          </Button>
+          {hasArchitecture && (
+            <>
+              <Button
+                variant={isEditing ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => {
+                  if (isEditing) handleSave();
+                  else setIsEditing(true);
+                }}
+                icon={isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
+              >
+                {isEditing ? "儲存" : "編輯結構"}
+              </Button>
+              {!isEditing && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!canGenerate || isGenerating}
+                  loading={isGenerating}
+                  onClick={() => generateArchitecture()}
+                  icon={<RefreshCw className="w-3 h-3" />}
+                >
+                  重新生成
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      {isEditing ? (
+      {isGenerating && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-100" role="status">
+          <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Leon 正在生成網頁架構，已經過 {elapsedSeconds} 秒</span>
+          <Button variant="secondary" size="sm" onClick={cancelArchitectureGeneration}>取消</Button>
+        </div>
+      )}
+
+      {hasArchitecture && architectureError && !isGenerating && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-200">
+          <span><strong>重新生成失敗：</strong>{architectureError}</span>
+          <Button className="min-h-11" variant="secondary" disabled={!canGenerate} onClick={() => generateArchitecture(true)} icon={<RefreshCw className="h-4 w-4" />}>
+            重試
+          </Button>
+        </div>
+      )}
+
+      {!hasArchitecture && !isGenerating && (
+        <div className="flex min-h-[350px] flex-1 flex-col items-center justify-center rounded-2xl border border-slate-800/80 bg-slate-950/30 p-6 text-center">
+          {architectureError ? (
+            <>
+              <p className="text-sm font-bold text-red-300">網頁架構生成失敗</p>
+              <p className="mt-2 max-w-xl whitespace-pre-wrap text-sm text-red-200">{architectureError}</p>
+              <Button className="mt-4 min-h-11" variant="primary" disabled={!canGenerate} onClick={() => generateArchitecture(true)} icon={<RefreshCw className="h-4 w-4" />}>
+                重試
+              </Button>
+            </>
+          ) : isArchitecturePending ? (
+            <p className="text-sm text-slate-400">網頁架構尚未完成，請稍後再試。</p>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-slate-200">尚未生成網頁架構</p>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">會依目前這篇社群文案產生一份 Landing Page 預覽，需要時再生成。</p>
+              <Button className="mt-4 min-h-11" variant="primary" disabled={!canGenerate || isGenerating} onClick={() => generateArchitecture()} icon={<Sparkles className="h-4 w-4" />}>
+                生成網頁架構
+              </Button>
+              {!canGenerate && <p className="mt-2 text-sm text-amber-300">請先生成社群文案</p>}
+            </>
+          )}
+        </div>
+      )}
+
+      {hasArchitecture && !canGenerate && <p className="-mt-2 text-sm text-amber-300">請先生成社群文案，才能重新生成網頁架構。</p>}
+
+      {hasArchitecture && (isEditing ? (
         <div className="flex-1 flex flex-col space-y-3">
           <textarea
             value={val}
@@ -2876,7 +3037,7 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
             </div>
           )}
         </div>
-      )}
+      ))}
 
       {isFullscreenOpen && isMounted && createPortal(
         <div

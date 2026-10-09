@@ -33,7 +33,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  // 進度：0 待命、1 營運長拆解、2 Maya/Iris、3 Leon/Jack、4 完成、-1 未觸發/失敗
+  // 進度：0 待命、1 營運長拆解、2 Maya/Iris、3 Jack、4 完成、-1 未觸發/失敗
   const [progress, setProgress] = useState<{ stage: number; startedAt: number; note: string }>({ stage: 0, startedAt: 0, note: "" });
   const [tick, setTick] = useState(0);
   // 文體生成表單
@@ -259,13 +259,13 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     // 將預覽狀態重設
     await saveWorkspace(activeBrandId, {
       social_copy: "⚠️ 已取消生成。您可以重新輸入指令以開始新任務。",
-      web_architecture: "⚠️ 已取消生成。",
+      web_architecture: "",
       seo_keywords: [],
       ad_data: []
     });
   };
 
-  // 依子任務啟動專家：先 Maya + Iris，再 Leon + Jack。一般指令與文體生成共用這段。
+  // 一般指令與文體生成共用這段：先跑 Maya + Iris，再獨立跑 Jack；Leon 改由看板按需呼叫。
   const dispatchExperts = async (
     subPrompts: any,
     signal: AbortSignal,
@@ -275,13 +275,13 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
     // 如果是 mockData 模式，直接一次性更新，省去後續請求
     if (subPrompts.mockData) {
-      await saveWorkspace(activeBrandId, subPrompts.mockData, { generated: true });
+      await saveWorkspace(activeBrandId, { ...subPrompts.mockData, web_architecture: "" }, { generated: true });
       setProgress((p) => ({ ...p, stage: 4, note: "完成（模擬模式）" }));
     } else {
       // 立即更新面板為「生成中...」狀態，提供即時的視覺回饋給使用者
       await saveWorkspace(activeBrandId, {
         social_copy: "⏳ 專家助理 Maya 正在為您撰寫爆款社群行銷長文與文章，這大約需要 15-30 秒，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
-        web_architecture: "⏳ 系統架構師 Leon 正在設計網頁功能路由架構，請您稍候...\n\n(大腦正在並行處理中，請勿關閉網頁)",
+        web_architecture: "",
         seo_keywords: [
           { keyword: "⏳ 專家助理 Iris 正在分析關鍵字與規劃文章大綱...", volume: "計算中", competition: "計算中", outline: "大腦計算中" }
         ],
@@ -292,7 +292,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         aeo_faq: ""
       });
 
-      // 啟動兩個獨立的背景 Fetch 請求，分別產生社群+SEO 與 網頁+廣告數據，確保各自都在 10 秒內完成
+      // Maya/Iris 與 Jack 分開呼叫，任一專家失敗只更新自己的欄位。
       let anyFailed = false;
       const runMayaIris = async () => {
         setProgress((p) => ({ ...p, stage: 2 }));
@@ -350,7 +350,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         }
       };
 
-      const runLeonJack = async (prevData?: any) => {
+      const runJack = async (prevData?: any) => {
         setProgress((p) => ({ ...p, stage: 3 }));
         try {
           const res = await fetch("/api/chat", {
@@ -359,7 +359,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             signal: signal,
             body: JSON.stringify({
               stage: "expert",
-              expertType: "leon_jack",
+              expertType: "jack",
               ...guardBody(),
               subPrompts,
               brandName: activeBrandName,
@@ -387,14 +387,13 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           }
         } catch (e: any) {
           if (e.name === 'AbortError') {
-            console.log("Background Leon & Jack generation aborted.");
+            console.log("Background Jack generation aborted.");
             return;
           }
-          console.error("Background Leon & Jack generation failed:", e);
+          console.error("Background Jack generation failed:", e);
           anyFailed = true;
           const reason = e.message || "未知錯誤";
           await saveWorkspace(activeBrandId, {
-            web_architecture: `❌ 系統架構師 Leon 產出失敗：${reason}。\n對話上下文已自動限制為最近 12 則；請依上方錯誤原因處理後重試。`,
             ad_data: [
               { label: "❌ 廣告數據專家 Jack 產出失敗", value: "失敗", change: reason, isPositive: false }
             ]
@@ -408,12 +407,13 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         try {
           const prevData = await runMayaIris();
           if (signal.aborted) return;
-          await runLeonJack(prevData);
+          await runJack(prevData);
         } finally {
           if (!signal.aborted) {
             setIsGenerating(false);
+            const isMobileFailureMessage = window.matchMedia("(max-width: 639px)").matches;
             setProgress((p) => anyFailed
-              ? { ...p, stage: -1, note: "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
+              ? { ...p, stage: -1, note: isMobileFailureMessage ? "有專家產出失敗，請到「看板」分頁查看紅字錯誤訊息，或重送一次指令。" : "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
               : { ...p, stage: 4, note: "全部完成" });
           }
         }
@@ -832,7 +832,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             <div className={`text-xs font-bold ${progress.stage === -1 ? "text-red-300" : progress.stage === 4 ? "text-emerald-300" : "text-amber-400"}`}>
               {progress.stage === 1 && "① 營運長拆解任務中"}
               {progress.stage === 2 && "② Maya 寫社群文案、Iris 規劃 SEO 中"}
-              {progress.stage === 3 && "③ Leon 設計網頁、Jack 估算廣告中"}
+              {progress.stage === 3 && "③ Jack 估算廣告中"}
               {progress.stage === 4 && `✓ ${progress.note}`}
               {progress.stage === -1 && `⚠ ${progress.note}`}
               {progress.stage >= 1 && progress.stage <= 3 && activeFramework !== "default" && (

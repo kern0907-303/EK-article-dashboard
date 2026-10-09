@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { callErickCOO } from "@/lib/ai-provider";
 import { isGuardBrandKey, scanChatPayload, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
 import { getStoryArgumentSelectionError, type StoryArgumentSelection } from "@/data/skills/story-argument";
+import { hasUsableSocialCopy } from "@/lib/expert-routing";
 
 export async function POST(req: NextRequest) {
   try {
     const { history, brandName, aiProvider, stage, expertType, subPrompts, brandGuidelines, prevData, platform, copywritingFramework, genre, storyArgument, storyReselection, brandKey, confirmBrandMismatch } = await req.json();
+
+    if (stage === "expert" && expertType === "leon" && !hasUsableSocialCopy(prevData?.social_copy)) {
+      return NextResponse.json({ error: "請先生成社群文案，再生成網頁架構。" }, { status: 400 });
+    }
 
     const storySelectionError = getStoryArgumentSelectionError(storyArgument as StoryArgumentSelection | undefined);
     if (storySelectionError) {
