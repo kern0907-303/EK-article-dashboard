@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Send, Trash2, Bot, Sparkles, User, Copy, Settings2 } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
@@ -25,6 +26,9 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const [inputValue, setInputValue] = useState("");
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const [isSmallViewport, setIsSmallViewport] = useState(false);
+  const [isClientMounted, setIsClientMounted] = useState(false);
+  const mobileSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const wasMobileSettingsOpenRef = useRef(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -75,6 +79,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const closeMobileSettings = useCallback(() => {
+    setMobileSettingsOpen(false);
+  }, []);
+
+  useEffect(() => {
+    // Portal 只能在瀏覽器掛載後建立，避免伺服器端讀取 document。
+    setIsClientMounted(true);
+  }, []);
+
   useEffect(() => {
     const media = window.matchMedia("(max-width: 639px)");
     const updateViewport = () => {
@@ -89,11 +102,41 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   useEffect(() => {
     if (!mobileSettingsOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileSettingsOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMobileSettings();
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileSettingsOpen]);
+  }, [mobileSettingsOpen, closeMobileSettings]);
+
+  useEffect(() => {
+    if (wasMobileSettingsOpenRef.current && !mobileSettingsOpen && isSmallViewport) {
+      mobileSettingsButtonRef.current?.focus({ preventScroll: true });
+    }
+    wasMobileSettingsOpenRef.current = mobileSettingsOpen;
+  }, [mobileSettingsOpen, isSmallViewport]);
+
+  useEffect(() => {
+    if (!mobileSettingsOpen || !isSmallViewport) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousHtmlOverscroll = html.style.overscrollBehavior;
+    const previousBodyOverscroll = body.style.overscrollBehavior;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehavior = "contain";
+    body.style.overscrollBehavior = "contain";
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      html.style.overscrollBehavior = previousHtmlOverscroll;
+      body.style.overscrollBehavior = previousBodyOverscroll;
+    };
+  }, [mobileSettingsOpen, isSmallViewport]);
 
   useEffect(() => () => {
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
@@ -845,6 +888,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       >
         <div className="mobile-settings-summary sm:hidden">
           <button
+            ref={mobileSettingsButtonRef}
             type="button"
             aria-expanded={mobileSettingsOpen}
             aria-controls="mobile-chat-settings"
@@ -859,17 +903,20 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           </span>
         </div>
 
-        <div
-          id="mobile-chat-settings"
-          className={`mobile-settings-layer${mobileSettingsOpen ? " is-open" : ""}`}
-          aria-hidden={isSmallViewport ? !mobileSettingsOpen : undefined}
-        >
+        {(() => {
+          const settingsLayer = (
+            <div
+              id="mobile-chat-settings"
+              className={`mobile-settings-layer${mobileSettingsOpen ? " is-open" : ""}`}
+              aria-hidden={isSmallViewport ? !mobileSettingsOpen : undefined}
+              inert={isSmallViewport && !mobileSettingsOpen}
+            >
           <button
             type="button"
             className="mobile-settings-backdrop"
             aria-label="點擊關閉設定"
             tabIndex={mobileSettingsOpen ? 0 : -1}
-            onClick={() => setMobileSettingsOpen(false)}
+            onClick={closeMobileSettings}
           />
           <div
             className="mobile-settings-panel"
@@ -882,7 +929,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               <span className="text-sm font-bold text-slate-200">設定</span>
               <button
                 type="button"
-                onClick={() => setMobileSettingsOpen(false)}
+                onClick={closeMobileSettings}
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3 text-sm font-semibold text-amber-200 hover:bg-slate-800"
               >
                 完成
@@ -1141,9 +1188,18 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           </div>
         )}
             </div>
-          </div>
-        </div>
-        <div className="mobile-composer flex gap-2.5">
+            </div>
+            </div>
+          );
+          return isSmallViewport && isClientMounted
+            ? createPortal(settingsLayer, document.body)
+            : settingsLayer;
+        })()}
+        <div
+          className="mobile-composer flex gap-2.5"
+          inert={isSmallViewport && mobileSettingsOpen}
+          aria-hidden={isSmallViewport && mobileSettingsOpen ? "true" : undefined}
+        >
           <input
             type="text"
             value={inputValue}
