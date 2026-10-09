@@ -100,7 +100,7 @@ export function applyValidatedKnowledgeCitation(
   const valid = Boolean(eligible && metadataMatches && bodyMatches && noPartialMarkers);
   const bodyWithoutCitation = bodyLines.filter((line) => !isCitationLine(line)).join("\n").trim();
   const body = valid ? bodyLines.join("\n").trim() : bodyWithoutCitation;
-  const source = valid ? `出處：${authorZh}，《${titleZh}》` : "【需補：引用來源】";
+  const source = valid ? `出處：文中引用的觀點，出自${authorZh}所著《${titleZh}》。故事情境與其他內容為艾瑞克的整理與詮釋。` : "【需補：引用來源】";
   const canonical = stripDashes(stripMarkdown(source));
   return {
     content: [body, canonical].filter(Boolean).join("\n\n"),

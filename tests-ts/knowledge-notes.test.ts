@@ -75,10 +75,10 @@ const excerpt = selectRelevantKnowledgeContent(longContent, "情緒起伏與煩�
 t("超過 20,000 字時選取相關章節並限制上限", [...excerpt].length <= 20_000 && excerpt.includes("情緒波動"));
 
 const validCitation = applyValidatedKnowledgeCitation("陶德·羅斯在《黑馬思維》提出一個觀點。", "黑馬思維", "陶德·羅斯", record, true);
-t("引用句型與書名、作者完全取自已讀入的中文欄位", validCitation.valid && validCitation.content.endsWith("出處：陶德·羅斯，《黑馬思維》"));
+t("引用句型與書名、作者完全取自已讀入的中文欄位", validCitation.valid && validCitation.content.endsWith("出處：文中引用的觀點，出自陶德·羅斯所著《黑馬思維》。故事情境與其他內容為艾瑞克的整理與詮釋。"));
 const englishCitationNote = { title_zh: "EQ", author_zh: "Isabella Price", zh_status: "confirmed" };
 const englishCitation = applyValidatedKnowledgeCitation("Isabella Price在《EQ》提出一個觀點。", "EQ", "Isabella Price", englishCitationNote, true);
-t("confirmed 的《EQ》與英文作者欄位逐字一致時引用合法", englishCitation.valid && englishCitation.content.endsWith("出處：Isabella Price，《EQ》"));
+t("confirmed 的《EQ》與英文作者欄位逐字一致時引用合法", englishCitation.valid && englishCitation.content.endsWith("出處：文中引用的觀點，出自Isabella Price所著《EQ》。故事情境與其他內容為艾瑞克的整理與詮釋。"));
 const blankCitations = [
   applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "", author_zh: "作者", zh_status: "confirmed" }, true),
   applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "書名", author_zh: " ", zh_status: "confirmed" }, true),
