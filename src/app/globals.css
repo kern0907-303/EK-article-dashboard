@@ -238,3 +238,88 @@ html {
     display: none;
   }
 }
+
+/* 尺寸調整：手機只放大 10px／11px 小字，其他尺寸不變。 */
+@media (max-width: 639px) and (pointer: coarse) {
+  [class*="text-[10px]"] {
+    font-size: 12px;
+  }
+
+  [class*="text-[11px]"] {
+    font-size: 13px;
+  }
+}
+
+/* iPad mini 等觸控平板專用尺寸，不命中滑鼠桌機。 */
+@media (min-width: 640px) and (max-width: 1199px) and (pointer: coarse) {
+  [class*="text-[6px]"],
+  [class*="text-[7px]"],
+  [class*="text-[8px]"],
+  [class*="text-[9px]"],
+  [class*="text-[10px]"] {
+    font-size: 12px;
+  }
+
+  [class*="text-[11px]"] {
+    font-size: 13px;
+  }
+
+  [class*="text-[8px]"][class*="scale-90"] {
+    font-size: 13.5px;
+  }
+
+  main > div[class*="max-sm:hidden"][class*="lg:hidden"] button {
+    min-height: 48px;
+    padding-block: 10px;
+    font-size: 13px;
+  }
+
+  .chat-settings {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .chat-settings .mobile-settings-content .flex.flex-wrap {
+    gap: 12px;
+  }
+
+  .chat-settings .mobile-settings-content select,
+  .chat-settings .mobile-settings-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="color"]),
+  .chat-settings .mobile-settings-content textarea {
+    min-height: 44px;
+    padding-block: 8px;
+    padding-inline: 10px;
+  }
+
+  .chat-settings .mobile-settings-content button {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+
+  .chat-settings .mobile-settings-content [class*="max-h-[40dvh]"] {
+    max-height: 46dvh;
+  }
+
+  [class*="grid-cols-12"] {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  [class*="grid-cols-12"] > button {
+    min-height: 50px;
+    padding-block: 10px;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+
+  [class*="overflow-x-auto"][class*="scrollbar-none"] > button {
+    min-height: 52px;
+    padding-block: 10px;
+    padding-inline: 12px;
+  }
+
+  iframe[title="Landing Page Preview"] {
+    height: min(60dvh, 680px);
+    min-height: 500px;
+  }
+}
