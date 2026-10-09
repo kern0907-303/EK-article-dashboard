@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
+import { articleUpdateUrl, existingArticleQuery, pickExistingId } from "@/lib/publish-dedupe";
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,9 +66,21 @@ export async function POST(req: NextRequest) {
       aeo_faq: aeoFaq || "",
       status: "published" // 預設直接上架
     };
+    // 同品牌、同標題已經有一筆就更新那一筆，避免按兩次發佈就出現兩篇一模一樣的文章。
+    // 查詢失敗時退回原本的新增行為，不讓去重檢查擋住發佈。
+    let existingId: string | null = null;
+    try {
+      const existing = await fetch(existingArticleQuery(supabaseUrl, finalBrandId, title), {
+        headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` },
+      });
+      existingId = existing.ok ? pickExistingId(await existing.json()) : null;
+    } catch {
+      existingId = null;
+    }
+
     const insertRow = async (row: Record<string, unknown>) =>
-      fetch(`${supabaseUrl}/rest/v1/insights_articles`, {
-        method: "POST",
+      fetch(existingId ? articleUpdateUrl(supabaseUrl, existingId) : `${supabaseUrl}/rest/v1/insights_articles`, {
+        method: existingId ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
           "apikey": supabaseKey,
@@ -102,6 +115,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      updated: Boolean(existingId),
       data: responseData
     });
   } catch (error: any) {
