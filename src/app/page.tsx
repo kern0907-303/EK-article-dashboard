@@ -9,6 +9,7 @@ import ProjectSelector from "@/components/ProjectSelector";
 import Button from "@/components/ui/Button";
 import ChatBox from "@/components/ChatBox";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
+import MobileBottomNav from "@/components/MobileBottomNav";
 import DerivativesEntry from "@/components/DerivativesEntry";
 import { readProjects, subscribeToProjects } from "@/lib/projects-store";
 
@@ -63,7 +64,7 @@ export default function DashboardPage() {
           {/* Hamburger menu for mobile drawer */}
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="flex lg:hidden min-h-11 min-w-11 items-center justify-center p-2 text-slate-400 hover:text-slate-200 bg-slate-900/40 border border-slate-800/80 rounded-xl cursor-pointer transition-colors"
+            className="max-sm:hidden flex lg:hidden min-h-11 min-w-11 items-center justify-center p-2 text-slate-400 hover:text-slate-200 bg-slate-900/40 border border-slate-800/80 rounded-xl cursor-pointer transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -230,7 +231,7 @@ export default function DashboardPage() {
       )}
 
       {/* Mobile Tabs selector (only visible below lg) */}
-      <div className="flex lg:hidden px-4 sm:px-6 pt-4 shrink-0">
+      <div className="max-sm:hidden flex lg:hidden px-4 sm:px-6 pt-4 shrink-0">
         <div className="w-full flex bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1 backdrop-blur-md">
           <button
             onClick={() => setActiveTab("chat")}
@@ -364,6 +365,12 @@ export default function DashboardPage() {
           />
         </div>
       </div>
+
+      <MobileBottomNav
+        activeTab={activeTab}
+        onChange={setActiveTab}
+        onOpenMore={() => setIsDrawerOpen(true)}
+      />
     </main>
   );
 }

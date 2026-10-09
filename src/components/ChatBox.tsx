@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Trash2, Bot, Sparkles, User } from "lucide-react";
+import { Send, Trash2, Bot, Sparkles, User, Copy, Settings2 } from "lucide-react";
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
@@ -23,6 +23,10 @@ interface ChatBoxProps {
 export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: ChatBoxProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
+  const [isSmallViewport, setIsSmallViewport] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   // 進度：0 待命、1 營運長拆解、2 Maya/Iris、3 Leon/Jack、4 完成、-1 未觸發/失敗
@@ -70,6 +74,30 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 639px)");
+    const updateViewport = () => {
+      setIsSmallViewport(media.matches);
+      if (!media.matches) setMobileSettingsOpen(false);
+    };
+    updateViewport();
+    media.addEventListener("change", updateViewport);
+    return () => media.removeEventListener("change", updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileSettingsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileSettingsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileSettingsOpen]);
+
+  useEffect(() => () => {
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+  }, []);
 
   // 訂閱當前品牌的聊天歷史
   useEffect(() => {
@@ -576,6 +604,35 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     }
   };
 
+  const handleCopyMessage = async (messageId: string, content: string) => {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(content);
+      copied = true;
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = content;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      try {
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      } finally {
+        textarea.remove();
+      }
+    }
+    if (!copied) return;
+    setCopiedMessageId(messageId);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
   // 設定區的分頁與展開狀態記在瀏覽器；讀不到就用預設（一般指令、收起）
   useEffect(() => {
     try {
@@ -616,51 +673,51 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     .join(" · ");
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
+    <div className="chatbox-shell flex flex-col h-full min-h-0 bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-slate-900/40 border-b border-slate-800/60 backdrop-blur-md">
-        <div className="flex items-center gap-3">
+      <div className="max-sm:px-3 max-sm:py-0.5 flex items-center justify-between px-6 py-4 bg-slate-900/40 border-b border-slate-800/60 backdrop-blur-md">
+        <div className="max-sm:gap-2 flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-900 font-bold shadow-lg shadow-amber-500/10">
-              <Bot className="w-5 h-5 text-slate-900" />
+            <div className="max-sm:h-8 max-sm:w-8 w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-900 font-bold shadow-lg shadow-amber-500/10">
+              <Bot className="max-sm:h-4 max-sm:w-4 w-5 h-5 text-slate-900" />
             </div>
             {/* Status Glow Indicator */}
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-950 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-bold text-slate-100 text-base">Erick 營運長</h3>
+              <h3 className="whitespace-nowrap max-sm:text-sm font-bold text-slate-100 text-base">Erick 營運長</h3>
               <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">
                 團隊總指揮
               </span>
             </div>
-            <p className="text-xs text-slate-400">管理 Maya、Leon、Iris 與 Jack 四位專家</p>
+            <p className="max-sm:hidden text-xs text-slate-400">管理 Maya、Leon、Iris 與 Jack 四位專家</p>
           </div>
         </div>
         
         <button
           onClick={handleClearHistory}
           title="清除對話紀錄"
-          className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all duration-300 cursor-pointer"
+          className="max-sm:min-h-11 max-sm:min-w-11 max-sm:flex max-sm:items-center max-sm:justify-center max-sm:p-2 p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all duration-300 cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 max-sm:px-3 max-sm:py-3 max-sm:space-y-4 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
         {messages.map((msg) => {
           const isUser = msg.role === "user";
           return (
             <div
               key={msg.id}
-              className={`flex gap-3 max-w-[85%] ${
+              className={`flex gap-3 max-w-[85%] max-sm:max-w-[94%] max-sm:gap-0 ${
                 isUser ? "ml-auto flex-row-reverse" : "mr-auto"
               }`}
             >
               {/* Avatar */}
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-md ${
+                className={`max-sm:hidden w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-md ${
                   isUser 
                     ? "bg-slate-800 text-slate-300" 
                     : "bg-gradient-to-tr from-amber-500 to-orange-600 text-slate-950"
@@ -672,7 +729,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               {/* Message Bubble */}
               <div className="space-y-1">
                 <div
-                  className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`max-sm:px-3 max-sm:text-[15px] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                     isUser
                       ? "bg-amber-500 text-slate-950 font-medium rounded-tr-none shadow-md shadow-amber-500/5"
                       : "bg-slate-900/80 text-slate-200 border border-slate-800/80 rounded-tl-none"
@@ -680,12 +737,25 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 >
                   {msg.content}
                 </div>
-                <span 
-                  className={`text-[10px] text-slate-500 block px-1 ${isUser ? "text-right" : "text-left"}`}
-                  suppressHydrationWarning
-                >
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                <div className={`message-meta max-sm:flex max-sm:min-h-11 max-sm:items-center max-sm:gap-2 ${isUser ? "text-right" : "text-left"}`}>
+                  <span
+                    className={`message-time text-[10px] text-slate-500 block px-1 ${isUser ? "text-right" : "text-left"}`}
+                    suppressHydrationWarning
+                  >
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {!isUser && (
+                    <button
+                      type="button"
+                      aria-label={copiedMessageId === msg.id ? "已複製訊息" : "複製訊息"}
+                      onClick={() => void handleCopyMessage(msg.id, msg.content)}
+                      className="touch-only min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-400 hover:bg-slate-800 hover:text-amber-200"
+                    >
+                      <Copy aria-hidden="true" className="h-3.5 w-3.5" />
+                      {copiedMessageId === msg.id ? "已複製" : "複製"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -693,8 +763,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
         {/* AI Thinking Animation */}
         {isLoading && (
-          <div className="flex gap-3 max-w-[85%] mr-auto">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-950 shadow-md">
+          <div className="flex gap-3 max-w-[85%] max-sm:max-w-[94%] max-sm:gap-0 mr-auto">
+            <div className="max-sm:hidden w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-950 shadow-md">
               <Bot className="w-4 h-4 animate-bounce" />
             </div>
             <div className="space-y-1">
@@ -773,6 +843,52 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         onSubmit={handleSend}
         className="chat-settings shrink-0 p-4 pb-safe bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
+        <div className="mobile-settings-summary sm:hidden">
+          <button
+            type="button"
+            aria-expanded={mobileSettingsOpen}
+            aria-controls="mobile-chat-settings"
+            onClick={() => setMobileSettingsOpen(true)}
+            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 text-sm font-bold text-amber-200"
+          >
+            <Settings2 aria-hidden="true" className="h-4 w-4" />
+            設定
+          </button>
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-400" aria-live="polite">
+            {GUARD_BRAND_LABEL[currentBrandKey]}　{panelTab === "general" ? "一般指令" : "文體生成"}
+          </span>
+        </div>
+
+        <div
+          id="mobile-chat-settings"
+          className={`mobile-settings-layer${mobileSettingsOpen ? " is-open" : ""}`}
+          aria-hidden={isSmallViewport ? !mobileSettingsOpen : undefined}
+        >
+          <button
+            type="button"
+            className="mobile-settings-backdrop"
+            aria-label="點擊關閉設定"
+            tabIndex={mobileSettingsOpen ? 0 : -1}
+            onClick={() => setMobileSettingsOpen(false)}
+          />
+          <div
+            className="mobile-settings-panel"
+            role={isSmallViewport && mobileSettingsOpen ? "dialog" : undefined}
+            aria-modal={isSmallViewport && mobileSettingsOpen ? "true" : undefined}
+            aria-label={isSmallViewport && mobileSettingsOpen ? "聊天設定" : undefined}
+          >
+            <div className="mobile-settings-header">
+              <span className="mobile-settings-handle" aria-hidden="true" />
+              <span className="text-sm font-bold text-slate-200">設定</span>
+              <button
+                type="button"
+                onClick={() => setMobileSettingsOpen(false)}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3 text-sm font-semibold text-amber-200 hover:bg-slate-800"
+              >
+                完成
+              </button>
+            </div>
+            <div className="mobile-settings-content">
         <div className="flex flex-wrap items-center gap-2">
           <span
             className="text-[11px] font-bold h-7 inline-flex items-center px-2.5 rounded-lg border border-slate-700/80 bg-slate-800/80 text-slate-200 whitespace-nowrap"
@@ -1024,12 +1140,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             <div className="text-[10px] text-amber-200/80">{STORY_ARGUMENT_GENRE_NOTICE}</div>
           </div>
         )}
-        <div className="flex gap-2.5">
+            </div>
+          </div>
+        </div>
+        <div className="mobile-composer flex gap-2.5">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder={`對 Erick 營運長下達【${activeBrandName}】指令...`}
+            placeholder={isSmallViewport ? "對 Erick 下達指令…" : `對 Erick 營運長下達【${activeBrandName}】指令...`}
             disabled={isLoading || isGenerating}
             className="flex-1 px-4 py-3 rounded-xl bg-slate-900/60 border border-slate-850 focus:border-amber-500/60 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/20 placeholder-slate-500 disabled:opacity-50 transition-all duration-300"
           />
