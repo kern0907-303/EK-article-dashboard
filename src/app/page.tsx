@@ -6,6 +6,7 @@ import ExpertTeamList from "@/components/ExpertTeamList";
 import { Bot, Sparkles, Radio, Cpu, Network, Menu, X, BookOpen } from "lucide-react";
 import BrandSelector, { BRANDS } from "@/components/BrandSelector";
 import ProjectSelector from "@/components/ProjectSelector";
+import Button from "@/components/ui/Button";
 import ChatBox from "@/components/ChatBox";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
 import DerivativesEntry from "@/components/DerivativesEntry";
@@ -137,31 +138,27 @@ export default function DashboardPage() {
 
               {/* Mode Toggle (Segmented Control) */}
               <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl p-1 flex">
-                <button
+                <Button
+                  variant="ghost"
+                  active={currentMode === "brand"}
                   onClick={() => setCurrentMode("brand")}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    currentMode === "brand"
-                      ? "bg-slate-800 text-slate-100 border border-slate-700/50 shadow-sm"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
+                  className="flex-1"
                 >
                   長期品牌
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  active={currentMode === "project"}
                   onClick={() => {
                     setCurrentMode("project");
                     if (!activeProjectId && projectsCache.length > 0) {
                       setActiveProjectId(projectsCache[0].id);
                     }
                   }}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    currentMode === "project"
-                      ? "bg-amber-500 text-slate-950 shadow-sm"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
+                  className="flex-1"
                 >
                   階段專案
-                </button>
+                </Button>
               </div>
 
               {/* Brand or Project Dropdown Selector */}
@@ -267,31 +264,27 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {/* Mode Toggle (Segmented Control) */}
             <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl p-1 flex">
-              <button
+              <Button
+                variant="ghost"
+                active={currentMode === "brand"}
                 onClick={() => setCurrentMode("brand")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  currentMode === "brand"
-                    ? "bg-slate-800 text-slate-100 border border-slate-700/50 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="flex-1"
               >
                 長期品牌
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                active={currentMode === "project"}
                 onClick={() => {
                   setCurrentMode("project");
                   if (!activeProjectId && projectsCache.length > 0) {
                     setActiveProjectId(projectsCache[0].id);
                   }
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  currentMode === "project"
-                    ? "bg-amber-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="flex-1"
               >
                 階段專案
-              </button>
+              </Button>
             </div>
 
             {/* Brand or Project Dropdown Selector */}

@@ -16,7 +16,7 @@ import {
 } from "@/lib/storage";
 import { BRANDS } from "./BrandSelector";
 import SchedulePicker from "@/components/SchedulePicker";
-import Button from "@/components/ui/Button";
+import Button, { BrandButtonProvider } from "@/components/ui/Button";
 import SocialQueuePanel from "@/components/SocialQueuePanel";
 import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
@@ -214,7 +214,19 @@ const TABS = [
   { id: "performance", label: "成效", expert: "Data", icon: TrendingUp, color: "from-cyan-500 to-sky-500", glow: "shadow-sky-500/10" }
 ] as const;
 
-export default function WorkspaceBoard({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
+/** 品牌主色提供給 Button：主要按鈕會跟著目前品牌變色 */
+const brandButtonColors = (t: BrandTheme) => ({ bg: t.primaryBg, hover: t.primaryBgHover, text: t.primaryBtnText, border: t.btnBorder });
+
+export default function WorkspaceBoard(props: WorkspaceBoardProps) {
+  const rootTheme = useBrandTheme(props.activeBrandId);
+  return (
+    <BrandButtonProvider colors={brandButtonColors(rootTheme)}>
+      <WorkspaceBoardInner {...props} />
+    </BrandButtonProvider>
+  );
+}
+
+function WorkspaceBoardInner({ activeBrandId, aiProvider }: WorkspaceBoardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("social");
   // 側邊欄點專家 → 切到對應分頁
   useEffect(() => {
@@ -1680,6 +1692,7 @@ const SocialTabContent = memo(function SocialTabContent({
   );
 
   return (
+    <BrandButtonProvider colors={brandButtonColors(theme)}>
     <div className="flex flex-col min-h-full space-y-4">
       <div className="flex flex-col xl:flex-row xl:items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 gap-2 shrink-0">
         <div className="shrink-0">
@@ -2373,6 +2386,7 @@ const SocialTabContent = memo(function SocialTabContent({
       {/* 📅 Threads / Instagram 排程清單 (social_publish_queue) */}
       <SocialQueuePanel brandId={pubBrandId} refreshKey={socialQueueTick} />
     </div>
+    </BrandButtonProvider>
   );
 });
 
@@ -2454,15 +2468,16 @@ const TheoTabContent = memo(function TheoTabContent({
               檢查目前「{platformLabel}」文案會不會被演算法壓流量，並給出可一鍵套用的改寫。分數是 AI 判斷，不是真實流量預測。
             </p>
           </div>
-          <button
-            type="button"
-            disabled={isAnalyzing || !hasCopy}
+          <Button
+            variant="primary"
+            loading={isAnalyzing}
+            disabled={!hasCopy}
             onClick={handleAnalyzeViral}
-            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+            icon={<Activity className="w-3.5 h-3.5" />}
+            className="shrink-0"
           >
-            {isAnalyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
             {isAnalyzing ? "分析中..." : theoAnalysis ? "重新分析" : "開始分析"}
-          </button>
+          </Button>
         </div>
         <AutoHealthToggle />
         {theoStale && !isAnalyzing && (
@@ -2572,15 +2587,15 @@ const TheoTabContent = memo(function TheoTabContent({
                           <div className="p-2.5 rounded bg-emerald-500/5 border border-emerald-500/15 text-emerald-400 flex flex-col justify-between select-all">
                             <div className="leading-relaxed">{item.viral_rewrite}</div>
                             <div className="flex justify-end mt-2.5">
-                              <button
-                                type="button"
+                              <Button
+                                variant="secondary"
+                                size="sm"
                                 onClick={() => handleApplyRewrite(item.original_sentence, item.viral_rewrite)}
-                                className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-extrabold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded transition-all cursor-pointer shadow-sm hover:shadow-emerald-500/20"
+                                icon={<Zap className="w-2.5 h-2.5 fill-current" />}
                                 title="直接將編輯區內文對應的原句替換為此優化版"
                               >
-                                <Zap className="w-2.5 h-2.5 text-slate-950 fill-current" />
                                 套用改寫
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -2700,30 +2715,18 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
         <div className="flex items-center gap-3">
           {isHtml && !isEditing && (
             <div className="flex p-0.5 bg-slate-950/60 border border-slate-850 rounded-lg">
-              <button
-                onClick={() => setViewMode("preview")}
-                className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
-                  viewMode === "preview" 
-                    ? `${theme.bgOpacity20} ${theme.primaryColor} border ${theme.borderOpacity20}` 
-                    : "text-slate-400 hover:text-slate-300"
-                }`}
-              >
+              <Button variant="ghost" size="sm" active={viewMode === "preview"} onClick={() => setViewMode("preview")}>
                 預覽頁面
-              </button>
-              <button
-                onClick={() => setViewMode("code")}
-                className={`px-2.5 py-1 rounded-md text-[9px] font-bold transition cursor-pointer ${
-                  viewMode === "code" 
-                    ? `${theme.bgOpacity20} ${theme.primaryColor} border ${theme.borderOpacity20}` 
-                    : "text-slate-400 hover:text-slate-300"
-                }`}
-              >
+              </Button>
+              <Button variant="ghost" size="sm" active={viewMode === "code"} onClick={() => setViewMode("code")}>
                 HTML 原始碼
-              </button>
+              </Button>
             </div>
           )}
 
-          <button
+          <Button
+            variant={isEditing ? "primary" : "secondary"}
+            size="sm"
             onClick={() => {
               if (isEditing) {
                 handleSave();
@@ -2731,11 +2734,10 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
                 setIsEditing(true);
               }
             }}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-slate-100 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+            icon={isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
           >
-            {isEditing ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
             {isEditing ? "儲存" : "編輯結構"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -2855,15 +2857,9 @@ const SeoHealthCard = memo(function SeoHealthCard({
           自動健檢{seoScore ? `（${new Date(seoScore.at).toLocaleTimeString()}）` : ""}
           <span className="font-normal text-slate-500">　程式規則計分，不用 AI，同一篇每次結果一樣，沒有改寫你的文章</span>
         </div>
-        <button
-          type="button"
-          onClick={runNow}
-          disabled={busy}
-          className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
-        >
-          {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+        <Button variant="primary" onClick={runNow} loading={busy} className="shrink-0">
           {busy ? "評分中..." : seoScore ? "重新評分" : "立即評分"}
-        </button>
+        </Button>
       </div>
       <AutoHealthToggle />
       {err && <div className="text-[11px] text-rose-300">{err}</div>}
@@ -3016,15 +3012,16 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
             AI 不會編造數據、案例或來源，只調整標題、結構、定義句、結論句與問答。
           </p>
         </div>
-        <button
-          type="button"
-          disabled={isRunning || !hasCopy}
+        <Button
+          variant="primary"
+          loading={isRunning}
+          disabled={!hasCopy}
           onClick={run}
-          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+          icon={<Sparkles className="w-3.5 h-3.5" />}
+          className="shrink-0"
         >
-          {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
           {isRunning ? "優化中..." : result ? "重新優化" : "開始優化"}
-        </button>
+        </Button>
       </div>
 
       {!hasCopy && (
@@ -3127,9 +3124,9 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
               )}
 
               <div>
-                <button type="button" onClick={() => setShowFull((v) => !v)} className="text-[11px] text-slate-300 underline cursor-pointer">
+                <Button variant="ghost" size="sm" onClick={() => setShowFull((v) => !v)}>
                   {showFull ? "收起原文與優化後全文對照 ▲" : "展開原文與優化後全文對照 ▼"}
-                </button>
+                </Button>
                 {showFull && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                     <pre className="whitespace-pre-wrap text-[11px] text-slate-400 bg-slate-950/50 border border-slate-850 rounded-lg p-3 max-h-80 overflow-y-auto font-sans">{result.forContent}</pre>
@@ -3146,21 +3143,12 @@ const SeoOptimizerPanel = memo(function SeoOptimizerPanel({
               )}
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={applyAll}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
-                >
+                <Button variant="primary" onClick={applyAll}>
                   套用到官網文章（取代官網文章＋問答＋結構化資料）
-                </button>
-                <button
-                  type="button"
-                  onClick={applyFaq}
-                  disabled={result.faq.length === 0}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer"
-                >
+                </Button>
+                <Button variant="secondary" onClick={applyFaq} disabled={result.faq.length === 0}>
                   只套用問答與結構化資料
-                </button>
+                </Button>
                 {applied && (
                   <span className="text-[11px] text-emerald-400">
                     {applied === "all" ? "✓ 已套用到官網文章。到「社群文案」分頁按「發布至官網」，問答與結構化資料會跟著文章一起存入。" : "✓ 已更新問答與結構化資料，發布至官網時會跟著文章一起存入。"}
@@ -3268,15 +3256,16 @@ const WebArticlePanel = memo(function WebArticlePanel({
             和社群貼文分開存放。「發布至官網」送出的是這一份，下方的文章優化器也只改這一份；社群貼文的流量分析與平台改寫不受影響。產生時以目前「{platformLabel}」分頁的貼文為底稿（想用別的平台版本，先到社群文案分頁切換）。
           </p>
         </div>
-        <button
-          type="button"
-          disabled={isGenerating || !hasSocial}
+        <Button
+          variant="primary"
+          loading={isGenerating}
+          disabled={!hasSocial}
           onClick={generate}
-          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
+          icon={<Sparkles className="w-3.5 h-3.5" />}
+          className="shrink-0"
         >
-          {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
           {isGenerating ? "產生中..." : hasArticle ? "重新由社群文案產生" : "由社群文案產生官網文章"}
-        </button>
+        </Button>
       </div>
 
       {!hasSocial && (
@@ -3313,14 +3302,9 @@ const WebArticlePanel = memo(function WebArticlePanel({
             <span className="text-[10px] text-slate-500">約 {countChars(draft)} 字</span>
             <div className="flex items-center gap-2">
               {saved && <span className="text-[11px] text-emerald-400">✓ 已儲存</span>}
-              <button
-                type="button"
-                disabled={!dirty}
-                onClick={saveDraft}
-                className="px-3 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-600 cursor-pointer disabled:cursor-not-allowed"
-              >
+              <Button variant="secondary" size="sm" disabled={!dirty} onClick={saveDraft}>
                 儲存修改
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -3603,23 +3587,14 @@ const SEOTabContent = memo(function SEOTabContent({
                     <FileCode className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-bold text-slate-200">JSON-LD 結構化資料 (FAQPage Schema)</span>
                   </div>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={handleCopySchema}
-                    className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded transition flex items-center gap-1 cursor-pointer"
+                    icon={schemaCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   >
-                    {schemaCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-[10px] text-emerald-400 font-bold">已複製</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span className="text-[10px] font-bold">一鍵複製</span>
-                      </>
-                    )}
-                  </button>
+                    {schemaCopied ? "已複製" : "一鍵複製"}
+                  </Button>
                 </div>
                 <div className="flex-1 min-h-[160px] max-h-[220px] overflow-y-auto rounded-lg bg-slate-950 border border-slate-900 p-3.5 font-mono text-[10px] text-emerald-400/90 whitespace-pre scrollbar-thin select-all">
                   {aeoSchema}
@@ -3636,23 +3611,14 @@ const SEOTabContent = memo(function SEOTabContent({
                     <Sparkles className="w-4 h-4 text-sky-400" />
                     <span className="text-xs font-bold text-slate-200">AEO 常見問答集 (適合 AI 搜尋引用)</span>
                   </div>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={handleCopyFaq}
-                    className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded transition flex items-center gap-1 cursor-pointer"
+                    icon={faqCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   >
-                    {faqCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-[10px] text-emerald-400 font-bold">已複製</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span className="text-[10px] font-bold">一鍵複製</span>
-                      </>
-                    )}
-                  </button>
+                    {faqCopied ? "已複製" : "一鍵複製"}
+                  </Button>
                 </div>
                 <div className="flex-1 min-h-[160px] max-h-[220px] overflow-y-auto rounded-lg bg-slate-950 border border-slate-900 p-3.5 text-xs text-slate-300 leading-relaxed font-sans scrollbar-thin select-text">
                   <div className="whitespace-pre-wrap">{stripMarkdown(aeoFaq)}</div>
@@ -3759,12 +3725,9 @@ const AdsTabContent = memo(function AdsTabContent({ brandId, adData }: { brandId
                           className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-slate-200"
                           placeholder="變更 (例如: +1.2%)"
                         />
-                        <button
-                          onClick={() => handleSave(index)}
-                          className={`w-full py-1 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} rounded text-[10px] font-bold transition cursor-pointer`}
-                        >
+                        <Button variant="primary" size="sm" onClick={() => handleSave(index)} className="w-full">
                           儲存
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <h3 className="text-xl font-extrabold text-slate-100 mt-2 tracking-tight">
@@ -3904,49 +3867,32 @@ const GuidelinesTabContent = memo(function GuidelinesTabContent({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleCopy}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-xs font-semibold rounded-lg border border-slate-800 transition cursor-pointer flex items-center gap-1.5"
-            title="複製規範"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>複製</span>
-          </button>
+          <Button variant="ghost" onClick={handleCopy} icon={<Copy className="w-3.5 h-3.5" />} title="複製規範">
+            複製
+          </Button>
           {!isEditing ? (
             <>
-              <button
-                onClick={() => setIsEditing(true)}
-                className={`px-3 py-1.5 ${theme.primaryBg} ${theme.primaryBgHover} ${theme.primaryBtnText} text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md hover:shadow-${theme.primary}-500/5`}
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>編輯大腦</span>
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs font-semibold rounded-lg border border-rose-500/20 transition cursor-pointer"
-                title="還原為預設品牌說明"
-              >
+              <Button variant="primary" onClick={() => setIsEditing(true)} icon={<Edit2 className="w-3.5 h-3.5" />}>
+                編輯大腦
+              </Button>
+              <Button variant="danger" onClick={handleReset} title="還原為預設品牌說明">
                 重設預設
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button
-                onClick={handleSave}
-                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-500/5"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>儲存大腦</span>
-              </button>
-              <button
+              <Button variant="primary" onClick={handleSave} icon={<Check className="w-3.5 h-3.5" />}>
+                儲存大腦
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setVal(brandGuidelines);
                   setIsEditing(false);
                 }}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 text-xs font-semibold rounded-lg border border-slate-800 transition cursor-pointer"
               >
                 取消
-              </button>
+              </Button>
             </>
           )}
         </div>

@@ -734,21 +734,25 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               )}
             </div>
             {progress.stage >= 1 && progress.stage <= 3 ? (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={handleCancelGeneration}
-                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold rounded-lg cursor-pointer transition-colors shrink-0"
+                className="shrink-0"
               >
                 取消生成
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setProgress({ stage: 0, startedAt: 0, note: "" })}
-                className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer shrink-0"
+                className="shrink-0"
               >
                 關閉
-              </button>
+              </Button>
             )}
           </div>
           {progress.stage >= 1 && progress.stage <= 3 && (
@@ -834,14 +838,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 className="w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
               />
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={handlePasteParse}
                   disabled={!pasteText.trim()}
-                  className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-100 text-[11px] font-bold rounded-md cursor-pointer disabled:opacity-40"
                 >
                   解析並填入
-                </button>
+                </Button>
                 {pasteApplied && <span className="text-[10px] text-emerald-300 truncate">已填入：{pasteApplied}</span>}
               </div>
               {pasteBundle && pasteBundle.topics.length > 1 && (
@@ -929,14 +934,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             {genreError && <div className="text-[11px] text-red-300">{genreError}</div>}
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] text-slate-500">以 Facebook 長文格式產出；Threads、IG 請之後用「改寫」。品牌：{activeBrandName}</span>
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 onClick={handleGenreGenerate}
                 disabled={isLoading || isGenerating}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg cursor-pointer disabled:opacity-50 shrink-0"
+                className="shrink-0"
               >
                 用此文體生成
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -1050,20 +1056,20 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               繼續的話，會用「{GUARD_BRAND_LABEL[currentBrandKey]}」的語氣與規範生成。想換品牌，請取消後到左側切換。
             </p>
             <div className="flex justify-end gap-2 pt-1">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => setBrandConfirm(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
               >
                 取消
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="primary"
                 onClick={() => { const c = brandConfirm; setBrandConfirm(null); c.onConfirm(); }}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
               >
                 仍用目前品牌生成
-              </button>
+              </Button>
             </div>
           </div>
         </div>

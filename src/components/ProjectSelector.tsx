@@ -6,6 +6,7 @@ import {
   Loader2, AlertCircle, HelpCircle, ExternalLink, Sheet, Folder 
 } from "lucide-react";
 import { saveWorkspace } from "@/lib/storage";
+import Button from "@/components/ui/Button";
 import {
   readProjects, writeProjects, PARENT_BRAND_OPTIONS,
   getProjectParentBrand, setProjectParentBrand, subscribeToProjects
@@ -470,13 +471,14 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
               <Sheet className="w-4 h-4 text-emerald-400" />
               Google Sheets 同步設定
             </span>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowInstructions(!showInstructions)}
-              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer font-bold"
+              icon={<HelpCircle className="w-3.5 h-3.5" />}
             >
-              <HelpCircle className="w-3.5 h-3.5" />
               設定教學
-            </button>
+            </Button>
           </div>
 
           <div className="space-y-1.5">
@@ -504,20 +506,21 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
           )}
 
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="primary"
               onClick={handleSaveSettings}
-              disabled={isLoading}
-              className="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1"
+              loading={isLoading}
+              className="flex-1"
             >
-              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "儲存並同步"}
-            </button>
-            <button
+              儲存並同步
+            </Button>
+            <Button
+              variant="secondary"
               onClick={handleTestConnection}
               disabled={isLoading}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-lg cursor-pointer transition-colors border border-slate-700"
             >
               測試連線
-            </button>
+            </Button>
           </div>
 
           {/* 教學說明 */}
@@ -536,12 +539,14 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
                 </li>
                 <li>
                   將預設程式碼全部清空，並貼上點選下方按鈕複製的程式碼：
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={handleCopyCode}
-                    className="mt-1.5 w-full py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 rounded font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="mt-1.5 w-full"
                   >
                     複製 Apps Script 程式碼
-                  </button>
+                  </Button>
                 </li>
                 <li>
                   點選上方儲存圖示，點選右上角 **「部署」 ➔ 「新建部署」**。
@@ -624,20 +629,21 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button
+            <Button
               type="submit"
-              disabled={isLoading}
-              className="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1"
+              variant="primary"
+              loading={isLoading}
+              className="flex-1"
             >
-              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "確認建立專案"}
-            </button>
-            <button
+              確認建立專案
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setShowAddForm(false)}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-lg cursor-pointer transition-colors border border-slate-700"
             >
               取消
-            </button>
+            </Button>
           </div>
         </form>
       )}

@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Calendar, Loader2 } from "lucide-react";
+import { Calendar } from "lucide-react";
 import type { QueueItem, QueueStatus } from "@/lib/publish-queue";
 import { getFacebookPageById } from "@/lib/facebook-pages";
+import Button from "@/components/ui/Button";
 
 const STATUS_LABEL: Record<QueueStatus, { text: string; cls: string }> = {
   pending: { text: "待發送", cls: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
@@ -55,7 +56,7 @@ export default function PublishQueuePanel({
       >
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-slate-400" />
-          <span className="text-xs font-bold text-slate-200">📅 排程清單</span>
+          <span className="text-xs font-bold text-slate-200">排程清單</span>
           <span className="text-[10px] text-slate-500 font-semibold bg-slate-900 px-1.5 py-0.5 rounded">
             待發送 {pendingCount} 筆
           </span>
@@ -72,15 +73,9 @@ export default function PublishQueuePanel({
         <div className="p-4 border-t border-slate-800/60 max-h-[320px] overflow-y-auto space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-slate-500">時間皆以台北時間顯示</span>
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={isLoading}
-              className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-350 text-[10px] font-bold rounded border border-slate-800 transition cursor-pointer flex items-center gap-1"
-            >
-              {isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+            <Button variant="ghost" size="sm" onClick={onRefresh} loading={isLoading}>
               重新整理
-            </button>
+            </Button>
           </div>
 
           {error && <p className="text-[11px] text-rose-400">{error}</p>}
@@ -125,15 +120,16 @@ export default function PublishQueuePanel({
                       </div>
                     </div>
                     {item.status === "pending" && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => {
                           if (window.confirm("確定要取消這筆排程嗎？")) onCancel(item.id);
                         }}
-                        className="shrink-0 px-2.5 py-1 bg-slate-900 hover:bg-rose-500/10 text-slate-350 hover:text-rose-400 text-[10px] font-bold rounded-lg border border-slate-800 transition cursor-pointer"
+                        className="shrink-0"
                       >
                         取消
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {item.error && <p className="text-[10px] text-rose-400 break-words">{item.error}</p>}

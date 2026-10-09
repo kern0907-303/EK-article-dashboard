@@ -25,6 +25,18 @@ const SIZES: Record<ButtonSize, string> = {
   sm: "h-7 px-2.5 text-[11px]",
 };
 
+/** 品牌主色：由外層用 BrandButtonProvider 提供，主要按鈕就會跟著品牌色變；沒有提供時維持藍色 */
+export interface BrandButtonColors {
+  bg: string;
+  hover: string;
+  text: string;
+  border: string;
+}
+const BrandButtonContext = React.createContext<BrandButtonColors | null>(null);
+export function BrandButtonProvider({ colors, children }: { colors: BrandButtonColors; children: React.ReactNode }) {
+  return <BrandButtonContext.Provider value={colors}>{children}</BrandButtonContext.Provider>;
+}
+
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-blue-600 hover:bg-blue-500 text-white border-blue-500/40",
   secondary: "bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700",
@@ -44,21 +56,24 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   active?: boolean;
 }
 
-export function buttonClass(variant: ButtonVariant = "secondary", size: ButtonSize = "md", extra = ""): string {
-  return `${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${extra}`.trim();
+export function buttonClass(variant: ButtonVariant = "secondary", size: ButtonSize = "md", extra = "", brand?: BrandButtonColors | null): string {
+  const color =
+    variant === "primary" && brand ? `${brand.bg} ${brand.hover} ${brand.text} ${brand.border}` : VARIANTS[variant];
+  return `${BASE} ${SIZES[size]} ${color} ${extra}`.trim();
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = "secondary", size = "md", loading = false, icon, active, className = "", children, disabled, type = "button", ...rest },
   ref
 ) {
+  const brand = React.useContext(BrandButtonContext);
   const activeClass = active ? "!bg-slate-800 !text-slate-100 !border-slate-700" : "";
   return (
     <button
       ref={ref}
       type={type}
       disabled={disabled || loading}
-      className={buttonClass(variant, size, `${activeClass} ${className}`)}
+      className={buttonClass(variant, size, `${activeClass} ${className}`, brand)}
       {...rest}
     >
       {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : icon ? <span className="shrink-0 flex items-center">{icon}</span> : null}
