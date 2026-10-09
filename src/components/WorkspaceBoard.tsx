@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
+import { createPortal } from "react-dom";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
   Send, Calendar, ArrowUpRight, ArrowDownRight, Folder, FileCode,
   Copy, Loader2, Sparkles, Brain, Shield, AlertTriangle, Zap, TrendingUp,
   Facebook, Instagram, AtSign, Heart, MessageCircle, Repeat, Bookmark, ThumbsUp, Share2, MoreHorizontal,
-  ChevronDown, Activity
+  ChevronDown, Activity, Maximize2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -2618,6 +2619,73 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
   const [val, setVal] = useState(architecture);
   const [isEditing, setIsEditing] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const fullscreenCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const fullscreenIframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const closeFullscreenPreview = useCallback(() => {
+    setIsFullscreenOpen(false);
+    window.requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!isFullscreenOpen || !isMounted) return;
+
+    const scrollY = window.scrollY;
+    const bodyStyles = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+      overflow: document.body.style.overflow,
+    };
+    const rootOverscrollBehavior = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeFullscreenPreview();
+    };
+    const handleFrameMessage = (event: MessageEvent) => {
+      if (event.source !== fullscreenIframeRef.current?.contentWindow) return;
+      if (event.data?.type === "ek:fullscreen-preview-escape") closeFullscreenPreview();
+    };
+    const handleResize = () => {
+      if (window.matchMedia("(min-width: 640px)").matches) closeFullscreenPreview();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("message", handleFrameMessage);
+    window.addEventListener("resize", handleResize);
+    fullscreenCloseButtonRef.current?.focus();
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("message", handleFrameMessage);
+      window.removeEventListener("resize", handleResize);
+      document.body.style.position = bodyStyles.position;
+      document.body.style.top = bodyStyles.top;
+      document.body.style.left = bodyStyles.left;
+      document.body.style.right = bodyStyles.right;
+      document.body.style.width = bodyStyles.width;
+      document.body.style.overflow = bodyStyles.overflow;
+      document.documentElement.style.overscrollBehavior = rootOverscrollBehavior;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isFullscreenOpen, isMounted, closeFullscreenPreview]);
 
   useEffect(() => {
     setVal(architecture);
@@ -2695,7 +2763,30 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
               margin: 0;
               padding: 0;
             }
+
+            @media (max-width: 639px) {
+              html, body {
+                min-height: 100%;
+                overflow-x: hidden;
+                overscroll-behavior: contain;
+              }
+
+              [data-aos], [data-reveal], [class*="reveal"], [class*="scroll-reveal"],
+              [class*="fade-in"], [class*="fade-up"], [class~="opacity-0"],
+              [style*="opacity: 0"], [style*="opacity:0"] {
+                opacity: 1 !important;
+                visibility: visible !important;
+                transform: none !important;
+              }
+            }
           </style>
+          <script>
+            document.addEventListener("keydown", (event) => {
+              if (event.key === "Escape") {
+                window.parent.postMessage({ type: "ek:fullscreen-preview-escape" }, "*");
+              }
+            }, true);
+          </script>
         </head>
         <body class="bg-slate-900 text-slate-100 min-h-screen">
           ${val}
@@ -2706,13 +2797,13 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
 
   return (
     <div className="flex flex-col min-h-full space-y-4">
-      <div className="flex justify-between items-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
+      <div className="flex justify-between items-center max-sm:flex-wrap max-sm:gap-2 bg-slate-900/40 p-3 rounded-xl border border-slate-800/60 shrink-0">
         <div>
           <h4 className="text-sm font-bold text-slate-200">系統架構師：Leon</h4>
           <p className="text-[10px] text-slate-400">網頁與功能路由層次結構規劃</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 max-sm:w-full max-sm:flex-wrap max-sm:justify-end max-sm:gap-2">
           {isHtml && !isEditing && (
             <div className="flex p-0.5 bg-slate-950/60 border border-slate-850 rounded-lg">
               <Button variant="ghost" size="sm" active={viewMode === "preview"} onClick={() => setViewMode("preview")}>
@@ -2722,6 +2813,18 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
                 HTML 原始碼
               </Button>
             </div>
+          )}
+
+          {isHtml && !isEditing && viewMode === "preview" && (
+            <button
+              ref={fullscreenButtonRef}
+              type="button"
+              onClick={() => setIsFullscreenOpen(true)}
+              className="hidden max-sm:inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-3 text-xs font-bold text-slate-200"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              全螢幕
+            </button>
           )}
 
           <Button
@@ -2754,11 +2857,11 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
         <div className="flex-1 min-h-[500px] flex flex-col">
           {isHtml ? (
             viewMode === "preview" ? (
-              <div className="flex-1 bg-slate-950/40 border border-slate-850/65 rounded-xl overflow-hidden p-1">
+              <div className="flex-1 bg-slate-950/40 border border-slate-850/65 rounded-xl overflow-hidden p-1 max-sm:flex-none max-sm:h-[60dvh] max-sm:min-h-[60dvh]">
                 <iframe
                   srcDoc={iframeSrcDoc}
                   title="Landing Page Preview"
-                  className="w-full h-full border-0 rounded-lg"
+                  className="w-full h-full border-0 rounded-lg max-sm:flex-none max-sm:h-[calc(60dvh-10px)]"
                   sandbox="allow-scripts"
                 />
               </div>
@@ -2773,6 +2876,35 @@ const ArchitectureTabContent = memo(function ArchitectureTabContent({ brandId, a
             </div>
           )}
         </div>
+      )}
+
+      {isFullscreenOpen && isMounted && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="網頁架構全螢幕預覽"
+          className="fixed inset-0 z-[80] flex h-[100dvh] w-full flex-col bg-slate-950 sm:hidden"
+        >
+          <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-3 pt-safe">
+            <h2 className="text-sm font-bold text-slate-100">網頁架構預覽</h2>
+            <button
+              ref={fullscreenCloseButtonRef}
+              type="button"
+              onClick={closeFullscreenPreview}
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm font-bold text-slate-100"
+            >
+              關閉
+            </button>
+          </div>
+          <iframe
+            ref={fullscreenIframeRef}
+            srcDoc={iframeSrcDoc}
+            title="Landing Page Preview 全螢幕"
+            className="min-h-0 w-full flex-1 border-0 bg-slate-950"
+            sandbox="allow-scripts"
+          />
+        </div>,
+        document.body
       )}
     </div>
   );
