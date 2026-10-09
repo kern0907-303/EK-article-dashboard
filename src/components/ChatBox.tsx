@@ -616,7 +616,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     .join(" · ");
 
   return (
-    <div className="flex flex-col h-full bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
+    <div className="flex flex-col h-full min-h-0 bg-slate-950/20 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-md">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 bg-slate-900/40 border-b border-slate-800/60 backdrop-blur-md">
         <div className="flex items-center gap-3">
@@ -648,7 +648,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
         {messages.map((msg) => {
           const isUser = msg.role === "user";
           return (
@@ -771,7 +771,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       {/* Input Form */}
       <form
         onSubmit={handleSend}
-        className="p-4 bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
+        className="chat-settings shrink-0 p-4 pb-safe bg-slate-900/20 border-t border-slate-800/60 backdrop-blur-md flex flex-col gap-2.5"
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -817,19 +817,19 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           </div>
         )}
         {panelTab === "genre" && settingsOpen && (
-          <div className="max-h-[40vh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
+          <div className="max-h-[40dvh] overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 space-y-2">
             <div className="rounded-lg border border-slate-700/80 bg-slate-900/60 p-2 space-y-1.5">
               <button
                 type="button"
                 onClick={() => setPasteOpen((o) => !o)}
-                className="w-full flex items-center justify-between text-[11px] font-bold text-slate-300 cursor-pointer"
+                className="w-full flex items-center justify-between text-xs sm:text-[11px] font-bold text-slate-300 cursor-pointer"
               >
                 <span>貼上選題，自動填入下方欄位</span>
                 <span className="text-slate-500">{pasteOpen ? "收起 ▲" : "展開 ▼"}</span>
               </button>
               {pasteOpen && (
                 <div className="space-y-1.5">
-              <div className="text-[10px] text-slate-400">貼上選題：把每週品牌調研的 Telegram 訊息整段貼進來，會自動填入下方的文體、漏斗層、主張與素材</div>
+              <div className="text-xs sm:text-[10px] text-slate-400">貼上選題：把每週品牌調研的 Telegram 訊息整段貼進來，會自動填入下方的文體、漏斗層、主張與素材</div>
               <textarea
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
@@ -857,7 +857,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                       key={tp.index}
                       type="button"
                       onClick={() => applyPastedTopic(tp, pasteBundle)}
-                      className="block w-full text-left text-[11px] text-slate-200 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                className="block w-full text-left text-xs sm:text-[11px] text-slate-200 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                     >
                       題目 {tp.index}｜{tp.mode || "選題"}｜{tp.genreRaw || "文體未定"}：{tp.title || tp.claim}
                     </button>
@@ -871,12 +871,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               )}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="text-[10px] text-slate-400">
+              <label className="text-xs sm:text-[10px] text-slate-400">
                 文體
                 <select
                   value={genreId}
                   onChange={(e) => { setGenreId(e.target.value as GenreId); setGenreError(""); }}
-                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                  className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {GENRE_LIST.map((g) => (
                     <option key={g.id} value={g.id} disabled={!g.enabled}>
@@ -885,12 +885,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   ))}
                 </select>
               </label>
-              <label className="flex-1 text-[10px] text-slate-400">
+              <label className="flex-1 text-xs sm:text-[10px] text-slate-400">
                 漏斗層
                 <select
                   value={funnel}
                   onChange={(e) => setFunnel(e.target.value as FunnelLevel)}
-                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                  className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {(Object.keys(FUNNEL_LABEL) as FunnelLevel[]).map((f) => (
                     <option key={f} value={f}>{FUNNEL_LABEL[f]}</option>
@@ -899,37 +899,37 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
               </label>
             </div>
             <div className="text-[10px] text-slate-500 leading-relaxed">{GENRES[genreId].when}</div>
-            <label className="block text-[10px] text-slate-400">
+            <label className="block text-xs sm:text-[10px] text-slate-400">
               主張（必填）：這篇要讓讀者接受的那一件事，一句話
               <input
                 value={gClaim}
                 onChange={(e) => setGClaim(e.target.value)}
-                className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60"
+                className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60"
               />
             </label>
-            <label className="block text-[10px] text-slate-400">
+            <label className="block text-xs sm:text-[10px] text-slate-400">
               {GENRES[genreId].materialLabel}{GENRES[genreId].materialRequired ? "（必填）" : ""}
               <textarea
                 value={gMaterial}
                 onChange={(e) => setGMaterial(e.target.value)}
                 rows={4}
                 placeholder={GENRES[genreId].materialHint}
-                className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
+                className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
               />
             </label>
-            <div className="flex gap-2">
-              <label className="flex-1 text-[10px] text-slate-400">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <label className="flex-1 text-xs sm:text-[10px] text-slate-400">
                 比喻（選填，留空由 AI 提案並標示）
-                <input value={gMetaphor} onChange={(e) => setGMetaphor(e.target.value)} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
+                <input value={gMetaphor} onChange={(e) => setGMetaphor(e.target.value)} className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
               </label>
-              <label className="w-24 text-[10px] text-slate-400">
+              <label className="w-24 text-xs sm:text-[10px] text-slate-400">
                 長度（選填）
-                <input value={gLength} onChange={(e) => setGLength(e.target.value)} placeholder={`${GENRES[genreId].lengthRange[0]}–${GENRES[genreId].lengthRange[1]}`} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600" />
+                <input value={gLength} onChange={(e) => setGLength(e.target.value)} placeholder={`${GENRES[genreId].lengthRange[0]}–${GENRES[genreId].lengthRange[1]}`} className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600" />
               </label>
             </div>
-            <label className="block text-[10px] text-slate-400">
+            <label className="block text-xs sm:text-[10px] text-slate-400">
               CTA（選填，留空就不放）
-              <input value={gCta} onChange={(e) => setGCta(e.target.value)} className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
+              <input value={gCta} onChange={(e) => setGCta(e.target.value)} className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60" />
             </label>
             {genreError && <div className="text-[11px] text-red-300">{genreError}</div>}
             <div className="flex items-center justify-between gap-2">
@@ -948,49 +948,49 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         )}
         {panelTab === "general" && settingsOpen && activeFramework === STORY_ARGUMENT_FRAMEWORK_ID && (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5 space-y-2">
-            <div className="flex gap-2">
-              <label className="flex-1 text-[10px] text-slate-400">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <label className="flex-1 text-xs sm:text-[10px] text-slate-400">
                 版本
                 <select
                   value={storyArgumentVersion}
                   onChange={(e) => setStoryArgumentVersion(e.target.value as StoryArgumentVersion)}
                   disabled={isLoading || isGenerating}
-                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                  className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {STORY_ARGUMENT_VERSION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
                 </select>
               </label>
-              <label className="flex-[2] text-[10px] text-slate-400">
+              <label className="flex-[2] text-xs sm:text-[10px] text-slate-400">
                 一句話論點（可留空，由 AI 擬定）
                 <input
                   value={storyArgumentThesis}
                   onChange={(e) => setStoryArgumentThesis(e.target.value)}
                   disabled={isLoading || isGenerating}
                   placeholder="留空時會顯示在文章上方，不併入發佈內容"
-                  className="mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
+                  className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-md px-2 py-1.5 outline-none focus:border-amber-500/60 placeholder-slate-600"
                 />
               </label>
             </div>
             <div className="flex flex-wrap gap-2">
-              <label className="min-w-[150px] flex-1 text-[10px] text-slate-400">
+              <label className="min-w-[150px] flex-1 text-xs sm:text-[10px] text-slate-400">
                 引用來源
                 <select
                   value={storyCitationMode}
                   onChange={(e) => setStoryCitationMode(e.target.value as StoryArgumentCitationMode)}
                   disabled={isLoading || isGenerating}
-                  className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                  className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {STORY_ARGUMENT_CITATION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
                 </select>
               </label>
               {storyCitationMode === "selected" && storyArgumentVersion === "full" && (
-                <label className="min-w-[220px] flex-[2] text-[10px] text-slate-400">
+                <label className="min-w-[220px] flex-[2] text-xs sm:text-[10px] text-slate-400">
                   指定書籍
                   <select
                     value={selectedKnowledgeNoteId}
                     onChange={(e) => setSelectedKnowledgeNoteId(e.target.value)}
                     disabled={isLoading || isGenerating || knowledgeNotes.length === 0}
-                    className="mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
+                    className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                   >
                     <option value="">請選擇一本筆記</option>
                     {[...new Set(knowledgeNotes.map((note) => note.domain))].map((domain) => (

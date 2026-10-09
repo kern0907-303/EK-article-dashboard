@@ -56,14 +56,14 @@ export default function DashboardPage() {
   const activeBrandName = getActiveEntityName();
 
   return (
-    <main className="min-h-screen h-screen bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
+    <main className="min-h-dvh h-dvh bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
       {/* Header bar */}
-      <header className="h-16 px-4 sm:px-6 bg-slate-900/30 border-b border-slate-800/60 backdrop-blur-md flex items-center justify-between shrink-0">
+      <header className="min-h-16 pt-safe px-safe bg-slate-900/30 border-b border-slate-800/60 backdrop-blur-md flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Hamburger menu for mobile drawer */}
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="flex lg:hidden p-2 text-slate-400 hover:text-slate-200 bg-slate-900/40 border border-slate-800/80 rounded-xl cursor-pointer transition-colors"
+            className="flex lg:hidden min-h-11 min-w-11 items-center justify-center p-2 text-slate-400 hover:text-slate-200 bg-slate-900/40 border border-slate-800/80 rounded-xl cursor-pointer transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -75,7 +75,7 @@ export default function DashboardPage() {
             <h1 className="text-xs sm:text-sm font-extrabold tracking-wider bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent uppercase">
               AI 團隊決策大腦
             </h1>
-            <p className="text-[8px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+            <p className="text-[11px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
               AI Team Command & Control Panel
             </p>
           </div>
@@ -83,13 +83,13 @@ export default function DashboardPage() {
 
         {/* Live Status indicator & AI Provider Selector */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-900/60 border border-slate-800/80 rounded-xl px-2 sm:px-3 py-1.5 backdrop-blur-md">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2 bg-slate-900/60 border border-slate-800/80 rounded-xl px-1.5 sm:px-3 py-1.5 backdrop-blur-md">
             <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse animate-duration-3000 hidden xs:inline" />
-            <span className="text-[8px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider">AI 大腦:</span>
+            <span className="whitespace-nowrap text-[11px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider">AI 大腦:</span>
             <select
               value={aiProvider}
               onChange={(e) => handleProviderChange(e.target.value)}
-              className="bg-transparent text-[10px] sm:text-xs font-extrabold text-slate-100 focus:outline-none cursor-pointer pr-1"
+              className="min-w-0 max-w-[28vw] truncate bg-transparent text-[10px] sm:max-w-none sm:text-xs font-extrabold text-slate-100 focus:outline-none cursor-pointer pr-1"
               suppressHydrationWarning
             >
               <option value="mock" className="bg-slate-950 text-slate-200">本地模擬 (Mock)</option>
