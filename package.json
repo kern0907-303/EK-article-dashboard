@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.18.2",
@@ -22,6 +23,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
