@@ -4,6 +4,9 @@ const cases: Array<[string, string, boolean]> = [
   // [brandId, 文字, 期望 passed]
   ["brand_c_abl", "這個療程可以根治你的失眠問題，療效顯著。", false],
   ["brand_c_abl", "調和不是逼自己馬上變好，而是讓自己慢慢回到比較穩的狀態。", true],
+  ["brand_c_abl", "信息場分析不是替你下判決，而是把長期壓抑的慣性看清楚；調頻與頻率支持都只是陪你回到穩定狀態。", true],
+  ["brand_c_abl", "透過能量磁場無痛成交高票價課程。", false],
+  ["brand_c_abl", "信息場調頻可以治癒你的焦慮。", false],
   ["brand_a_i8", "透過靈性頻率調整來顯化你的business成長。", false],
   ["brand_a_i8", "企業卡住，不一定是努力不夠，而是還沒看見真正影響結果的關鍵因素。", true],
   ["brand_b_nas", "透過信息場調頻來認識自己。", false],
