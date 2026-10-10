@@ -23,6 +23,7 @@ import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
+import QuickDerivatives from "@/components/QuickDerivatives";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
 import { GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreMeta } from "@/data/skills/genres";
 import { SeoOptimization, SeoScore, faqToPlainText, buildFaqJsonLd, isScoreStale, healthHash } from "@/lib/seo-optimizer";
@@ -1753,6 +1754,10 @@ const SocialTabContent = memo(function SocialTabContent({
           </div>
         </div>
       </div>
+
+      {platform === "facebook" && hasCopyForActions && !copyIsPending && !copyFailureReason && (
+        <QuickDerivatives brandId={pubBrandId} content={val} />
+      )}
 
       {/* 📱 社群平台切換器 */}
       <div className="grid grid-cols-2 md:flex bg-slate-950/60 p-1 rounded-xl border border-slate-850 gap-1 select-none overflow-x-auto scrollbar-none shrink-0 backdrop-blur-md">

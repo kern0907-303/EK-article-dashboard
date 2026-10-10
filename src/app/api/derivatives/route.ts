@@ -3,6 +3,7 @@ import { DERIVATIVE_PLATFORM_ORDER, DERIVATIVE_PROMPT_VERSION, carryMissingMarke
 import { chooseKnowledgeSource, generatePlatformPayload } from "@/lib/derivatives-ai";
 import { derivativesDb, getRulesFor, getSpecFor, readDerivativeCatalog, upsertDerivativeRows } from "@/lib/derivatives-server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
+import { genreBlockers } from "@/lib/derivatives-genre";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 
 const BRANDS = new Set(["brand_a_i8", "brand_b_nas", "brand_c_abl", "personal_brand"]);
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
             rules: getRulesFor(catalog.rules, platform, languageVersion),
             spec: getSpecFor(catalog.specs, platform, specFormat),
             existingGuardrailPassed: guardrail.passed,
+            extraBlockers: genreBlockers(content),
           });
           rows.push({
             generation_id: generationId,
@@ -156,7 +158,10 @@ export async function PATCH(request: NextRequest) {
       rules: getRulesFor(catalog.rules, current.platform, current.language_version),
       spec: getSpecFor(catalog.specs, current.platform, current.format), existingGuardrailPassed: guardrail.passed,
       humanConfirmed: body.action === "make-available" && body.humanConfirmed === true,
+      extraBlockers: genreBlockers(nextContent),
     });
+    // 圖卡網址存在 check_results 內，重新檢查時要帶回去，不能被覆蓋掉。
+    if (Array.isArray(current.check_results?.card_images)) checkResults.card_images = current.check_results.card_images;
     if (body.action === "make-available" && checkResults.blockers.length) return NextResponse.json({ error: "仍有阻擋項目，不能標為可用。", check_results: checkResults }, { status: 422 });
     const status = body.action === "make-available" ? "available" : checkResults.blockers.length ? "needs_review" : "draft";
     const rows = await derivativesDb<any[]>("derivative_posts", `id=eq.${encodeURIComponent(body.id)}`, {

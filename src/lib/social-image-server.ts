@@ -139,7 +139,7 @@ async function ensureBucket(url: string, key: string): Promise<void> {
 }
 
 /** 上傳 JPEG，回傳公開網址 */
-export async function uploadPublicJpeg(buffer: Buffer, brand: BrandKey): Promise<string> {
+export async function uploadPublicJpeg(buffer: Buffer, brand: BrandKey | string): Promise<string> {
   const env = getSupabaseEnv();
   if (!env) throw new Error("後台沒有設定 Supabase 連線資訊，無法存放圖片");
   const base = env.url.replace(/\/$/, "");

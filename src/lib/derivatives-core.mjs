@@ -150,7 +150,7 @@ function addScenes(lines, title, scenes, labels) {
   });
 }
 
-export function deriveChecks({ parentText, content, platform, languageVersion, rules = [], spec = {}, existingGuardrailPassed = true, humanConfirmed = false }) {
+export function deriveChecks({ parentText, content, platform, languageVersion, rules = [], spec = {}, existingGuardrailPassed = true, humanConfirmed = false, extraBlockers = [] }) {
   const requiredMarkers = getMissingMarkers(parentText);
   const carriedMarkers = requiredMarkers.filter((marker) => content.includes(marker));
   const plainTextViolations = checkPlainText(content);
@@ -158,6 +158,7 @@ export function deriveChecks({ parentText, content, platform, languageVersion, r
   const metrics = contentMetrics(content, spec);
   const blockers = [];
   if (!existingGuardrailPassed) blockers.push("既有品牌禁用詞檢查未通過");
+  for (const item of extraBlockers) if (item && !blockers.includes(item)) blockers.push(item);
   if (requiredMarkers.length !== carriedMarkers.length) blockers.push("母文章的【需補】標記未完整帶入");
   if (content.includes("【需補")) blockers.push("含有【需補】標記");
   if (plainTextViolations.length) blockers.push(...plainTextViolations);

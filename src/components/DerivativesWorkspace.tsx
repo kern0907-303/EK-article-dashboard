@@ -5,6 +5,7 @@ import Button from "@/components/ui/Button";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BRANDS } from "@/components/BrandSelector";
 import { DERIVATIVE_PLATFORM_ORDER } from "@/lib/derivatives-core.mjs";
+import CardPanel from "@/components/CardPanel";
 
 type ParentArticle = { id: string; brandId: string; brandName: string; sourcePlatform: string; content: string };
 type Catalog = { specs: any[]; rules: any[]; posts: any[] };
@@ -150,6 +151,7 @@ export default function DerivativesWorkspace() {
             {post.check_results?.blockers?.length > 0 && <div className="mt-3 rounded bg-rose-950/40 p-3 text-sm text-rose-200"><p className="font-semibold">不可標為可用</p><ul className="list-inside list-disc">{post.check_results.blockers.map((item: string) => <li key={item}>{item}</li>)}</ul></div>}
             {post.check_results?.sensitive_matches?.length > 0 && <div className="mt-3 rounded bg-amber-950/40 p-3 text-sm text-amber-100">敏感詞命中：{post.check_results.sensitive_matches.map((item: any) => `${item.term}（${item.category}）`).join("、")}。來源：{[...new Set<string>(post.check_results.sensitive_matches.flatMap((item: any): string[] => Array.isArray(item.source_urls) ? item.source_urls : []))].map((url: string) => <a key={url} href={url} target="_blank" rel="noreferrer" className="ml-2 underline">規則來源</a>)}</div>}
             {post.check_results?.warnings?.length > 0 && <p className="mt-3 text-sm text-amber-200">長度／張數提醒：{post.check_results.warnings.join("；")}</p>}
+            {post.platform === "IG" && <CardPanel post={post} onUpdated={() => void refresh()} />}
             <div className="mt-3 flex flex-wrap gap-2"><Button variant="primary" size="sm" disabled={busy} onClick={() => void saveContent(post)}>保存編輯</Button><Button variant="secondary" size="sm" disabled={busy || !parent} onClick={() => void generate([post.platform])}>重新產生此平台</Button><Button variant="secondary" size="sm" disabled={busy || post.status === "available"} onClick={() => { if (window.confirm("請確認已人工檢視平台紅線與來源。確認後此稿會標為可用，但仍只保存在草稿表，不會發佈。")) void saveContent(post, "make-available"); }}>人工確認後標為可用</Button></div>
           </article>)}
           {!visiblePosts.length && <p className="rounded-lg bg-slate-950 p-6 text-sm text-slate-400">此平台／語言目前沒有草稿。選擇母文章後即可產生。</p>}

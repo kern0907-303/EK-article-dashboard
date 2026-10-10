@@ -16,5 +16,5 @@ export function scanSensitiveRules(text: string, rules?: Array<any>, languageVer
 export function contentMetrics(content: string | object, spec?: Record<string, any>): { character_count: number; slide_count: number; hashtag_count: number; warnings: string[] };
 export function validateDerivativePayload(platform: string, payload?: Record<string, any>): boolean;
 export function formatDerivativeContent(platform: string, languageVersion: string, payload?: Record<string, any>): string;
-export function deriveChecks(input: { parentText: string; content: string; platform: string; languageVersion: string; rules?: Array<any>; spec?: Record<string, any>; existingGuardrailPassed?: boolean; humanConfirmed?: boolean }): Record<string, any>;
+export function deriveChecks(input: { parentText: string; content: string; platform: string; languageVersion: string; rules?: Array<any>; spec?: Record<string, any>; existingGuardrailPassed?: boolean; humanConfirmed?: boolean; extraBlockers?: string[] }): Record<string, any>;
 export function stableParentId(brandId: string, platform: string, content: string): string;
