@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripDashes } from "@/lib/plain-text";
+import { stripDashes, stripDiagramBlocks } from "@/lib/plain-text";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { brandKeyFromId } from "@/data/skills/genres";
 import { publicImagePrefix } from "@/lib/social-image-server";
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const { brandId, platform, content: rawContent, imageUrl, imageUrls, scheduledAt, force } = await req.json();
-    const content = typeof rawContent === "string" ? stripDashes(rawContent).trim() : "";
+    const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "";
 
     if (!brandId || !content) {
       return NextResponse.json({ error: "缺少 brandId 或內容" }, { status: 400 });

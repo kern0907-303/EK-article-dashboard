@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
+import { stripDashes, stripDiagramBlocks } from "@/lib/plain-text";
 import { FACEBOOK_PAGES } from "@/lib/facebook-pages";
 import {
   QUEUE_MAX_LEAD_MS,
@@ -48,7 +49,9 @@ export async function GET(req: NextRequest) {
 /** 建立排程 */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, targetPages, content, articleId, scheduledAt, imageUrl, testMode, force } = await req.json();
+    const { brandId, targetPages, content: rawContent, articleId, scheduledAt, imageUrl, testMode, force } = await req.json();
+    // 社群排程的內文也要去掉官網用的流程圖與破折號，與立即發布一致
+    const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)) : rawContent;
 
     if (!brandId || !content) {
       return NextResponse.json({ error: "缺少 brandId 或 content" }, { status: 400 });

@@ -70,3 +70,47 @@ export function stripMarkdown(input: string): string {
     .trim();
   return stripDashes(cleaned);
 }
+
+const DIAGRAM_START = /^\s*(?:%%\s*\{\s*init\b|flowchart(?:\s+(?:TD|LR|BT|RL|TB)\b|$)|graph(?:\s+(?:TD|LR|BT|RL|TB)\b|$))/i;
+const DIAGRAM_LINE = /^\s*(?:(?:subgraph|end|classDef|style|click|linkStyle)\b|[\w\p{L}\p{N}_]+(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?\s*(?:-->|---|-\.->|==>|<--|--|-\.))/u;
+
+/**
+ * 社群貼文發出去之前，拿掉 Mermaid 流程圖：```mermaid 區塊、單獨一行的「---mermaid---」標記，
+ * 以及沒包程式碼框的 %%{init}%% 與 flowchart / graph 圖表語法。
+ * 流程圖是給官網文章用的，社群平台不會把它畫成圖，貼出去只會是一堆程式碼。
+ */
+export function stripDiagramBlocks(input: string): string {
+  if (!input) return input;
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      let end = i + 1;
+      while (end < lines.length && !/^\s*```\s*$/.test(lines[end])) end += 1;
+      const closed = end < lines.length;
+      const body = lines.slice(i + 1, closed ? end : lines.length);
+      const isDiagram = /^\s*```\s*mermaid\b/i.test(line) || body.some((l) => DIAGRAM_START.test(l));
+      if (!isDiagram) out.push(...lines.slice(i, closed ? end + 1 : lines.length));
+      i = closed ? end + 1 : lines.length;
+      continue;
+    }
+    if (/^\s*[-=_—─\s]*mermaid[-=_—─\s]*$/i.test(line)) { i += 1; continue; }
+    if (/^\s*%%\s*\{\s*init\b/i.test(line)) {
+      if (!/\}\s*%%/.test(line)) {
+        i += 1;
+        while (i < lines.length && !/\}\s*%%/.test(lines[i])) i += 1;
+      }
+      i += 1;
+      continue;
+    }
+    if (DIAGRAM_START.test(line)) {
+      i += 1;
+      while (i < lines.length && lines[i].trim() && DIAGRAM_LINE.test(lines[i])) i += 1;
+      continue;
+    }
+    out.push(line);
+    i += 1;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
