@@ -1,0 +1,10 @@
+export const CAROUSEL_LIMITS: { instagram: number; threads: number };
+export const CAROUSEL_MIN: number;
+export const CAROUSEL_TARGET_MAX: number;
+export const SLIDE_MAX_CHARS: number;
+export function cleanSlideText(text?: string, maxChars?: number): string;
+export function sanitizeSlides(list: unknown, max?: number): string[];
+export function parseSlidesJson(text?: string): string[];
+export function splitArticleToSlides(content?: string, maxSlides?: number): string[];
+export function carouselLimit(platform: string): number;
+export function validateCarouselUrls(platform: string, imageUrls: unknown, prefix: string | null): { ok: boolean; urls: string[]; error?: string };

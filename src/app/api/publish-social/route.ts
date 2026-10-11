@@ -3,10 +3,11 @@ import { stripDashes } from "@/lib/plain-text";
 import { inspectForPublish, resolveBrandContext } from "@/lib/brand-guardrail";
 import { brandKeyFromId } from "@/data/skills/genres";
 import { publicImagePrefix } from "@/lib/social-image-server";
+import { validateCarouselUrls } from "@/lib/carousel-slides.mjs";
 
 export const dynamic = "force-dynamic";
 // n8n 建立貼文後會等 30 秒才發佈，所以整體請求要給足時間
-const REQUEST_TIMEOUT_MS = 90_000;
+const REQUEST_TIMEOUT_MS = 180_000;
 
 interface PublishAnswer {
   ok?: boolean;
@@ -24,7 +25,7 @@ interface PublishAnswer {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, platform, content: rawContent, imageUrl, force } = await req.json();
+    const { brandId, platform, content: rawContent, imageUrl, imageUrls, force } = await req.json();
     const content = typeof rawContent === "string" ? stripDashes(rawContent).trim() : "";
 
     if (!brandId || !content) {
@@ -36,11 +37,17 @@ export async function POST(req: NextRequest) {
     // 圖片必須是儀表板自己生成並存放的，不接受任意網址。Instagram 一定要有圖；Threads 有圖就帶圖，沒有就發純文字。
     const prefix = publicImagePrefix();
     const hasImage = typeof imageUrl === "string" && imageUrl.length > 0;
-    if (platform === "instagram" && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
+    if (platform === "instagram" && !(Array.isArray(imageUrls) && imageUrls.length >= 2) && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
       return NextResponse.json({ error: "Instagram 發文必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
     }
     if (platform === "threads" && hasImage && (!prefix || !imageUrl.startsWith(prefix))) {
       return NextResponse.json({ error: "配圖必須是儀表板生成的圖片，請重新生成配圖" }, { status: 400 });
+    }
+
+    // 輪播：兩張以上才算，單張沿用 imageUrl
+    const carousel = validateCarouselUrls(platform, imageUrls, prefix);
+    if (!carousel.ok) {
+      return NextResponse.json({ error: carousel.error }, { status: 400 });
     }
 
     const brandKey = brandKeyFromId(String(brandId));
@@ -76,7 +83,8 @@ export async function POST(req: NextRequest) {
         platform,
         brand: brandKey,
         text: content,
-        imageUrl: hasImage ? imageUrl : undefined,
+        imageUrl: carousel.urls.length ? undefined : hasImage ? imageUrl : undefined,
+        imageUrls: carousel.urls.length ? carousel.urls : undefined,
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

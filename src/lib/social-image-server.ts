@@ -156,3 +156,35 @@ export async function uploadPublicJpeg(buffer: Buffer, brand: BrandKey | string)
   if (!res.ok) throw new Error(`上傳圖片失敗（${res.status}）`);
   return `${base}/storage/v1/object/public/${IMAGE_BUCKET}/${path}`;
 }
+
+
+/** 通用文字模型呼叫（先 Anthropic，沒有或失敗再退回 OpenAI），給輪播文字濃縮等用途。 */
+export async function completeText(system: string, user: string, maxTokens = 900): Promise<string> {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6", max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as { content?: { type: string; text?: string }[] };
+      const text = (json.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
+      if (text) return text;
+    }
+  }
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) throw new Error("沒有可用的文字模型密鑰（ANTHROPIC_API_KEY 或 OPENAI_API_KEY）");
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`文字模型回應 ${res.status}`);
+  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = (json.choices?.[0]?.message?.content || "").trim();
+  if (!text) throw new Error("文字模型沒有回傳內容");
+  return text;
+}

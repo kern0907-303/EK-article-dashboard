@@ -39,7 +39,7 @@ export function cardFontSize(text = "", isCover = false) {
 /** 卡片文字不得有破折號與 Markdown 符號。 */
 export function cleanCardText(text = "") {
   return String(text)
-    .replace(/[-‐-―−﹘﹣－]/gu, "，")
+    .replace(/[-‐-―−﹘﹣－─━]/gu, "，")
     .replace(/[#*`>|_]/g, "")
     .replace(/，{2,}/g, "，")
     .replace(/\s+\n/g, "\n")

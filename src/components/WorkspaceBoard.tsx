@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "
 import { createPortal } from "react-dom";
 import { CARD_SIZES } from "@/lib/card-layout.mjs";
 import { comfyWaitText, runComfyJob } from "@/lib/image-jobs-client";
+import { CAROUSEL_LIMITS, CAROUSEL_MIN } from "@/lib/carousel-slides.mjs";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
@@ -475,6 +476,13 @@ const SocialTabContent = memo(function SocialTabContent({
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageEngine, setImageEngine] = useState<"openai" | "comfy" | "card">("card");
   const [imageSizeKey, setImageSizeKey] = useState<string>("ig_feed");
+  // 輪播（Instagram / Threads 多張圖卡）：文字可逐張修改，出圖後整組一起發佈
+  const [carouselOn, setCarouselOn] = useState(false);
+  const [slides, setSlides] = useState<string[]>([]);
+  const [carouselUrls, setCarouselUrls] = useState<string[]>([]);
+  const [isMakingSlides, setIsMakingSlides] = useState(false);
+  const [isMakingCards, setIsMakingCards] = useState(false);
+  const [slidesNote, setSlidesNote] = useState("");
   const [comfyNote, setComfyNote] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
@@ -1272,7 +1280,7 @@ const SocialTabContent = memo(function SocialTabContent({
       const response = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, imageUrl: igImageUrl || undefined, force }),
+        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, imageUrl: carouselParam ? undefined : igImageUrl || undefined, imageUrls: carouselParam, force }),
       });
       const resData = await response.json().catch(() => ({}));
       if (response.status === 422 && resData.blocked) {
@@ -1336,7 +1344,8 @@ const SocialTabContent = memo(function SocialTabContent({
           brandId: pubBrandId,
           platform: targetPlatform,
           content: val,
-          imageUrl: igImageUrl || undefined,
+          imageUrl: carouselParam ? undefined : igImageUrl || undefined,
+          imageUrls: carouselParam,
           scheduledAt: when.toISOString(),
           force,
         }),
@@ -1364,12 +1373,73 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
+  // 輪播：把長文濃縮成 5 到 7 張圖卡文字（AI 會用到額度；auto 只做機械式切段，免費）
+  const handleMakeSlides = async (mode: "ai" | "auto") => {
+    if (isMakingSlides || !val) return;
+    setIsMakingSlides(true);
+    setSlidesNote("");
+    try {
+      const response = await fetch("/api/carousel-slides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: pubBrandId, content: val, mode }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok || !resData.success) throw new Error(resData.error || "產生輪播文字失敗");
+      setSlides(resData.slides as string[]);
+      setCarouselUrls([]);
+      const warn = Array.isArray(resData.warnings) && resData.warnings.length > 0 ? `　提醒：含有紅線詞「${resData.warnings.join("、")}」，請修改。` : "";
+      setSlidesNote(`${resData.note || (resData.source === "ai" ? "已由 AI 濃縮，請逐張確認。" : "已自動切段，請逐張確認。")}${warn}`);
+    } catch (error: any) {
+      alert(`❌ 產生輪播文字失敗：${error?.message || "請稍後再試"}`);
+    } finally {
+      setIsMakingSlides(false);
+    }
+  };
+
+  const handleRenderCarousel = async () => {
+    const texts = slides.map((t) => t.trim()).filter(Boolean);
+    if (isMakingCards || texts.length < CAROUSEL_MIN) return;
+    setIsMakingCards(true);
+    try {
+      const response = await fetch("/api/generate-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: pubBrandId, slides: texts, size: imageSizeKey === "ig_grid34" || imageSizeKey === "ig_square" ? imageSizeKey : "ig_feed" }),
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok || !resData.success) throw new Error(resData.error || "生成圖卡失敗");
+      setCarouselUrls(resData.imageUrls as string[]);
+      setSlides(resData.slides as string[]);
+      // 第一張同時當 Facebook 與官網的配圖
+      setIgImageUrl((resData.imageUrls as string[])[0]);
+      setIgImagePrompt(`輪播封面，共 ${(resData.imageUrls as string[]).length} 張`);
+    } catch (error: any) {
+      alert(`❌ 生成輪播圖卡失敗：${error?.message || "請稍後再試"}`);
+    } finally {
+      setIsMakingCards(false);
+    }
+  };
+
+  const editSlide = (index: number, text: string) => {
+    setSlides((prev) => prev.map((t, i) => (i === index ? text : t)));
+    if (carouselUrls.length > 0) {
+      // 文字改了，舊圖卡就不對了，需要重新生成
+      if (igImageUrl && igImageUrl === carouselUrls[0]) setIgImageUrl(null);
+      setCarouselUrls([]);
+    }
+  };
+
+  // 目前要帶出去的輪播圖片（2 張以上才算輪播）
+  const carouselParam = carouselOn && carouselUrls.length >= CAROUSEL_MIN ? carouselUrls : undefined;
+
   // Instagram：先依文章生成配圖（圖上不放字），預覽後才發佈
   const handleGenerateImage = async () => {
     if (!requireParentBrand()) return;
     if (isGeneratingImage || !val) return;
     setIsGeneratingImage(true);
     setComfyNote("");
+    setCarouselUrls([]);
     try {
       if (imageEngine === "card") {
         const cardRes = await fetch("/api/generate-card", {
@@ -1426,7 +1496,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (!force) {
       const warns = genreIssues.filter((i) => i.level === "warn").map((i) => "・" + i.message);
       const ok = confirm(
-        `確定要把這張配圖與說明文字發布到【Instagram ${brandKey.toUpperCase()}】嗎？\n發出後會立刻公開（約需 40 秒），要刪除請到 Instagram 自行刪除。\n說明文字 ${val.length} 字。` +
+        `確定要把${carouselParam ? ` ${carouselParam.length} 張輪播圖` : "這張配圖"}與說明文字發布到【Instagram ${brandKey.toUpperCase()}】嗎？\n發出後會立刻公開（約需 40 秒），要刪除請到 Instagram 自行刪除。\n說明文字 ${val.length} 字。` +
           (warns.length > 0 ? "\n\n目前的提醒：\n" + warns.join("\n") : "")
       );
       if (!ok) return;
@@ -1436,7 +1506,7 @@ const SocialTabContent = memo(function SocialTabContent({
       const response = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: pubBrandId, platform: "instagram", content: val, imageUrl: igImageUrl, force }),
+        body: JSON.stringify({ brandId: pubBrandId, platform: "instagram", content: val, imageUrl: igImageUrl, imageUrls: carouselParam, force }),
       });
       const resData = await response.json().catch(() => ({}));
       if (response.status === 422 && resData.blocked) {
@@ -1805,7 +1875,7 @@ const SocialTabContent = memo(function SocialTabContent({
               {isGeneratingImage ? (imageEngine === "comfy" ? "本機生成中..." : "生成中...") : igImageUrl ? "重新生成配圖" : "生成配圖"}
             </Button>
             {igImageUrl && (
-              <Button size="sm" variant="ghost" disabled={isGeneratingImage} onClick={() => { setIgImageUrl(null); setIgImagePrompt(""); }}>
+              <Button size="sm" variant="ghost" disabled={isGeneratingImage} onClick={() => { setIgImageUrl(null); setIgImagePrompt(""); setCarouselUrls([]); }}>
                 不要配圖
               </Button>
             )}
@@ -1824,6 +1894,68 @@ const SocialTabContent = memo(function SocialTabContent({
           ) : (
             <p className="mt-2 text-slate-500">還沒有配圖。Instagram 發文需要先生成；其他平台沒有配圖會照舊只發文字，或由 n8n 套用預設圖庫。</p>
           )}
+
+          {/* 輪播：Instagram 最多 10 張、Threads 最多 20 張；文字先由 AI 濃縮，逐張改好再出圖 */}
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant={carouselOn ? "primary" : "ghost"} onClick={() => setCarouselOn((v) => !v)} disabled={isMakingSlides || isMakingCards}>
+                {carouselOn ? "輪播模式：開" : "輪播模式（多張圖卡，Instagram 與 Threads）"}
+              </Button>
+              {carouselOn && (
+                <>
+                  <Button size="sm" variant="secondary" loading={isMakingSlides} disabled={isMakingCards} onClick={() => handleMakeSlides("ai")} icon={<Sparkles className="w-3.5 h-3.5" />}>
+                    {isMakingSlides ? "濃縮中..." : slides.length ? "重新用 AI 濃縮" : "用 AI 濃縮成輪播文字"}
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={isMakingSlides || isMakingCards} onClick={() => handleMakeSlides("auto")}>
+                    自動切段（免費）
+                  </Button>
+                </>
+              )}
+            </div>
+            {carouselOn && slides.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {slidesNote && <p className="text-amber-200/90">{slidesNote}</p>}
+                {slides.map((text, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="mt-1 w-12 shrink-0 text-slate-500">第 {i + 1} 張</span>
+                    <textarea
+                      value={text}
+                      onChange={(e) => editSlide(i, e.target.value)}
+                      rows={2}
+                      maxLength={80}
+                      disabled={isMakingCards}
+                      className="flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[12px] text-slate-200"
+                      aria-label={`第 ${i + 1} 張圖卡文字`}
+                    />
+                    <Button size="sm" variant="ghost" disabled={isMakingCards || slides.length <= CAROUSEL_MIN} onClick={() => { setSlides((prev) => prev.filter((_, idx) => idx !== i)); setCarouselUrls([]); }}>
+                      刪除
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="ghost" disabled={isMakingCards || slides.length >= CAROUSEL_LIMITS.instagram} onClick={() => { setSlides((prev) => [...prev, ""]); setCarouselUrls([]); }}>
+                    新增一張
+                  </Button>
+                  <Button size="sm" variant="primary" loading={isMakingCards} disabled={slides.filter((t) => t.trim()).length < CAROUSEL_MIN} onClick={() => handleRenderCarousel()} icon={<Sparkles className="w-3.5 h-3.5" />}>
+                    {isMakingCards ? "生成中..." : carouselUrls.length ? `重新生成 ${slides.filter((t) => t.trim()).length} 張圖卡` : `生成 ${slides.filter((t) => t.trim()).length} 張圖卡`}
+                  </Button>
+                  <span className="text-slate-500">Instagram 最多 {CAROUSEL_LIMITS.instagram} 張，Threads 最多 {CAROUSEL_LIMITS.threads} 張；第 1 張會當 Facebook 與官網的配圖。</span>
+                </div>
+              </div>
+            )}
+            {carouselOn && carouselUrls.length >= CAROUSEL_MIN && (
+              <div className="mt-3">
+                <p className="font-bold text-slate-200">輪播預覽（{carouselUrls.length} 張，發布時整組一起發）</p>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {carouselUrls.map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={u} src={u} alt={`輪播第 ${i + 1} 張`} className="h-32 w-auto shrink-0 rounded-lg border border-slate-800" />
+                  ))}
+                </div>
+                <p className="mt-1 text-slate-500">Facebook 與官網只用第 1 張。要改文字請直接改上面的欄位，改完需重新生成。</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

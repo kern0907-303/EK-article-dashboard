@@ -3,6 +3,7 @@ import { stripDashes } from "@/lib/plain-text";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { brandKeyFromId } from "@/data/skills/genres";
 import { publicImagePrefix } from "@/lib/social-image-server";
+import { validateCarouselUrls } from "@/lib/carousel-slides.mjs";
 import { QUEUE_MAX_LEAD_MS, QUEUE_MIN_LEAD_MS, getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
 /** 建立排程 */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, platform, content: rawContent, imageUrl, scheduledAt, force } = await req.json();
+    const { brandId, platform, content: rawContent, imageUrl, imageUrls, scheduledAt, force } = await req.json();
     const content = typeof rawContent === "string" ? stripDashes(rawContent).trim() : "";
 
     if (!brandId || !content) {
@@ -73,7 +74,11 @@ export async function POST(req: NextRequest) {
     }
     const prefix = publicImagePrefix();
     const hasImage = typeof imageUrl === "string" && imageUrl.length > 0;
-    if (platform === "instagram" && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
+    const carousel = validateCarouselUrls(platform, imageUrls, prefix);
+    if (!carousel.ok) {
+      return NextResponse.json({ error: carousel.error }, { status: 400 });
+    }
+    if (platform === "instagram" && !carousel.urls.length && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
       return NextResponse.json({ error: "Instagram 排程必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
     }
     if (platform === "threads" && hasImage && (!prefix || !imageUrl.startsWith(prefix))) {
@@ -119,7 +124,8 @@ export async function POST(req: NextRequest) {
         platform,
         brand,
         content,
-        image_url: hasImage ? imageUrl : null,
+        image_url: carousel.urls.length ? carousel.urls[0] : hasImage ? imageUrl : null,
+        ...(carousel.urls.length ? { image_urls: carousel.urls } : {}),
         scheduled_at: when.toISOString(),
         status: "pending",
       }),
