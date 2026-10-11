@@ -1,0 +1,15 @@
+{
+  "comfyUrl": "http://127.0.0.1:8188",
+  "preferredCheckpoint": "",
+  "modelFamily": "auto",
+  "steps": 25,
+  "cfg": 6.5,
+  "sampler": "euler",
+  "scheduler": "normal",
+  "jobTimeoutSeconds": 600,
+  "staleRunningMinutes": 15,
+  "maxAttempts": 3,
+  "heartbeatSeconds": 60,
+  "safetyScanMinutes": 0,
+  "bucket": "social-images"
+}

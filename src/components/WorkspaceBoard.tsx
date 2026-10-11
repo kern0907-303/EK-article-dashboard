@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
+import { CARD_SIZES } from "@/lib/card-layout.mjs";
+import { comfyWaitText, runComfyJob } from "@/lib/image-jobs-client";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
@@ -23,7 +25,6 @@ import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
-import QuickDerivatives from "@/components/QuickDerivatives";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
 import { GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreMeta } from "@/data/skills/genres";
 import { SeoOptimization, SeoScore, faqToPlainText, buildFaqJsonLd, isScoreStale, healthHash } from "@/lib/seo-optimizer";
@@ -472,6 +473,9 @@ const SocialTabContent = memo(function SocialTabContent({
   const [igImageUrl, setIgImageUrl] = useState<string | null>(null);
   const [igImagePrompt, setIgImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageEngine, setImageEngine] = useState<"openai" | "comfy" | "card">("card");
+  const [imageSizeKey, setImageSizeKey] = useState<string>("ig_feed");
+  const [comfyNote, setComfyNote] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
@@ -550,7 +554,7 @@ const SocialTabContent = memo(function SocialTabContent({
   };
 
   // 排程佇列狀態
-  const [publishedArticle, setPublishedArticle] = useState<{ id: string; content: string } | null>(null);
+  const [publishedArticle, setPublishedArticle] = useState<{ id: string; content: string; image: string } | null>(null);
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   // 所有品牌的排程（只給月曆標記用），不受目前品牌篩選影響
   const [allQueueItems, setAllQueueItems] = useState<QueueItem[]>([]);
@@ -953,6 +957,7 @@ const SocialTabContent = memo(function SocialTabContent({
           content: webContent,
           aeoSchema: aeoSchema || null,
           aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
+          imageUrl: igImageUrl || undefined,
           promptVersion: genreMeta?.prompt_version || null,
           modelVersion: genreMeta?.model_version || null,
           force
@@ -976,7 +981,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
       const newArticleId = Array.isArray(resData.data) ? resData.data[0]?.id : resData.data?.id;
       if (newArticleId !== undefined && newArticleId !== null) {
-        setPublishedArticle({ id: String(newArticleId), content: webContent });
+        setPublishedArticle({ id: String(newArticleId), content: webContent, image: igImageUrl || "" });
       }
 
       alert("🎉 文章已成功同步至官網 Supabase 資料庫！");
@@ -1129,7 +1134,7 @@ const SocialTabContent = memo(function SocialTabContent({
   const ensureArticleId = async (force = false, resolvedContent?: string): Promise<string | null> => {
     const webContent = resolvedContent ?? getWebContent();
     if (webContent === null) return null;
-    if (publishedArticle && publishedArticle.content === webContent) {
+    if (publishedArticle && publishedArticle.content === webContent && publishedArticle.image === (igImageUrl || "")) {
       return publishedArticle.id;
     }
 
@@ -1142,6 +1147,7 @@ const SocialTabContent = memo(function SocialTabContent({
         content: webContent,
         aeoSchema: aeoSchema || null,
         aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
+        imageUrl: igImageUrl || undefined,
         force
       })
     });
@@ -1161,7 +1167,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (newId === undefined || newId === null) {
       throw new Error("官網已寫入，但沒有取得文章 id，無法排程");
     }
-    setPublishedArticle({ id: String(newId), content: webContent });
+    setPublishedArticle({ id: String(newId), content: webContent, image: igImageUrl || "" });
     fetchHistory();
     return String(newId);
   };
@@ -1214,6 +1220,7 @@ const SocialTabContent = memo(function SocialTabContent({
           targetPages: targetIds,
           content: val,
           articleId,
+          imageUrl: igImageUrl || undefined,
           scheduledAt: when.toISOString(),
           force
         })
@@ -1265,7 +1272,7 @@ const SocialTabContent = memo(function SocialTabContent({
       const response = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, force }),
+        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, imageUrl: igImageUrl || undefined, force }),
       });
       const resData = await response.json().catch(() => ({}));
       if (response.status === 422 && resData.blocked) {
@@ -1329,7 +1336,7 @@ const SocialTabContent = memo(function SocialTabContent({
           brandId: pubBrandId,
           platform: targetPlatform,
           content: val,
-          imageUrl: targetPlatform === "instagram" ? igImageUrl : undefined,
+          imageUrl: igImageUrl || undefined,
           scheduledAt: when.toISOString(),
           force,
         }),
@@ -1361,13 +1368,28 @@ const SocialTabContent = memo(function SocialTabContent({
   const handleGenerateImage = async () => {
     if (!requireParentBrand()) return;
     if (isGeneratingImage || !val) return;
-    const brandKey = brandKeyFromId(pubBrandId);
-    if (brandKey === "erick") {
-      alert("Erick 個人品牌還沒有串接 Instagram 帳號，請切換到 ABL、NAS 或 I8。");
-      return;
-    }
     setIsGeneratingImage(true);
+    setComfyNote("");
     try {
+      if (imageEngine === "card") {
+        const cardRes = await fetch("/api/generate-card", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandId: pubBrandId, content: val, size: imageSizeKey }),
+        });
+        const cardData = await cardRes.json().catch(() => ({}));
+        if (!cardRes.ok || !cardData.success) throw new Error(cardData.error || "生成圖卡失敗");
+        setIgImageUrl(cardData.imageUrl);
+        setIgImagePrompt(`圖卡文字：${cardData.text}`);
+        return;
+      }
+      if (imageEngine === "comfy") {
+        // 本機 ComfyUI：免費，不呼叫 LLM。Mac mini 沒開機時會排隊，開機後補做。
+        const result = await runComfyJob({ brandId: pubBrandId, sizeKey: imageSizeKey, purpose: "article" }, (p) => setComfyNote(comfyWaitText(p)));
+        setIgImageUrl(result.url);
+        setIgImagePrompt("本機 ComfyUI 情境圖，圖上沒有文字");
+        return;
+      }
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1384,6 +1406,7 @@ const SocialTabContent = memo(function SocialTabContent({
       alert(`❌ 生成配圖失敗：${error?.message || "請稍後再試"}`);
     } finally {
       setIsGeneratingImage(false);
+      setComfyNote("");
     }
   };
 
@@ -1454,6 +1477,7 @@ const SocialTabContent = memo(function SocialTabContent({
           brandId: pubBrandId,
           targetPages: targetIds,
           content: val,
+          imageUrl: igImageUrl || undefined,
           action: actionType,
           scheduleTime: targetTime || null,
           force
@@ -1755,8 +1779,52 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       </div>
 
-      {platform === "facebook" && hasCopyForActions && !copyIsPending && !copyFailureReason && (
-        <QuickDerivatives brandId={pubBrandId} content={val} />
+      {/* 🖼️ 文章配圖：生成一次，Facebook、Threads、Instagram、官網發文時都會一起帶上 */}
+      {hasCopyForActions && !copyIsPending && !copyFailureReason && (
+        <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-slate-200">文章配圖</span>
+            <select value={imageEngine} onChange={(e) => setImageEngine(e.target.value as "openai" | "comfy" | "card")} disabled={isGeneratingImage} aria-label="配圖生成方式" className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200">
+              <option value="card">品牌文字圖卡（免費，標題放在圖上）</option>
+              <option value="openai">AI 情境圖（OpenAI，會花額度）</option>
+              <option value="comfy">本機 ComfyUI（免費，Mac mini 要開機）</option>
+            </select>
+            {imageEngine !== "openai" && (
+              <select value={imageSizeKey} onChange={(e) => setImageSizeKey(e.target.value)} disabled={isGeneratingImage} aria-label="配圖尺寸" className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200">
+                {["ig_feed", "ig_grid34", "ig_square", "fb_feed", "threads"].filter((key) => key in CARD_SIZES).map((key) => <option key={key} value={key}>{(CARD_SIZES as Record<string, { label: string }>)[key].label}</option>)}
+              </select>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={isGeneratingImage}
+              disabled={isPublishingSocial || isPublishing || isPublishingWebsite}
+              onClick={() => handleGenerateImage()}
+              icon={<Sparkles className="w-3.5 h-3.5" />}
+            >
+              {isGeneratingImage ? (imageEngine === "comfy" ? "本機生成中..." : "生成中...") : igImageUrl ? "重新生成配圖" : "生成配圖"}
+            </Button>
+            {igImageUrl && (
+              <Button size="sm" variant="ghost" disabled={isGeneratingImage} onClick={() => { setIgImageUrl(null); setIgImagePrompt(""); }}>
+                不要配圖
+              </Button>
+            )}
+            {comfyNote && <span className="text-amber-200/90">{comfyNote}</span>}
+          </div>
+          {igImageUrl ? (
+            <div className="mt-3 flex items-start gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={igImageUrl} alt="文章配圖預覽" className="w-40 rounded-lg border border-slate-800" />
+              <div className="text-slate-400 leading-relaxed">
+                <p className="text-slate-200 font-bold">發布時會一起帶上這張圖</p>
+                <p className="mt-1">Facebook 立即發布與排程、Threads、Instagram、官網（放在標題下當封面與分享圖）都會用它。</p>
+                <p className="mt-1 text-slate-500">Instagram 一定要有圖；其他平台可以按「不要配圖」只發文字。{igImagePrompt ? `（${igImagePrompt}）` : ""}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-slate-500">還沒有配圖。Instagram 發文需要先生成；其他平台沒有配圖會照舊只發文字，或由 n8n 套用預設圖庫。</p>
+          )}
+        </div>
       )}
 
       {/* 📱 社群平台切換器 */}
@@ -2065,15 +2133,6 @@ const SocialTabContent = memo(function SocialTabContent({
               showSocialPicker ? socialPickerBlock("instagram") : (
                 <>
                   <Button
-                    variant="secondary"
-                    loading={isGeneratingImage}
-                    disabled={isPublishingSocial || !hasCopyForActions}
-                    onClick={() => handleGenerateImage()}
-                    icon={<Sparkles className="w-3.5 h-3.5" />}
-                  >
-                    {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
-                  </Button>
-                  <Button
                     variant="primary"
                     loading={isPublishingSocial}
                     disabled={!igImageUrl || isPublishingWebsite || isPublishing || isGeneratingImage}
@@ -2090,21 +2149,11 @@ const SocialTabContent = memo(function SocialTabContent({
                   >
                     排程
                   </Button>
-                  {!igImageUrl && <span className="text-[11px] text-slate-500">請先生成配圖並確認預覽，才能發布或排程</span>}
+                  {!igImageUrl && <span className="text-[11px] text-slate-500">Instagram 一定要有圖，請先在上方「文章配圖」生成</span>}
                 </>
               )
             )}
           </div>
-        </div>
-      )}
-
-      {platform === "instagram" && igImageUrl && (
-        <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
-          <div className="font-bold text-slate-200 mb-2">配圖預覽（發佈前請確認）</div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={igImageUrl} alt="Instagram 配圖預覽" className="w-48 rounded-lg border border-slate-800" />
-          {igImagePrompt && <p className="mt-2 text-slate-500 leading-relaxed">生成描述：{igImagePrompt}</p>}
-          <p className="mt-1 text-slate-600">圖片是 AI 生成的情境圖，圖上沒有文字。不滿意可按「重新生成配圖」。</p>
         </div>
       )}
 

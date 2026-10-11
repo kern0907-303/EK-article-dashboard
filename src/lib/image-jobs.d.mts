@@ -1,0 +1,13 @@
+export const JOB_STATUSES: string[];
+export const JOB_PURPOSES: string[];
+export const WORKER_ONLINE_SECONDS: number;
+export const BRAND_SCENE_STYLE: Record<string, string>;
+export const SCENE_VARIANTS: string[];
+export const NEGATIVE_PROMPT: string;
+export function brandSceneStyle(brandId: string): string;
+export function pickScene(seed: number): string;
+export function buildComfyPrompt(input: { brandId: string; seed: number }): { prompt: string; negative: string };
+export function randomSeed(): number;
+export function isWorkerOnline(seenAt: string | number | Date | null | undefined, now?: number, maxAgeSeconds?: number): boolean;
+export function validateJobInput(input: any, sizeKeys: string[]): { ok: boolean; error?: string; value?: { brandId: string; sizeKey: string; purpose: "card" | "article" } };
+export function jobStatusLabel(status: string): string;

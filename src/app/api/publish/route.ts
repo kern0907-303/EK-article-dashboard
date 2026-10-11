@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripDashes } from "@/lib/plain-text";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPagesByIds } from "@/lib/facebook-pages";
+import { publicImagePrefix } from "@/lib/social-image-server";
+import { withLeadingImage } from "@/lib/article-image.mjs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force } = await req.json();
+    const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force, imageUrl } = await req.json();
     // 發出去之前最後一道保險：舊草稿裡殘留的破折號也一併清掉
     const content = typeof rawContent === "string" ? stripDashes(rawContent) : rawContent;
 
@@ -27,6 +29,16 @@ export async function POST(req: NextRequest) {
         },
         { status: 501 }
       );
+    }
+
+    // 配圖：只接受儀表板自己存進 Supabase 圖片儲存桶的圖，不收任意網址
+    let postImage = "";
+    if (typeof imageUrl === "string" && imageUrl) {
+      const prefix = publicImagePrefix();
+      if (!prefix || !imageUrl.startsWith(prefix)) {
+        return NextResponse.json({ error: "配圖必須是儀表板生成的圖片，請重新生成配圖" }, { status: 400 });
+      }
+      postImage = imageUrl;
     }
 
     // 解析目標粉專：若前端未傳入，則自動以當前品牌預設粉專為主
@@ -110,7 +122,9 @@ export async function POST(req: NextRequest) {
         brandId,
         targetPages: targetPageIds,
         targetPageDetails,
-        content,
+        // n8n 會取內文第一張 Markdown 圖當貼文圖片，並把圖片語法從貼文文字拿掉；沒有配圖時內容與以前完全一樣
+        content: postImage ? withLeadingImage(content, postImage) : content,
+        imageUrl: postImage || undefined,
         action: action || "now",
         scheduleTime: scheduleTime || null,
         timestamp: Date.now(),

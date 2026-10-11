@@ -71,11 +71,13 @@ export async function POST(req: NextRequest) {
     if (content.length > limit) {
       return NextResponse.json({ error: `${platform === "threads" ? "Threads" : "Instagram"} 文字上限 ${limit} 字，目前 ${content.length} 字，請先縮短` }, { status: 400 });
     }
-    if (platform === "instagram") {
-      const prefix = publicImagePrefix();
-      if (!prefix || typeof imageUrl !== "string" || !imageUrl.startsWith(prefix)) {
-        return NextResponse.json({ error: "Instagram 排程必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
-      }
+    const prefix = publicImagePrefix();
+    const hasImage = typeof imageUrl === "string" && imageUrl.length > 0;
+    if (platform === "instagram" && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
+      return NextResponse.json({ error: "Instagram 排程必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
+    }
+    if (platform === "threads" && hasImage && (!prefix || !imageUrl.startsWith(prefix))) {
+      return NextResponse.json({ error: "配圖必須是儀表板生成的圖片，請重新生成配圖" }, { status: 400 });
     }
 
     const when = new Date(scheduledAt);
@@ -117,7 +119,7 @@ export async function POST(req: NextRequest) {
         platform,
         brand,
         content,
-        image_url: platform === "instagram" ? imageUrl : null,
+        image_url: hasImage ? imageUrl : null,
         scheduled_at: when.toISOString(),
         status: "pending",
       }),

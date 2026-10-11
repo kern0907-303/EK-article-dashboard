@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { articleUpdateUrl, existingArticleQuery, pickExistingId } from "@/lib/publish-dedupe";
+import { publicImagePrefix } from "@/lib/social-image-server";
+import { withCoverImage } from "@/lib/article-image.mjs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, brandName, content, aeoSchema, aeoFaq, force, promptVersion, modelVersion } = await req.json();
+    const { brandId, brandName, content: rawContent, aeoSchema, aeoFaq, force, promptVersion, modelVersion, imageUrl } = await req.json();
+    let content = rawContent;
 
     if (!brandId || !content) {
       return NextResponse.json(
@@ -26,6 +29,15 @@ export async function POST(req: NextRequest) {
         },
         { status: 422 }
       );
+    }
+
+    // 配圖：放在標題正下方，官網會把文章裡第一張圖當封面與社群分享圖。只接受自己儲存桶的圖。
+    if (typeof imageUrl === "string" && imageUrl) {
+      const prefix = publicImagePrefix();
+      if (!prefix || !imageUrl.startsWith(prefix)) {
+        return NextResponse.json({ error: "配圖必須是儀表板生成的圖片，請重新生成配圖" }, { status: 400 });
+      }
+      content = withCoverImage(content, imageUrl);
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
