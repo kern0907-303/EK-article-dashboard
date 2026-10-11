@@ -5,6 +5,7 @@ import { derivativesDb } from "@/lib/derivatives-server";
 import { renderCardJpeg, sceneToDataUri } from "@/lib/card-render-server";
 import { buildImagePrompt, generateImageBuffer, uploadPublicJpeg } from "@/lib/social-image-server";
 import { brandKeyFromId } from "@/data/skills/genres";
+import { CARD_SIZES, DEFAULT_CARD_SIZE } from "@/lib/card-layout.mjs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const id = typeof body?.id === "string" ? body.id : "";
     const background = body?.background === "scene" ? "scene" : "color";
+    const sizeKey = typeof body?.size === "string" && body.size in CARD_SIZES ? body.size : DEFAULT_CARD_SIZE;
     if (!id) return NextResponse.json({ error: "缺少衍生稿 ID。" }, { status: 400 });
 
     const rows = await derivativesDb<any[]>("derivative_posts", `id=eq.${encodeURIComponent(id)}&limit=1`);
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
         const brand = brandKeyFromId(String(post.parent_brand_id));
         const prompt = await buildImagePrompt(slides.map((slide) => slide.text).join("\n"), brand === "erick" ? "nas" : brand);
         const { buffer } = await generateImageBuffer(prompt);
-        sceneDataUri = await sceneToDataUri(buffer);
+        sceneDataUri = await sceneToDataUri(buffer, sizeKey);
       } catch (error) {
         // 情境圖失敗就退回品牌色底，不讓整批圖卡做不出來
         sceneNote = `情境底圖生成失敗，已改用品牌色底：${error instanceof Error ? error.message.slice(0, 120) : "未知原因"}`;
@@ -47,12 +49,12 @@ export async function POST(request: NextRequest) {
 
     const cardImages: Array<{ slide: number; url: string }> = [];
     for (const slide of slides) {
-      const jpeg = await renderCardJpeg({ brandId: post.parent_brand_id, text: slide.text, index: slide.index, total: slides.length, sceneDataUri });
+      const jpeg = await renderCardJpeg({ brandId: post.parent_brand_id, text: slide.text, index: slide.index, total: slides.length, sceneDataUri, size: sizeKey });
       const url = await uploadPublicJpeg(jpeg, folder);
       cardImages.push({ slide: slide.index, url });
     }
 
-    const checkResults = { ...(post.check_results || {}), card_images: cardImages, card_background: sceneDataUri ? "scene" : "color", card_generated_at: new Date().toISOString() };
+    const checkResults = { ...(post.check_results || {}), card_images: cardImages, card_background: sceneDataUri ? "scene" : "color", card_size: sizeKey, card_generated_at: new Date().toISOString() };
     const updated = await derivativesDb<any[]>("derivative_posts", `id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH", headers: { Prefer: "return=representation" },
       body: JSON.stringify({ check_results: checkResults, updated_at: new Date().toISOString() }),
