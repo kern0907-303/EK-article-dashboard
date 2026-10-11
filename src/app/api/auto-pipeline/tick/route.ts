@@ -122,7 +122,8 @@ export async function POST(req: NextRequest) {
       const redline = inspectForPublish(draft, job.brand_id);
       const blocks = blockingIssues(issues);
       const warnings = issues.filter((issue) => issue.level === "warn").map((issue) => issue.message);
-      const blockedReason = !redline.passed ? `品牌紅線：${redline.violatedWords.join("、")}` : blocks.map((issue) => issue.message).join("；");
+      const leftover = draft.match(/【需補[^】]*】/g);
+      const blockedReason = !redline.passed ? `品牌紅線：${redline.violatedWords.join("、")}` : leftover?.length ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發` : blocks.map((issue) => issue.message).join("；");
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }

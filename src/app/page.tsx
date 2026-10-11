@@ -24,6 +24,12 @@ export default function DashboardPage() {
   const [autoPipelineEnabled, setAutoPipelineEnabled] = useState(false);
 
   useEffect(() => {
+    // 從自動流水線帶文案過來時：切到指定品牌並打開看板
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const brand = params.get("brand");
+      if (brand && BRANDS.some((item) => item.id === brand)) { setActiveBrandId(brand); setCurrentMode("brand"); setActiveTab("board"); }
+    } catch {}
     const saved = localStorage.getItem("ai_provider_override");
     if (saved) {
       setAiProvider(saved);

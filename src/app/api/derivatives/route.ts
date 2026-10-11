@@ -76,11 +76,23 @@ export async function POST(request: NextRequest) {
       for (const languageVersion of derivativeLanguages(platform)) {
         try {
           const useScienceSource = platform === "小紅書" || platform === "抖音";
-          const generated = await generatePlatformPayload({ platform, languageVersion, parentText: parent.content, source: useScienceSource ? source : { note: null, content: "", citation: null, directory: [] }, providerOverride });
-          if (!validateDerivativePayload(platform, generated.payload || {})) throw new Error("模型輸出結構不完整，未保存此平台草稿。請重新產生。");
-          let content = formatDerivativeContent(platform, languageVersion, generated.payload || {});
-          content = stripDashes(stripMarkdown(content));
-          content = carryMissingMarkers(parent.content, content);
+          const specFormat = platform === "Threads" ? "單則文字貼文" : platform === "IG" ? "輪播" : platform === "Reel" ? "Reel" : platform === "YT" ? "長片文字稿綱" : platform === "小紅書" ? "圖文筆記" : "圖文";
+          const platformSpec = getSpecFor(catalog.specs, platform, specFormat);
+          const maxLength = Number.isFinite(platformSpec?.max_text_length) ? Number(platformSpec.max_text_length) : null;
+          let generated: Awaited<ReturnType<typeof generatePlatformPayload>>;
+          let content = "";
+          // 超過字數上限時自動請模型縮短重寫，最多重試 2 次
+          for (let attempt = 0; ; attempt += 1) {
+            generated = await generatePlatformPayload({
+              platform, languageVersion, parentText: parent.content, source: useScienceSource ? source : { note: null, content: "", citation: null, directory: [] }, providerOverride,
+              extraInstruction: attempt > 0 && maxLength ? `上一版有 ${[...content].length} 字，超過上限 ${maxLength} 字。請重寫並縮短到 ${Math.max(50, maxLength - 40)} 字以內，保留核心論點，不要只是刪尾巴。` : undefined,
+            });
+            if (!validateDerivativePayload(platform, generated.payload || {})) throw new Error("模型輸出結構不完整，未保存此平台草稿。請重新產生。");
+            content = formatDerivativeContent(platform, languageVersion, generated.payload || {});
+            content = stripDashes(stripMarkdown(content));
+            content = carryMissingMarkers(parent.content, content);
+            if (!maxLength || [...content].length <= maxLength || attempt >= 2) break;
+          }
           let sourceValid = false;
           if (platform === "小紅書" || platform === "抖音") {
             const citationTitle = generated.payload?.citation_title;
@@ -95,11 +107,10 @@ export async function POST(request: NextRequest) {
             else content = ensureScienceMarker(content, false);
           }
           const guardrail = inspectForPublish(content, parent.brandId);
-          const specFormat = platform === "Threads" ? "單則文字貼文" : platform === "IG" ? "輪播" : platform === "Reel" ? "Reel" : platform === "YT" ? "長片文字稿綱" : platform === "小紅書" ? "圖文筆記" : "圖文";
           const checkResults = deriveChecks({
             parentText: parent.content, content, platform, languageVersion,
             rules: getRulesFor(catalog.rules, platform, languageVersion),
-            spec: getSpecFor(catalog.specs, platform, specFormat),
+            spec: platformSpec,
             existingGuardrailPassed: guardrail.passed,
             extraBlockers: genreBlockers(content),
           });

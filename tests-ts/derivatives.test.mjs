@@ -42,9 +42,8 @@ test("知識全文讀取模組僅限伺服器，資料表只授權 service role"
 });
 
 test("各平台結構格式化且使用純文字標籤", () => {
-  const threads = formatDerivativeContent("Threads", "zh-TW", { single: "短文", thread: ["一", "二", "三"] });
-  assert.match(threads, /單則版：短文/);
-  assert.match(threads, /串文第 3 則：三/);
+  const threads = formatDerivativeContent("Threads", "zh-TW", { single: "短文" });
+  assert.equal(threads, "短文");
   const ig = formatDerivativeContent("IG", "zh-TW", { caption: "說明", tags: ["情緒"], carousel: ["鉤子", "行動呼籲"] });
   assert.match(ig, /第 1 張：鉤子/);
   assert.match(ig, /第 2 張：行動呼籲/);
@@ -66,7 +65,7 @@ test("六平台的預期輸出結構都有獨立驗證", () => {
   assert.equal(validateDerivativePayload("YT", { shorts: { scenes: [{ text: "短片畫面", seconds: 3, transition: "切換" }] }, long: { title: "標題", description: "說明", chapters: ["00:00 開場"], thumbnailText: "縮圖", outline: ["稿綱"] } }), true);
   assert.equal(validateDerivativePayload("小紅書", { title: "標題", body: "正文", tags: ["情緒"], carousel: ["鉤子", "行動"], citation_title: "書", citation_author: "作者" }), true);
   assert.equal(validateDerivativePayload("抖音", { title: "標題", tags: ["情緒"], scenes: [{ text: "畫面", seconds: 3, transition: "切換" }], citation_title: "書", citation_author: "作者" }), true);
-  assert.equal(validateDerivativePayload("Threads", { single: "單則", thread: ["只有一則"] }), false);
+  assert.equal(validateDerivativePayload("Threads", { single: "" }), false);
 });
 
 test("簡體內容中的禁用詞會命中且不會自動替換", () => {

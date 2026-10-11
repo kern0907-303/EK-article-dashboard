@@ -90,7 +90,7 @@ export function validateDerivativePayload(platform, payload = {}) {
   const optionalString = (value) => typeof value === "string";
   const array = (value, min = 1) => Array.isArray(value) && value.length >= min && value.every(string);
   const scenes = (value) => Array.isArray(value) && value.length > 0 && value.every((scene) => scene && string(scene.text) && Number.isFinite(Number(scene.seconds)) && string(scene.transition));
-  if (platform === "Threads") return string(payload.single) && array(payload.thread, 3) && payload.thread.length <= 5;
+  if (platform === "Threads") return string(payload.single);
   if (platform === "IG") return string(payload.caption) && array(payload.tags, 1) && array(payload.carousel, 2);
   if (platform === "Reel") return scenes(payload.scenes);
   if (platform === "YT") return !!payload.shorts && scenes(payload.shorts.scenes) && !!payload.long && string(payload.long.title) && string(payload.long.description) && array(payload.long.chapters) && string(payload.long.thumbnailText) && array(payload.long.outline);
@@ -110,8 +110,8 @@ export function formatDerivativeContent(platform, languageVersion, payload = {})
     lines.push(`${label}：${Array.isArray(value) ? value.join("、") : value}`);
   };
   if (platform === "Threads") {
-    add(labels.single, payload.single);
-    if (Array.isArray(payload.thread)) payload.thread.forEach((item, index) => add(`${labels.thread} ${index + 1} 則`, item));
+    // 只輸出一則可直接貼上的完整貼文，不加「單則版」等標籤
+    if (payload.single) lines.push(String(payload.single).trim());
   } else if (platform === "IG") {
     add(labels.caption, payload.caption);
     add(labels.tags, payload.tags);
@@ -161,6 +161,7 @@ export function deriveChecks({ parentText, content, platform, languageVersion, r
   for (const item of extraBlockers) if (item && !blockers.includes(item)) blockers.push(item);
   if (requiredMarkers.length !== carriedMarkers.length) blockers.push("母文章的【需補】標記未完整帶入");
   if (content.includes("【需補")) blockers.push("含有【需補】標記");
+  if (/母文章|來源資料|示意故事/.test(content)) blockers.push("內文出現「母文章、來源資料、示意故事」等說明用字，請改成作者本人的口吻");
   if (plainTextViolations.length) blockers.push(...plainTextViolations);
   if (sensitiveMatches.some((item) => item.block_available)) blockers.push("命中待人工確認的平台紅線詞，須人工修改後才能放行");
   return { metrics, plain_text_violations: plainTextViolations, required_markers: requiredMarkers, carried_markers: carriedMarkers, sensitive_matches: sensitiveMatches, warnings: metrics.warnings, blockers, status: blockers.length ? "needs_review" : "draft" };
