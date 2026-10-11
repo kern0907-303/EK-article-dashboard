@@ -17,7 +17,17 @@ export async function GET() {
       pipelineDb<any[]>("auto_pipeline_batches", "order=created_at.desc&limit=50"),
       pipelineDb<any[]>("auto_pipeline_jobs", "order=created_at.desc&limit=200"),
     ]);
-    return NextResponse.json({ enabled: true, batches, jobs });
+    // 把已排程貼文附的圖卡網址帶回來，讓畫面能預覽
+    const queueIds = [...new Set(jobs.map((job: any) => job.queue_id).filter(Boolean))];
+    const cardByQueue = new Map<string, string>();
+    if (queueIds.length) {
+      try {
+        const queued = await pipelineDb<any[]>("publish_queue", `id=in.(${queueIds.map((id: string) => encodeURIComponent(id)).join(",")})&select=id,image_url`);
+        for (const row of queued) if (row.image_url) cardByQueue.set(row.id, row.image_url);
+      } catch {}
+    }
+    const jobsWithCards = jobs.map((job: any) => ({ ...job, card_url: job.queue_id ? cardByQueue.get(job.queue_id) || null : null }));
+    return NextResponse.json({ enabled: true, batches, jobs: jobsWithCards });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "讀取流水線失敗" }, { status: 500 });
   }

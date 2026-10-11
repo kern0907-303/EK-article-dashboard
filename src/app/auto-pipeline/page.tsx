@@ -62,7 +62,7 @@ export default function AutoPipelinePage() {
   }, [hasActiveJobs]);
   // 日期選擇器的可選範圍：至少晚於現在 30 分鐘（流水線的安全間隔），最遠 60 天
   const pickerMin = useMemo(() => new Date(Date.now() + 30 * 60 * 1000), []);
-  const pickerMax = useMemo(() => new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), []);
+  const pickerMax = useMemo(() => new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), []);
 
   const handleFile = async (file?: File) => {
     if (!file) return;
@@ -89,15 +89,28 @@ export default function AutoPipelinePage() {
           warning,
         };
       });
-      setEntries(next);
+      setEntries(withRule(next));
     } else {
       const result = parsePipelineBatch(text, source);
-      setEntries(result.entries);
+      setEntries(withRule(result.entries));
       if (result.error) setNotice(result.error);
     }
   };
 
-  const applyRule = () => setEntries((current) => applyDateRule(current, startDate, weekdays, time));
+  // 套用日期規則：只填還沒有日期的項目，並清掉「缺少日期」警示
+  const withRule = (list: PipelineEntry[]) => (startDate && weekdays.length ? applyDateRule(list, startDate, weekdays, time) : list)
+    .map((entry) => entry.scheduledAt ? { ...entry, warning: entry.warning.filter((item) => item !== "缺少日期") } : entry);
+  const dayText = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short" }) : "";
+  const applyRule = () => {
+    if (entries.length === 0) { setNotice("右邊還沒有預覽清單，請先按「產生預覽」。"); return; }
+    if (!startDate) { setNotice("請先在日期規則選一個起始日期。"); return; }
+    if (weekdays.length === 0) { setNotice("請至少勾選一個星期。"); return; }
+    const next = withRule(entries);
+    const filled = next.filter((entry, i) => entry.scheduledAt && entry.scheduledAt !== entries[i].scheduledAt).length;
+    setEntries(next);
+    const dated = next.filter((entry) => entry.scheduledAt);
+    setNotice(filled ? `已把日期套用到 ${filled} 篇，從 ${dayText(dated[0].scheduledAt)} 到 ${dayText(dated[dated.length - 1].scheduledAt)}。已經有日期的項目不會被改。` : "沒有可套用的項目，所有項目都已經有日期。");
+  };
   const updateEntry = (index: number, fields: Partial<PipelineEntry>) => setEntries((current) => current.map((entry, i) => {
     if (i !== index) return entry;
     const warning = fields.brandId ? entry.warning.filter((item) => item !== "缺少品牌") : entry.warning;
@@ -138,6 +151,7 @@ export default function AutoPipelinePage() {
     const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (!res.ok) { setNotice(data.error || "操作失敗"); return; }
+    if (payload.action === "reviewed") setNotice("已標記已審。這只是你的記號，不會改變發文；沒標記也會照排程時間發出。");
     if (payload.action === "cancel") {
       const n = Array.isArray(data.cancelled) ? data.cancelled.length : 0;
       setNotice(`已取消 ${n} 篇。這些項目不會再生成或發出，記錄保留在清單中（狀態為「已取消」）。`);
@@ -181,7 +195,7 @@ export default function AutoPipelinePage() {
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">批次與任務總覽</h2><Button variant="ghost" size="sm" onClick={() => void fetchOverview()}>重新整理</Button></div>
-        <div className="space-y-4">{batches.map((batch) => <div key={batch.id} className="rounded-xl border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b>{batch.batch_no}</b><span className="ml-3 text-xs text-slate-400">{batch.source} · {batch.status}</span>{(() => { const list = jobs.filter((job) => job.batch_id === batch.id); const done = list.filter((job) => ["scheduled", "manual", "failed", "cancelled"].includes(job.status)).length; const pct = list.length ? Math.round((done / list.length) * 100) : 0; const running = list.find((job) => ["generating", "optimizing"].includes(job.status)); const idleMin = running?.updated_at ? Math.floor((Date.now() - new Date(running.updated_at).getTime()) / 60000) : 0; const stuck = !!running && idleMin >= 5; const allDone = list.length > 0 && done === list.length; return <div className="mt-2 min-w-[260px]"><div className="flex items-center justify-between text-xs"><span className={allDone ? "text-emerald-300" : "text-amber-300"}>{allDone ? `全部處理完畢（${list.length} 篇）` : `處理中 ${done} / ${list.length} 篇（${pct}%）`}</span></div><div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-800" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className={`h-full transition-all ${allDone ? "bg-emerald-400" : stuck ? "bg-red-400" : "bg-amber-400"}`} style={{ width: `${pct}%` }} /></div>{!allDone && <p className={`mt-1 text-xs ${stuck ? "text-red-300" : "text-slate-400"}`}>{running ? (stuck ? `第 ${list.indexOf(running) + 1} 篇已 ${idleMin} 分鐘沒有更新，可能卡住，建議取消該篇或整批後重建` : `正在${STATUS_LABEL[running.status]}第 ${list.indexOf(running) + 1} 篇（運行中，約 ${idleMin} 分鐘前更新），頁面每 20 秒自動刷新`) : "排程器每分鐘處理一篇，等待下一輪，頁面每 20 秒自動刷新"}</p>}</div>; })()}</div><Button variant="danger" size="sm" onClick={() => void action({ batchId: batch.id, action: "cancel" })}>取消整批</Button></div><div className="mt-2 divide-y divide-slate-800">{jobs.filter((job) => job.batch_id === batch.id).map((job) => <div key={job.id} className="grid gap-2 py-3 text-xs md:grid-cols-[1fr_1fr_1fr_2fr_auto] md:items-center"><span>{BRANDS.find((brand) => brand.id === job.brand_id)?.name || job.brand_id}</span><span>{job.scheduled_at ? new Date(job.scheduled_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }) : "未指定時間"}</span><span>{STATUS_LABEL[job.status] || job.status}</span><span>{job.current_step}{job.error_reason ? `：${job.error_reason}` : ""}</span><span className="flex gap-2">{job.status === "scheduled" && !job.reviewed && <Button variant="secondary" size="sm" onClick={() => void action({ id: job.id, action: "reviewed" })}>標記已審</Button>}<Button variant="danger" size="sm" onClick={() => void action({ id: job.id, action: "cancel" })}>取消</Button></span><div className="md:col-span-5"><textarea value={draftChanges[job.id] ?? job.draft_content ?? ""} onChange={(e) => setDraftChanges((all) => ({ ...all, [job.id]: e.target.value }))} rows={5} className="w-full rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed" placeholder="生成或優化後的社群草稿" /><div className="mt-2 flex flex-wrap gap-2"><Button variant="secondary" size="sm" disabled={!draftChanges[job.id]} onClick={() => void saveDraft(job.id)}>保存修改並標記已審</Button><Button variant="secondary" size="sm" disabled={!(draftChanges[job.id] ?? job.draft_content)} onClick={() => sendToMaya(job, "Threads")}>帶去主工作區改寫成 Threads</Button><Button variant="secondary" size="sm" disabled={!(draftChanges[job.id] ?? job.draft_content)} onClick={() => sendToMaya(job, "IG")}>帶去主工作區改寫成 IG</Button></div></div></div>)}</div></div>)}{batches.length === 0 && <p className="text-sm text-slate-500">目前沒有批次。</p>}</div>
+        <div className="space-y-4">{batches.map((batch) => <div key={batch.id} className="rounded-xl border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b>{batch.batch_no}</b><span className="ml-3 text-xs text-slate-400">{batch.source} · {batch.status}</span>{(() => { const list = jobs.filter((job) => job.batch_id === batch.id); const done = list.filter((job) => ["scheduled", "manual", "failed", "cancelled"].includes(job.status)).length; const pct = list.length ? Math.round((done / list.length) * 100) : 0; const running = list.find((job) => ["generating", "optimizing"].includes(job.status)); const idleMin = running?.updated_at ? Math.floor((Date.now() - new Date(running.updated_at).getTime()) / 60000) : 0; const stuck = !!running && idleMin >= 5; const allDone = list.length > 0 && done === list.length; return <div className="mt-2 min-w-[260px]"><div className="flex items-center justify-between text-xs"><span className={allDone ? "text-emerald-300" : "text-amber-300"}>{allDone ? `全部處理完畢（${list.length} 篇）` : `處理中 ${done} / ${list.length} 篇（${pct}%）`}</span></div><div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-800" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className={`h-full transition-all ${allDone ? "bg-emerald-400" : stuck ? "bg-red-400" : "bg-amber-400"}`} style={{ width: `${pct}%` }} /></div>{!allDone && <p className={`mt-1 text-xs ${stuck ? "text-red-300" : "text-slate-400"}`}>{running ? (stuck ? `第 ${list.indexOf(running) + 1} 篇已 ${idleMin} 分鐘沒有更新，可能卡住，建議取消該篇或整批後重建` : `正在${STATUS_LABEL[running.status]}第 ${list.indexOf(running) + 1} 篇（運行中，約 ${idleMin} 分鐘前更新），頁面每 20 秒自動刷新`) : "排程器每分鐘處理一篇，等待下一輪，頁面每 20 秒自動刷新"}</p>}</div>; })()}</div><Button variant="danger" size="sm" onClick={() => void action({ batchId: batch.id, action: "cancel" })}>取消整批</Button></div><div className="mt-2 divide-y divide-slate-800">{jobs.filter((job) => job.batch_id === batch.id).map((job) => <div key={job.id} className="grid gap-2 py-3 text-xs md:grid-cols-[1fr_1fr_1fr_2fr_auto] md:items-center"><span>{BRANDS.find((brand) => brand.id === job.brand_id)?.name || job.brand_id}</span><span>{job.scheduled_at ? new Date(job.scheduled_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }) : "未指定時間"}</span><span>{STATUS_LABEL[job.status] || job.status}</span><span>{job.status === "scheduled" && job.reviewed ? <b className="mr-1 text-emerald-300">已審 ✓</b> : null}{job.current_step}{job.error_reason ? `：${job.error_reason}` : ""}</span><span className="flex gap-2">{job.status === "scheduled" && !job.reviewed && <Button variant="secondary" size="sm" onClick={() => void action({ id: job.id, action: "reviewed" })}>標記已審</Button>}<Button variant="danger" size="sm" onClick={() => void action({ id: job.id, action: "cancel" })}>取消</Button></span><div className="md:col-span-5">{job.card_url ? <div className="mb-2 flex items-start gap-3 rounded-lg border border-slate-800 p-2"><a href={job.card_url} target="_blank" rel="noreferrer"><img src={job.card_url} alt="品牌圖卡預覽" className="h-24 rounded border border-slate-700" /></a><p className="text-xs text-slate-400">這是發 FB 時會附上的品牌圖卡（標題取自文案第一行），點圖可看大圖。要做 IG 或 Threads 的圖文與輪播，請按下方「帶去主工作區」。</p></div> : job.status === "scheduled" ? <p className="mb-2 text-xs text-slate-500">這篇沒有附品牌圖卡，發文時會用圖庫的圖。</p> : null}<textarea value={draftChanges[job.id] ?? job.draft_content ?? ""} onChange={(e) => setDraftChanges((all) => ({ ...all, [job.id]: e.target.value }))} rows={5} className="w-full rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed" placeholder="生成或優化後的社群草稿" /><div className="mt-2 flex flex-wrap gap-2"><Button variant="secondary" size="sm" disabled={!draftChanges[job.id]} onClick={() => void saveDraft(job.id)}>保存修改並標記已審</Button><Button variant="secondary" size="sm" disabled={!(draftChanges[job.id] ?? job.draft_content)} onClick={() => sendToMaya(job, "Threads")}>帶去主工作區改寫成 Threads</Button><Button variant="secondary" size="sm" disabled={!(draftChanges[job.id] ?? job.draft_content)} onClick={() => sendToMaya(job, "IG")}>帶去主工作區改寫成 IG</Button></div></div></div>)}</div></div>)}{batches.length === 0 && <p className="text-sm text-slate-500">目前沒有批次。</p>}</div>
       </section>
     </div>
   </main>;
