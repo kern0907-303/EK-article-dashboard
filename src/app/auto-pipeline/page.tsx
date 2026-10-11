@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
-import { applyDateRule, parsePipelineBatch, type BatchSource, type PipelineEntry } from "@/lib/auto-pipeline";
+import { applyDateRule, parsePipelineBatch, PIPELINE_MAX_BATCH_SIZE, type BatchSource, type PipelineEntry } from "@/lib/auto-pipeline";
 import { parsePastedTopics, materialFor } from "@/lib/topic-parse";
 import { buildGenrePrompt, GENRES, type BrandKey, type FunnelLevel, type GenreId } from "@/data/skills/genres";
 import { DEFAULT_SCHEDULE_TIME } from "@/lib/schedule-time";
+import SchedulePicker from "@/components/SchedulePicker";
 
 const BRANDS = [
   { id: "nas", name: "NAS" }, { id: "abl", name: "ABL" }, { id: "i8", name: "I8" }, { id: "erick", name: "Erick" },
@@ -48,6 +49,16 @@ export default function AutoPipelinePage() {
     else setNotice(data.error || "讀取總覽失敗");
   };
   useEffect(() => { void fetchOverview(); }, []);
+  // 還有任務在跑時，每 20 秒自動更新一次畫面（只讀資料庫，不會觸發 n8n）；全部結束就停止
+  const hasActiveJobs = jobs.some((job) => ["pending", "generating", "optimizing"].includes(job.status));
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    const timer = setInterval(() => { void fetchOverview(); }, 20_000);
+    return () => clearInterval(timer);
+  }, [hasActiveJobs]);
+  // 日期選擇器的可選範圍：至少晚於現在 30 分鐘（流水線的安全間隔），最遠 60 天
+  const pickerMin = useMemo(() => new Date(Date.now() + 30 * 60 * 1000), []);
+  const pickerMax = useMemo(() => new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), []);
 
   const handleFile = async (file?: File) => {
     if (!file) return;
@@ -89,6 +100,11 @@ export default function AutoPipelinePage() {
     return { ...entry, ...fields, warning };
   }));
   const confirmBatch = async () => {
+    const problems = entries.flatMap((entry, i) => {
+      const issues = [...entry.warning.filter((w) => w !== "缺少日期"), ...(!entry.brandId && !entry.warning.includes("缺少品牌") ? ["缺少品牌"] : []), ...(!entry.prompt?.trim() && !entry.warning.includes("缺少提示詞") ? ["缺少提示詞"] : [])];
+      return issues.length ? [`第 ${i + 1} 篇：${issues.join("、")}`] : [];
+    });
+    if (problems.length) { setNotice(`無法建立，請先修正：${problems.join("；")}`); return; }
     setBusy(true); setNotice("");
     try {
       const res = await fetch("/api/auto-pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source, entries, projectId: projectId || null }) });
@@ -102,7 +118,12 @@ export default function AutoPipelinePage() {
   const action = async (payload: Record<string, string>) => {
     const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
-    if (!res.ok) setNotice(data.error || "操作失敗"); else await fetchOverview();
+    if (!res.ok) { setNotice(data.error || "操作失敗"); return; }
+    if (payload.action === "cancel") {
+      const n = Array.isArray(data.cancelled) ? data.cancelled.length : 0;
+      setNotice(`已取消 ${n} 篇。這些項目不會再生成或發出，記錄保留在清單中（狀態為「已取消」）。`);
+    }
+    await fetchOverview();
   };
   const saveDraft = async (id: string) => {
     const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "edit", content: draftChanges[id] }) });
@@ -118,30 +139,30 @@ export default function AutoPipelinePage() {
   return <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6 sm:px-8">
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex items-start justify-between gap-4">
-        <div><Link href="/" className="text-sm text-amber-300 hover:underline">← 回儀表板</Link><h1 className="mt-3 text-2xl font-bold">自動流水線</h1><p className="mt-1 text-sm text-slate-400">預設關閉。確認批次後只處理社群文，禁用詞或【需補】會停在人工處理，不會繞過檢查。</p></div>
+        <div><Link href="/" className="text-sm text-amber-300 hover:underline">← 回儀表板</Link><h1 className="mt-3 text-2xl font-bold">自動流水線</h1><p className="mt-1 text-sm text-slate-400">預設關閉。確認批次後只處理社群文字（不會生成圖片，貼文配圖由發布流程決定），禁用詞或【需補】會停在人工處理，不會繞過檢查。</p></div>
         <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">未審也會依排程發佈</span>
       </header>
       {notice && <div role="status" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm">{notice}</div>}
       <section className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">建立批次預覽</h2><select value={source} onChange={(e) => { setSource(e.target.value as BatchSource); setResearch(e.target.value === "research"); }} className="rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm"><option value="manual">手動貼上</option><option value="file">檔案上傳</option><option value="research">品牌調研選題</option></select></div>
-          <label className="block text-sm text-slate-300">貼上內容或調研結果<textarea value={text} onChange={(e) => setText(e.target.value)} rows={9} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" placeholder={'品牌：NAS\n日期：2026-11-01 10:10\n這篇貼文的提示詞\n=====\n品牌：ABL\n另一篇提示詞'} /></label>
+          <label className="block text-sm text-slate-300">貼上內容或調研結果（單批最多 {PIPELINE_MAX_BATCH_SIZE} 篇，用單獨一行 ===== 分隔）<textarea value={text} onChange={(e) => setText(e.target.value)} rows={9} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" placeholder={'品牌：NAS\n日期：2026-11-01 10:10\n這篇貼文的提示詞\n=====\n品牌：ABL\n另一篇提示詞'} /></label>
           <label className="text-sm text-slate-300">上傳 .txt 檔<input type="file" accept=".txt,text/plain" onChange={(e) => void handleFile(e.target.files?.[0])} className="mt-2 block w-full text-xs" /></label>
           {research && topics.length > 0 && <div className="rounded-lg border border-slate-800 p-3"><p className="mb-2 text-sm">勾選要處理的選題</p>{topics.map((topic) => <label key={topic.index} className="flex gap-2 py-1 text-xs"><input type="checkbox" checked={selectedTopics.includes(topic.index)} onChange={(e) => setSelectedTopics((s) => e.target.checked ? [...s, topic.index] : s.filter((n) => n !== topic.index))} /><span>{topic.title || `選題 ${topic.index}`}　{topic.genreRaw}</span></label>)}</div>}
           <label className="block text-sm text-slate-300">所屬專案 ID（可留空）<input value={projectId} onChange={(e) => setProjectId(e.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2" /></label>
-          <div className="rounded-xl border border-slate-800 p-3 space-y-3"><p className="text-sm font-medium">日期規則（套用至未填日期的項目）</p><div className="grid gap-2 sm:grid-cols-2"><label className="text-xs text-slate-400">起始日期<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 block w-full rounded border border-slate-700 bg-slate-950 p-2 text-slate-100" /></label><label className="text-xs text-slate-400">時間<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="mt-1 block w-full rounded border border-slate-700 bg-slate-950 p-2 text-slate-100" /></label></div><div className="flex flex-wrap gap-3 text-xs">{["日","一","二","三","四","五","六"].map((label, day) => <label key={day} className="flex items-center gap-1"><input type="checkbox" checked={weekdays.includes(day)} onChange={() => toggleWeekday(day)} />週{label}</label>)}</div><Button variant="secondary" onClick={applyRule}>套用日期規則</Button></div>
+          <div className="rounded-xl border border-slate-800 p-3 space-y-3"><p className="text-sm font-medium">日期規則（套用至未填日期的項目）</p><div className="text-xs text-slate-400">起始日期與時間（點日期，時間上下滾動選，預設 10:10）<div className="mt-1 rounded border border-slate-700 bg-slate-950 p-2"><SchedulePicker value={startDate ? `${startDate}T${time}` : ""} onChange={(v) => { setStartDate(v.slice(0, 10)); setTime(v.slice(11, 16)); }} min={pickerMin} max={pickerMax} accentClass="bg-amber-600" /></div></div><div className="flex flex-wrap gap-3 text-xs">{["日","一","二","三","四","五","六"].map((label, day) => <label key={day} className="flex items-center gap-1"><input type="checkbox" checked={weekdays.includes(day)} onChange={() => toggleWeekday(day)} />週{label}</label>)}</div><Button variant="secondary" onClick={applyRule}>套用日期規則</Button></div>
           <Button variant="primary" onClick={preview}>產生預覽</Button>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">預覽清單</h2><span className="text-xs text-slate-400">{entries.length} / 12 篇</span></div>
-          {entries.length === 0 ? <p className="text-sm text-slate-500">貼上內容並產生預覽後，可逐篇調整品牌與時間。</p> : <div className="max-h-[60vh] space-y-3 overflow-auto">{entries.map((entry, index) => <article key={index} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 space-y-2"><div className="flex items-center justify-between"><strong className="text-sm">第 {index + 1} 篇</strong><Button variant="danger" size="sm" onClick={() => setEntries((list) => list.filter((_, i) => i !== index))}>移除</Button></div><div className="grid grid-cols-2 gap-2"><select value={entry.brandId || ""} onChange={(e) => updateEntry(index, { brandId: (e.target.value || null) as PipelineEntry["brandId"] })} className="rounded border border-slate-700 bg-slate-900 p-2 text-xs"><option value="">選品牌</option>{BRANDS.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}</select><input type="datetime-local" value={asLocalValue(entry.scheduledAt)} onChange={(e) => updateEntry(index, { scheduledAt: fromLocalValue(e.target.value) })} className="min-w-0 rounded border border-slate-700 bg-slate-900 p-2 text-xs" /></div><p className="text-xs text-slate-400">提示詞：{entry.prompt.slice(0, 40)}{entry.prompt.length > 40 ? "…" : ""}</p>{entry.warning.length > 0 && <p className="text-xs text-amber-300">缺漏警示：{entry.warning.join("、")}</p>}</article>)}</div>}
+          <div className="flex items-center justify-between"><h2 className="font-semibold">預覽清單</h2><span className="text-xs text-slate-400">{entries.length} / {PIPELINE_MAX_BATCH_SIZE} 篇（單批上限）</span></div>
+          {entries.length === 0 ? <p className="text-sm text-slate-500">貼上內容並產生預覽後，可逐篇調整品牌與時間。</p> : <div className="space-y-3">{entries.map((entry, index) => <article key={index} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 space-y-2"><div className="flex items-center justify-between"><strong className="text-sm">第 {index + 1} 篇</strong><Button variant="danger" size="sm" onClick={() => setEntries((list) => list.filter((_, i) => i !== index))}>移除</Button></div><div className="grid grid-cols-2 gap-2"><select value={entry.brandId || ""} onChange={(e) => updateEntry(index, { brandId: (e.target.value || null) as PipelineEntry["brandId"] })} className="rounded border border-slate-700 bg-slate-900 p-2 text-xs"><option value="">選品牌</option>{BRANDS.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}</select><div className="min-w-0 rounded border border-slate-700 bg-slate-900 p-2"><SchedulePicker value={asLocalValue(entry.scheduledAt)} onChange={(v) => updateEntry(index, { scheduledAt: fromLocalValue(v) })} min={pickerMin} max={pickerMax} accentClass="bg-amber-600" /></div></div><p className="text-xs text-slate-400">提示詞：{entry.prompt.slice(0, 40)}{entry.prompt.length > 40 ? "…" : ""}</p>{entry.warning.length > 0 && <p className="text-xs text-amber-300">缺漏警示：{entry.warning.join("、")}</p>}</article>)}</div>}
           <Button variant="primary" disabled={!entries.length || busy} onClick={() => void confirmBatch()}>確認並建立任務</Button>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">批次與任務總覽</h2><Button variant="ghost" size="sm" onClick={() => void fetchOverview()}>重新整理</Button></div>
-        <div className="space-y-4">{batches.map((batch) => <div key={batch.id} className="rounded-xl border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b>{batch.batch_no}</b><span className="ml-3 text-xs text-slate-400">{batch.source} · {batch.status}</span></div><Button variant="danger" size="sm" onClick={() => void action({ batchId: batch.id, action: "cancel" })}>取消整批</Button></div><div className="mt-2 divide-y divide-slate-800">{jobs.filter((job) => job.batch_id === batch.id).map((job) => <div key={job.id} className="grid gap-2 py-3 text-xs md:grid-cols-[1fr_1fr_1fr_2fr_auto] md:items-center"><span>{BRANDS.find((brand) => brand.id === job.brand_id)?.name || job.brand_id}</span><span>{job.scheduled_at ? new Date(job.scheduled_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }) : "未指定時間"}</span><span>{STATUS_LABEL[job.status] || job.status}</span><span>{job.current_step}{job.error_reason ? `：${job.error_reason}` : ""}</span><span className="flex gap-2">{job.status === "scheduled" && !job.reviewed && <Button variant="secondary" size="sm" onClick={() => void action({ id: job.id, action: "reviewed" })}>標記已審</Button>}<Button variant="danger" size="sm" onClick={() => void action({ id: job.id, action: "cancel" })}>取消</Button></span><div className="md:col-span-5"><textarea value={draftChanges[job.id] ?? job.draft_content ?? ""} onChange={(e) => setDraftChanges((all) => ({ ...all, [job.id]: e.target.value }))} rows={5} className="w-full rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed" placeholder="生成或優化後的社群草稿" /><Button variant="secondary" size="sm" disabled={!draftChanges[job.id]} onClick={() => void saveDraft(job.id)} className="mt-2">保存修改並標記已審</Button></div></div>)}</div></div>)}{batches.length === 0 && <p className="text-sm text-slate-500">目前沒有批次。</p>}</div>
+        <div className="space-y-4">{batches.map((batch) => <div key={batch.id} className="rounded-xl border border-slate-800 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b>{batch.batch_no}</b><span className="ml-3 text-xs text-slate-400">{batch.source} · {batch.status}</span>{(() => { const list = jobs.filter((job) => job.batch_id === batch.id); const done = list.filter((job) => ["scheduled", "manual", "failed", "cancelled"].includes(job.status)).length; const pct = list.length ? Math.round((done / list.length) * 100) : 0; const running = list.find((job) => ["generating", "optimizing"].includes(job.status)); const idleMin = running?.updated_at ? Math.floor((Date.now() - new Date(running.updated_at).getTime()) / 60000) : 0; const stuck = !!running && idleMin >= 5; const allDone = list.length > 0 && done === list.length; return <div className="mt-2 min-w-[260px]"><div className="flex items-center justify-between text-xs"><span className={allDone ? "text-emerald-300" : "text-amber-300"}>{allDone ? `全部處理完畢（${list.length} 篇）` : `處理中 ${done} / ${list.length} 篇（${pct}%）`}</span></div><div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-800" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className={`h-full transition-all ${allDone ? "bg-emerald-400" : stuck ? "bg-red-400" : "bg-amber-400"}`} style={{ width: `${pct}%` }} /></div>{!allDone && <p className={`mt-1 text-xs ${stuck ? "text-red-300" : "text-slate-400"}`}>{running ? (stuck ? `第 ${list.indexOf(running) + 1} 篇已 ${idleMin} 分鐘沒有更新，可能卡住，建議取消該篇或整批後重建` : `正在${STATUS_LABEL[running.status]}第 ${list.indexOf(running) + 1} 篇（運行中，約 ${idleMin} 分鐘前更新），頁面每 20 秒自動刷新`) : "排程器每分鐘處理一篇，等待下一輪，頁面每 20 秒自動刷新"}</p>}</div>; })()}</div><Button variant="danger" size="sm" onClick={() => void action({ batchId: batch.id, action: "cancel" })}>取消整批</Button></div><div className="mt-2 divide-y divide-slate-800">{jobs.filter((job) => job.batch_id === batch.id).map((job) => <div key={job.id} className="grid gap-2 py-3 text-xs md:grid-cols-[1fr_1fr_1fr_2fr_auto] md:items-center"><span>{BRANDS.find((brand) => brand.id === job.brand_id)?.name || job.brand_id}</span><span>{job.scheduled_at ? new Date(job.scheduled_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }) : "未指定時間"}</span><span>{STATUS_LABEL[job.status] || job.status}</span><span>{job.current_step}{job.error_reason ? `：${job.error_reason}` : ""}</span><span className="flex gap-2">{job.status === "scheduled" && !job.reviewed && <Button variant="secondary" size="sm" onClick={() => void action({ id: job.id, action: "reviewed" })}>標記已審</Button>}<Button variant="danger" size="sm" onClick={() => void action({ id: job.id, action: "cancel" })}>取消</Button></span><div className="md:col-span-5"><textarea value={draftChanges[job.id] ?? job.draft_content ?? ""} onChange={(e) => setDraftChanges((all) => ({ ...all, [job.id]: e.target.value }))} rows={5} className="w-full rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed" placeholder="生成或優化後的社群草稿" /><Button variant="secondary" size="sm" disabled={!draftChanges[job.id]} onClick={() => void saveDraft(job.id)} className="mt-2">保存修改並標記已審</Button></div></div>)}</div></div>)}{batches.length === 0 && <p className="text-sm text-slate-500">目前沒有批次。</p>}</div>
       </section>
     </div>
   </main>;

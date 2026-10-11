@@ -10,7 +10,7 @@ export interface PipelineEntry {
 }
 
 export const AUTO_PIPELINE_ENABLED = process.env.AUTO_PIPELINE_ENABLED === "true";
-export const PIPELINE_MAX_BATCH_SIZE = 12;
+export const PIPELINE_MAX_BATCH_SIZE = 21;
 export const PIPELINE_MIN_LEAD_MS = 30 * 60 * 1000;
 
 const BRAND_ALIASES: Record<string, PipelineBrand> = {

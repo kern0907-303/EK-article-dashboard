@@ -19,7 +19,7 @@ const parsed = parsePipelineBatch("品牌：NAS\n日期：2026-12-01 10:00\n第�
 t("解析品牌、日期與提示詞", parsed.entries.length === 2 && parsed.entries[0].brandId === "nas" && parsed.entries[0].scheduledAt !== null && parsed.entries[1].brandId === "abl");
 t("缺日期可以預覽並顯示警示", parsed.entries[1].scheduledAt === null && parsed.entries[1].warning.includes("缺少日期"));
 t("缺品牌保留警示", parsePipelineBatch("日期：2026-12-01 10:00\n提示詞").entries[0].warning.includes("缺少品牌"));
-t("超過 12 篇拒絕", parsePipelineBatch(Array.from({ length: 13 }, (_, i) => `品牌：NAS\n文案${i}`).join("\n=====\n")).error?.includes("最多 12 篇") === true);
+t("超過 21 篇拒絕", parsePipelineBatch(Array.from({ length: 22 }, (_, i) => `品牌：NAS\n文案${i}`).join("\n=====\n")).error?.includes("最多 21 篇") === true);
 const dated = applyDateRule(parsed.entries, "2026-10-07", [1, 3, 5], "10:30");
 t("日期規則依指定星期遞增", !!dated[1].scheduledAt?.startsWith("2026-10-07T02:30") && dated[0].scheduledAt === parsed.entries[0].scheduledAt);
 t("排程需至少 30 分鐘", isSafeToSchedule(new Date(Date.now() + 31 * 60_000).toISOString()) && !isSafeToSchedule(new Date(Date.now() + 29 * 60_000).toISOString()));
