@@ -8,6 +8,7 @@ export const TARGET_SIZES = {
   ig_story: { width: 1080, height: 1920 },
   fb_feed: { width: 1080, height: 1350 },
   threads: { width: 1080, height: 1350 },
+  fb_landscape: { width: 1200, height: 630 },
 };
 
 const SD15 = /sd[-_ ]?1[._-]?5|v1[-_.]5|sd15/i;

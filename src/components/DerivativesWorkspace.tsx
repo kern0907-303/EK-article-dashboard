@@ -10,8 +10,20 @@ import CardPanel from "@/components/CardPanel";
 type ParentArticle = { id: string; brandId: string; brandName: string; sourcePlatform: string; content: string };
 type Catalog = { specs: any[]; rules: any[]; posts: any[] };
 
+export const DERIVATIVES_IMPORT_KEY = "ek_derivatives_import";
+
 function readParents(): ParentArticle[] {
   const found: ParentArticle[] = [];
+  try {
+    // 自動流水線帶過來的文案：放在清單最前面，預設選取
+    const imported = localStorage.getItem(DERIVATIVES_IMPORT_KEY);
+    if (imported) {
+      const item = JSON.parse(imported);
+      const brand = BRANDS.find((entry) => entry.id === item.brandId);
+      const content = typeof item.content === "string" ? item.content.trim() : "";
+      if (brand && content) found.push({ id: `import:${item.jobId || "auto"}`, brandId: brand.id, brandName: brand.name, sourcePlatform: "自動流水線", content });
+    }
+  } catch {}
   try {
     for (const brand of BRANDS) {
       const raw = localStorage.getItem(`ai_team_dashboard_workspace_${brand.id}`);
@@ -64,6 +76,10 @@ export default function DerivativesWorkspace() {
   useEffect(() => {
     void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "讀取衍生設定失敗"));
     try { setProvider(localStorage.getItem("ai_provider_override") || "openai"); } catch {}
+    try {
+      const wanted = new URLSearchParams(window.location.search).get("platform");
+      if (wanted && (DERIVATIVE_PLATFORM_ORDER as readonly string[]).includes(wanted)) { setSelectedPlatforms([wanted]); setActivePlatform(wanted); }
+    } catch {}
   }, [refresh]);
 
   const parent = parents.find((item) => item.id === parentId);

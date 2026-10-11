@@ -19,7 +19,10 @@ export const CARD_SIZES = {
   ig_story: { label: "Instagram 限動與 Reels 9:16", width: 1080, height: 1920, insetTop: 250, insetBottom: 340, official: false },
   fb_feed: { label: "Facebook 動態 4:5", width: 1080, height: 1350, insetTop: 0, insetBottom: 0, official: true },
   threads: { label: "Threads 4:5", width: 1080, height: 1350, insetTop: 0, insetBottom: 0, official: true },
+  // Facebook 橫式 1200x630（1.91:1，Meta 連結貼文常用尺寸）。版面等比縮小：logo、頁尾、邊界、字級都用 compact 設定。official 標 false：本專案未讀取該數字的官方說明頁。
+  fb_landscape: { label: "Facebook 橫式 1.91:1", width: 1200, height: 630, insetTop: 0, insetBottom: 0, official: false, scale: 0.47, marginX: 72, fontSizes: [56, 52, 48, 44, 40, 36, 32, 28], footerFont: 22, footerSpacing: 5, footerOffset: 78 },
 };
+export const AUTO_PIPELINE_CARD_SIZE = "fb_landscape";
 export const DEFAULT_CARD_SIZE = "ig_feed";
 
 export function resolveCardSize(key) {
@@ -152,13 +155,18 @@ export function computeLayout(sizeKey, brandId, text) {
   const { width: W, height: H, insetTop, insetBottom } = size;
   const usableTop = insetTop;
   const usableH = H - insetTop - insetBottom;
-  const boxWidth = W - CARD_MARGIN_X * 2;
+  const marginX = size.marginX || CARD_MARGIN_X;
+  const scale = size.scale || 1;
+  const boxWidth = W - marginX * 2;
   const zoneTop = usableTop + Math.round(usableH * brand.zone[0]);
   const zoneBottom = usableTop + Math.round(usableH * brand.zone[1]);
-  const fit = fitText(text, boxWidth, zoneBottom - zoneTop);
+  const fit = fitText(text, boxWidth, zoneBottom - zoneTop, size.fontSizes || CARD_FONT_SIZES);
   const blockHeight = fit.lines.length * fit.lineHeight;
   const blockTop = Math.round(zoneTop + (zoneBottom - zoneTop - blockHeight) / 2);
-  const footerY = H - insetBottom - 173;
-  const logoBox = { ...brand.logoBox, y: brand.logoBox.y + insetTop };
-  return { size, brand, ...fit, boxWidth, blockTop, blockHeight, footerY, logoBox, marginX: CARD_MARGIN_X };
+  const footerY = H - insetBottom - (size.footerOffset || 173);
+  const lb = brand.logoBox;
+  const logoBox = scale === 1
+    ? { ...lb, y: lb.y + insetTop }
+    : { x: Math.round(marginX), y: Math.round(lb.y * scale) + insetTop, h: Math.round(lb.h * scale), ...(lb.w ? { w: Math.round(lb.w * scale) } : {}) };
+  return { size, brand, ...fit, boxWidth, blockTop, blockHeight, footerY, logoBox, marginX, footerFont: size.footerFont || 30, footerSpacing: size.footerSpacing || 8 };
 }

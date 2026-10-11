@@ -9,6 +9,24 @@ import { AUTO_PIPELINE_ENABLED, isSafeToSchedule } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, isQueueEnabled, supabaseHeaders } from "@/lib/publish-queue";
 import { PROMPT_VERSION } from "@/data/skills/genres";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { cardHeadline } from "@/lib/article-image.mjs";
+import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
+import { renderCardJpeg } from "@/lib/card-render-server";
+import { uploadPublicJpeg } from "@/lib/social-image-server";
+
+const CARD_BRAND_IDS: Record<string, string> = { nas: "brand_b_nas", abl: "brand_c_abl", i8: "brand_a_i8", erick: "personal_brand" };
+
+/** 用文案第一行做 FB 橫式品牌圖卡。失敗只回傳 null，不影響排程。 */
+async function makeCardUrl(brandId: string, content: string): Promise<{ url: string | null; error?: string }> {
+  try {
+    const headline = cardHeadline(content);
+    if (!headline) return { url: null, error: "找不到可放在圖卡上的標題" };
+    const jpeg = await renderCardJpeg({ brandId: CARD_BRAND_IDS[brandId] || "personal_brand", text: headline, index: 1, total: 1, sceneDataUri: null, size: AUTO_PIPELINE_CARD_SIZE });
+    return { url: await uploadPublicJpeg(jpeg, brandId) };
+  } catch (error) {
+    return { url: null, error: error instanceof Error ? error.message.slice(0, 120) : "圖卡失敗" };
+  }
+}
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.AUTO_PIPELINE_CRON_SECRET || "";
@@ -120,11 +138,15 @@ export async function POST(req: NextRequest) {
       } else {
         const target = getDefaultFacebookPage(job.brand_id);
         if (target.id === "fb_erick") throw new Error("此粉專不可排程");
+        const card = await makeCardUrl(job.brand_id, draft);
+        const callEnqueue = (withImage: boolean) => fetch(`${env.url}/rest/v1/rpc/enqueue_auto_pipeline_job`, {
+          method: "POST", headers: supabaseHeaders(env.key),
+          body: JSON.stringify({ p_job_id: job.id, p_content: draft, p_target_page: target.id, ...(withImage ? { p_image_url: card.url } : {}) }),
+        });
         const queueId = await retryOnce(async () => {
-          const queued = await fetch(`${env.url}/rest/v1/rpc/enqueue_auto_pipeline_job`, {
-            method: "POST", headers: supabaseHeaders(env.key),
-            body: JSON.stringify({ p_job_id: job.id, p_content: draft, p_target_page: target.id }),
-          });
+          let queued = await callEnqueue(Boolean(card.url));
+          // 尚未執行新版 SQL（函式沒有 p_image_url）時，退回舊呼叫方式，圖卡不附但文案照常排程
+          if (!queued.ok && card.url && [400, 404].includes(queued.status)) { card.url = null; card.error = "資料庫尚未更新支援圖卡"; queued = await callEnqueue(false); }
           if (!queued.ok) throw new Error(`建立社群排程失敗（${queued.status}）：${(await queued.text()).slice(0, 240)}`);
           return await queued.json() as string | null;
         });
@@ -133,6 +155,7 @@ export async function POST(req: NextRequest) {
           if (latest[0]?.status === "cancelled") return NextResponse.json({ success: true, processed: true, status: "cancelled" });
           throw new Error("建立社群排程失敗：資料庫拒絕無效或已取消的任務");
         }
+        await updateJob(job.id, { current_step: card.url ? "已排程，未審（附品牌圖卡）" : `已排程，未審（圖卡失敗，改用圖庫：${card.error || "未知原因"}）` });
       }
       await pipelineDb("auto_pipeline_batches", `id=eq.${encodeURIComponent(job.batch_id)}`, { method: "PATCH", body: JSON.stringify({ status: "running", updated_at: new Date().toISOString() }) });
       try { await sendBatchNotice(job.batch_id); } catch (notificationError) { console.error("Auto pipeline batch finalization/notification failed:", notificationError); }

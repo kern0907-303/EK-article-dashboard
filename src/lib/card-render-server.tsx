@@ -80,7 +80,7 @@ export async function renderCardJpeg(opts: { brandId: string; text: string; inde
           <div key={i} style={{ display: "flex", height: layout.lineHeight, lineHeight: `${layout.lineHeight}px`, whiteSpace: "pre" }}>{line}</div>
         ))}
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: layout.footerY, display: "flex", justifyContent: "center", color: footerColor, fontFamily: "NotoTCLight", fontWeight: 300, fontSize: 30, letterSpacing: 8 }}>
+      <div style={{ position: "absolute", left: 0, right: 0, top: layout.footerY, display: "flex", justifyContent: "center", color: footerColor, fontFamily: "NotoTCLight", fontWeight: 300, fontSize: layout.footerFont, letterSpacing: layout.footerSpacing }}>
         {brand.label}
       </div>
       {total > 1 ? (

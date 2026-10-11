@@ -60,7 +60,7 @@ test("四個品牌：文字區內文字對比至少 6.5、頁尾對比至少 4.5
 
 test("尺寸預設：寬 1080、Instagram 貼文比例在官方 1.91:1 到 3:4 之內，限動 9:16", () => {
   for (const [key, s] of Object.entries(CARD_SIZES)) {
-    assert.equal(s.width, 1080, key);
+    assert.equal(s.width, key === "fb_landscape" ? 1200 : 1080, key);
     if (key.startsWith("ig_") && key !== "ig_story") {
       const ar = s.width / s.height;
       assert.ok(ar <= 1.91 && ar >= 0.75, `${key} 長寬比 ${ar}`);
