@@ -20,6 +20,9 @@ t("解析品牌、日期與提示詞", parsed.entries.length === 2 && parsed.ent
 t("缺日期可以預覽並顯示警示", parsed.entries[1].scheduledAt === null && parsed.entries[1].warning.includes("缺少日期"));
 t("缺品牌保留警示", parsePipelineBatch("日期：2026-12-01 10:00\n提示詞").entries[0].warning.includes("缺少品牌"));
 t("超過 21 篇拒絕", parsePipelineBatch(Array.from({ length: 22 }, (_, i) => `品牌：NAS\n文案${i}`).join("\n=====\n")).error?.includes("最多 21 篇") === true);
+const marked = parsePipelineBatch("【初八信息顧問 I8｜批次提示詞】\n\n品牌：初八信息顧問（I8）。發文平台：Facebook。\n共同規則內容\n\n【第一階段｜被懂得（第 1 到 2 篇）】\n這一段只寫處境。\n\n===第1篇===\n主題：甲\n\n===第2篇===\n主題：乙\n\n【第二階段｜被信任（第 3 篇）】\n這一段談方式。\n\n===第3篇===\n主題：丙");
+t("===第N篇=== 格式切成 3 篇並帶入共同規則與品牌", marked.entries.length === 3 && marked.entries.every((e) => e.brandId === "i8" && e.prompt.includes("共同規則內容")) && marked.entries[0].prompt.includes("主題：甲") && !marked.entries[0].prompt.includes("主題：乙"));
+t("階段標題不會混進上一篇", !marked.entries[1].prompt.includes("第二階段") && !marked.entries[1].prompt.includes("這一段談方式"));
 const dated = applyDateRule(parsed.entries, "2026-10-07", [1, 3, 5], "10:30");
 t("日期規則依指定星期遞增", !!dated[1].scheduledAt?.startsWith("2026-10-07T02:30") && dated[0].scheduledAt === parsed.entries[0].scheduledAt);
 t("排程需至少 30 分鐘", isSafeToSchedule(new Date(Date.now() + 31 * 60_000).toISOString()) && !isSafeToSchedule(new Date(Date.now() + 29 * 60_000).toISOString()));

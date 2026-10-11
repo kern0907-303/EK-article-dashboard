@@ -34,7 +34,43 @@ function parseLocalDate(value: string): string | null {
   return new Date(local.getTime() - 8 * 60 * 60 * 1000).toISOString();
 }
 
+const ARTICLE_MARKER = /^[ \t]*={3,}[ \t]*第[ \t]*\d+[ \t]*篇[ \t]*={3,}[ \t]*$/gm;
+
+/** 從共同規則文字判斷品牌，找不到回傳 null。 */
+function detectBrandFromText(text: string): PipelineBrand | null {
+  const line = text.match(/^品牌\s*[：:]\s*(.+)$/m)?.[1] || "";
+  const hay = line || text.slice(0, 600);
+  if (/\bI8\b|初八/i.test(hay)) return "i8";
+  if (/\bNAS\b|生命數字|生命靈數|平衡空間/i.test(hay)) return "nas";
+  if (/\bABL\b|信息場|量子調頻/i.test(hay)) return "abl";
+  return null;
+}
+
+/**
+ * 另一種常見格式：開頭是「共同規則」，後面每篇用 ===第N篇=== 隔開。
+ * 每篇的提示詞 = 共同規則 + 該篇內容；品牌取自共同規則；階段標題（【第一階段｜…】）會剔除。
+ */
+function parseMarkedBatch(text: string): { entries: PipelineEntry[]; error?: string } | null {
+  const parts = text.split(ARTICLE_MARKER);
+  if (parts.length < 2) return null;
+  const preamble = parts[0].trim();
+  const articles = parts.slice(1).map((part) => part.replace(/\n[ \t]*【第[一二三四五六七八九十\d]+階段[^\n]*[\s\S]*$/, "").trim()).filter(Boolean);
+  if (articles.length > PIPELINE_MAX_BATCH_SIZE) return { entries: [], error: `單批最多 ${PIPELINE_MAX_BATCH_SIZE} 篇，目前 ${articles.length} 篇。` };
+  const sharedBrand = detectBrandFromText(preamble);
+  const entries = articles.map((article) => {
+    const warning: string[] = ["缺少日期"];
+    const own = article.match(/^品牌\s*[：:]\s*(.+)$/m);
+    const brandId = (own ? parseBrandLine(own[1]) : null) || sharedBrand;
+    if (!brandId) warning.unshift("缺少品牌");
+    const prompt = `${preamble ? `${preamble}\n\n` : ""}【本篇】\n${article}`;
+    return { brandId, scheduledAt: null, prompt, warning };
+  });
+  return { entries };
+}
+
 export function parsePipelineBatch(text: string, source: BatchSource = "manual"): { entries: PipelineEntry[]; error?: string } {
+  const marked = parseMarkedBatch(text);
+  if (marked) return marked;
   const chunks = text.split(/^\s*=====$\s*$/m).map((part) => part.trim()).filter(Boolean);
   if (chunks.length > PIPELINE_MAX_BATCH_SIZE) return { entries: [], error: `單批最多 ${PIPELINE_MAX_BATCH_SIZE} 篇，目前 ${chunks.length} 篇。` };
   const entries = chunks.map((chunk) => {
@@ -57,6 +93,7 @@ export function parsePipelineBatch(text: string, source: BatchSource = "manual")
     } else warning.push("缺少日期");
     const prompt = lines.slice(cursor).join("\n").trim();
     if (!prompt) warning.push("缺少提示詞");
+    if (chunks.length === 1 && (text.match(/第\s*\d+\s*篇/g) || []).length >= 3) warning.push("內文看起來有多篇，但分隔格式無法辨識，只偵測到 1 篇（請用單獨一行 ===== 或 ===第N篇=== 分隔）");
     return { brandId, scheduledAt, prompt, warning };
   });
   if (source !== "research" && entries.length === 0) return { entries, error: "請貼上至少一篇，篇與篇之間以單獨一行 ===== 分隔。" };
