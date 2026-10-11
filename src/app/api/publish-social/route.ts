@@ -33,12 +33,14 @@ export async function POST(req: NextRequest) {
     if (platform !== "threads" && platform !== "instagram") {
       return NextResponse.json({ error: "platform 必須是 threads 或 instagram" }, { status: 400 });
     }
-    if (platform === "instagram") {
-      // 圖片必須是儀表板自己生成並存放的，不接受任意網址
-      const prefix = publicImagePrefix();
-      if (!prefix || typeof imageUrl !== "string" || !imageUrl.startsWith(prefix)) {
-        return NextResponse.json({ error: "Instagram 發文必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
-      }
+    // 圖片必須是儀表板自己生成並存放的，不接受任意網址。Instagram 一定要有圖；Threads 有圖就帶圖，沒有就發純文字。
+    const prefix = publicImagePrefix();
+    const hasImage = typeof imageUrl === "string" && imageUrl.length > 0;
+    if (platform === "instagram" && (!prefix || !hasImage || !imageUrl.startsWith(prefix))) {
+      return NextResponse.json({ error: "Instagram 發文必須使用儀表板生成的配圖，請先按「生成配圖」" }, { status: 400 });
+    }
+    if (platform === "threads" && hasImage && (!prefix || !imageUrl.startsWith(prefix))) {
+      return NextResponse.json({ error: "配圖必須是儀表板生成的圖片，請重新生成配圖" }, { status: 400 });
     }
 
     const brandKey = brandKeyFromId(String(brandId));
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
         platform,
         brand: brandKey,
         text: content,
-        imageUrl: platform === "instagram" ? imageUrl : undefined,
+        imageUrl: hasImage ? imageUrl : undefined,
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
