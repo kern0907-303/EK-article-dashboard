@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
+import { CARD_SIZES } from "@/lib/card-layout.mjs";
+import { comfyWaitText, runComfyJob } from "@/lib/image-jobs-client";
 import { 
   FileText, Network, Search, BarChart3, 
   Plus, Trash2, Eye, Edit2, Check,
@@ -472,6 +474,9 @@ const SocialTabContent = memo(function SocialTabContent({
   const [igImageUrl, setIgImageUrl] = useState<string | null>(null);
   const [igImagePrompt, setIgImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageEngine, setImageEngine] = useState<"openai" | "comfy">("openai");
+  const [imageSizeKey, setImageSizeKey] = useState<string>("ig_feed");
+  const [comfyNote, setComfyNote] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [platform, setPlatform] = useState(activePlatform || "threads");
@@ -1367,7 +1372,15 @@ const SocialTabContent = memo(function SocialTabContent({
       return;
     }
     setIsGeneratingImage(true);
+    setComfyNote("");
     try {
+      if (imageEngine === "comfy") {
+        // 本機 ComfyUI：免費，不呼叫 LLM。Mac mini 沒開機時會排隊，開機後補做。
+        const result = await runComfyJob({ brandId: pubBrandId, sizeKey: imageSizeKey, purpose: "article" }, (p) => setComfyNote(comfyWaitText(p)));
+        setIgImageUrl(result.url);
+        setIgImagePrompt("本機 ComfyUI 生成的情境底圖（圖上沒有文字）");
+        return;
+      }
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1384,6 +1397,7 @@ const SocialTabContent = memo(function SocialTabContent({
       alert(`❌ 生成配圖失敗：${error?.message || "請稍後再試"}`);
     } finally {
       setIsGeneratingImage(false);
+      setComfyNote("");
     }
   };
 
@@ -2064,6 +2078,15 @@ const SocialTabContent = memo(function SocialTabContent({
             {platform === "instagram" && (
               showSocialPicker ? socialPickerBlock("instagram") : (
                 <>
+                  <select value={imageEngine} onChange={(e) => setImageEngine(e.target.value as "openai" | "comfy")} disabled={isGeneratingImage} aria-label="配圖生成方式" className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200">
+                    <option value="openai">AI 情境圖（OpenAI，會花額度）</option>
+                    <option value="comfy">本機 ComfyUI（免費，Mac mini 要開機）</option>
+                  </select>
+                  {imageEngine === "comfy" && (
+                    <select value={imageSizeKey} onChange={(e) => setImageSizeKey(e.target.value)} disabled={isGeneratingImage} aria-label="配圖尺寸" className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200">
+                      {["ig_feed", "ig_grid34", "ig_square"].map((key) => <option key={key} value={key}>{(CARD_SIZES as Record<string, { label: string }>)[key].label}</option>)}
+                    </select>
+                  )}
                   <Button
                     variant="secondary"
                     loading={isGeneratingImage}
@@ -2071,7 +2094,7 @@ const SocialTabContent = memo(function SocialTabContent({
                     onClick={() => handleGenerateImage()}
                     icon={<Sparkles className="w-3.5 h-3.5" />}
                   >
-                    {isGeneratingImage ? "生成中，約 30 秒..." : igImageUrl ? "重新生成配圖" : "生成配圖"}
+                    {isGeneratingImage ? (imageEngine === "comfy" ? "本機生成中..." : "生成中，約 30 秒...") : igImageUrl ? "重新生成配圖" : "生成配圖"}
                   </Button>
                   <Button
                     variant="primary"
@@ -2090,6 +2113,7 @@ const SocialTabContent = memo(function SocialTabContent({
                   >
                     排程
                   </Button>
+                  {comfyNote && <span className="text-[11px] text-amber-200/90">{comfyNote}</span>}
                   {!igImageUrl && <span className="text-[11px] text-slate-500">請先生成配圖並確認預覽，才能發布或排程</span>}
                 </>
               )

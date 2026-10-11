@@ -1,0 +1,13 @@
+{
+  "name": "ek-mac-image-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mac mini 上的生圖小程式：聽 Supabase Realtime 的新單，叫本機 ComfyUI 生底圖，上傳後回報。",
+  "scripts": { "start": "node worker.mjs" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "sharp": "^0.33.0"
+  },
+  "engines": { "node": ">=20.6" }
+}

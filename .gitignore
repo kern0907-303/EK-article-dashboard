@@ -63,3 +63,6 @@ operations/logs/
 
 # 範本檔要進版控（需置於所有 .env* 規則之後才會生效）
 !.env.local.example
+
+# Mac mini 生圖小程式的設定範本要進版控
+!mac-worker/.env.example
