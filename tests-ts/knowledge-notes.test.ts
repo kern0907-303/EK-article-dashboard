@@ -74,6 +74,41 @@ const longContent = [
 const excerpt = selectRelevantKnowledgeContent(longContent, "情緒起伏與煩躁", 20_000);
 t("超過 20,000 字時選取相關章節並限制上限", [...excerpt].length <= 20_000 && excerpt.includes("情緒波動"));
 
+const unit = (id: number, body: string) => `### [U${String(id).padStart(4, "0")}] 單元 ${id}\n#### 核心論點\n${body}`;
+const largeIndexNote = [
+  "## 全書索引\n" + "索引項目完整說明。".repeat(1_400),
+  "## 單元索引\nU0001、U0002、U0003",
+  "## 單元內容",
+  unit(1, "第一單元提供可用原理。".repeat(500)),
+  unit(2, "第二單元提供可用情境。".repeat(500)),
+  unit(3, "第三單元提供可用做法。".repeat(500)),
+].join("\n\n");
+const largeIndexExcerpt = selectRelevantKnowledgeContent(largeIndexNote, "單元原理情境", 30_000);
+const firstUnitOffset = largeIndexExcerpt.search(/^#{1,6}\s+\[U\d{4}\]/m);
+const returnedIndex = firstUnitOffset >= 0 ? largeIndexExcerpt.slice(0, firstUnitOffset).trim() : "";
+t("大索引限制在 5,000 字元並附截斷標記", [...returnedIndex].length <= 5_000 && returnedIndex.endsWith("索引已截斷"));
+t("大索引仍保留至少兩個完整單元標題", [...largeIndexExcerpt.matchAll(/^#{1,6}\s+\[U\d{4}\]/gm)].length >= 2);
+t("即使呼叫者傳入更大的額度，總回傳仍不超過 20,000 字元", [...largeIndexExcerpt].length <= 20_000);
+
+const noIndexNote = ["## 單元內容", unit(1, "選擇與提示能改善決策。".repeat(80)), unit(2, "預設選項會影響選擇。".repeat(80)), unit(3, "比較方案有助於行動。".repeat(80))].join("\n\n");
+const noIndexExcerpt = selectRelevantKnowledgeContent(noIndexNote, "選擇決策", 20_000);
+t("沒有索引時仍以全文額度回傳至少兩個單元", !/^#{1,6}\s+全書索引\s*$/m.test(noIndexExcerpt) && [...noIndexExcerpt.matchAll(/^#{1,6}\s+\[U\d{4}\]/gm)].length >= 2);
+
+const longUnitNote = [
+  "## 全書索引\n索引短說明。",
+  "## 單元內容",
+  unit(1, "完整句子甲。".repeat(2_000)),
+  unit(2, "完整句子乙。".repeat(2_000)),
+  unit(3, "完整句子丙。".repeat(2_000)),
+].join("\n\n");
+const longUnitExcerpt = selectRelevantKnowledgeContent(longUnitNote, "完整句子甲乙", 20_000);
+const longUnitOne = longUnitExcerpt.split(/^#{1,6}\s+\[U0002\]/m)[0].trimEnd();
+t("過長單元只在完整句末截斷，仍帶回第二個單元", longUnitOne.endsWith("。") && [...longUnitExcerpt.matchAll(/^#{1,6}\s+\[U\d{4}\]/gm)].length >= 2);
+t("含過長單元的結果也不超過 20,000 字元", [...longUnitExcerpt].length <= 20_000);
+
+const oldSourceNote = "# Source Note｜來源筆記\n\n## 1. Metadata\n\n## 2. One-Sentence Core\n\n" + "舊格式內容完整保留。\n\n".repeat(30);
+t("舊 Source Note 格式在上限內仍原樣回傳", selectRelevantKnowledgeContent(oldSourceNote, "書名", 20_000) === oldSourceNote.trim());
+
 const validCitation = applyValidatedKnowledgeCitation("陶德·羅斯在《黑馬思維》提出一個觀點。", "黑馬思維", "陶德·羅斯", record, true);
 t("引用句型與書名、作者完全取自已讀入的中文欄位", validCitation.valid && validCitation.content.endsWith("出處：文中引用的觀點，出自陶德·羅斯所著《黑馬思維》。故事情境與其他內容為艾瑞克的整理與詮釋。"));
 const englishCitationNote = { title_zh: "EQ", author_zh: "Isabella Price", zh_status: "confirmed" };

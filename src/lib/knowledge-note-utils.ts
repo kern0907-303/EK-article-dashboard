@@ -45,10 +45,136 @@ function termsForTopic(topic: string): string[] {
   return [...terms].filter((term) => term.length >= 2);
 }
 
-/** 以章節為單位做本機相關度排序，完整保留入選章節原文且限制總長度。 */
+const KNOWLEDGE_CONTENT_MAX_CHARS = 20_000;
+const KNOWLEDGE_INDEX_MAX_CHARS = 5_000;
+const INDEX_HEADING = /^(?:全書索引|整體索引|全書知識索引|knowledge index|book index)(?:\s|[（(：:]|$)/iu;
+const UNIT_HEADING = /^#{1,6}\s+\[U\d{4}\](?:\s|$)/u;
+
+function countChars(text: string): number {
+  return [...text].length;
+}
+
+function markdownHeadings(text: string) {
+  return [...text.matchAll(/^(#{1,6})\s+([^\n]+)(?:\n|$)/gm)].map((match) => ({
+    index: match.index ?? 0,
+    level: match[1].length,
+    title: match[2].trim(),
+    text: match[0],
+  }));
+}
+
+function knowledgeIndexSection(content: string): string {
+  const headings = markdownHeadings(content);
+  const index = headings.find((heading) => INDEX_HEADING.test(heading.title));
+  if (!index) return "";
+  const next = headings.find((heading) => heading.index > index.index && heading.level <= index.level);
+  return content.slice(index.index, next?.index ?? content.length).trim();
+}
+
+function knowledgeUnitSections(content: string): string[] {
+  const allHeadings = markdownHeadings(content);
+  const headings = allHeadings.filter((heading) => UNIT_HEADING.test(heading.text.trim()));
+  return headings.map((heading, index) => {
+    const nextUnit = headings[index + 1];
+    const nextPeer = allHeadings.find((candidate) =>
+      candidate.index > heading.index && candidate.level <= heading.level && candidate.index < (nextUnit?.index ?? content.length)
+    );
+    const end = Math.min(nextUnit?.index ?? content.length, nextPeer?.index ?? content.length);
+    return content.slice(heading.index, end).trim();
+  }).filter(Boolean);
+}
+
+function truncateIndexSection(section: string, maxChars: number): string {
+  if (countChars(section) <= maxChars) return section;
+  const marker = "索引已截斷";
+  const markerWithBreak = `\n${marker}`;
+  const prefixLength = Math.max(0, maxChars - countChars(markerWithBreak));
+  return `${[...section].slice(0, prefixLength).join("").trimEnd()}${markerWithBreak}`;
+}
+
+/** 截在完整句末；無完整句時只保留標題，避免切斷正文句子。 */
+function truncateUnitSection(section: string, maxChars: number): string {
+  if (countChars(section) <= maxChars) return section;
+  const heading = section.match(/^#{1,6}\s+[^\n]+/u)?.[0] ?? "";
+  if (!heading || countChars(heading) > maxChars) return "";
+  const chars = [...section];
+  const prefix = chars.slice(0, maxChars).join("");
+  const endings = [...prefix.matchAll(/[。！？!?；;](?:[」』”’）)]*)/gu)];
+  const lastEnding = endings[endings.length - 1];
+  if (lastEnding?.index !== undefined) {
+    return prefix.slice(0, lastEnding.index + lastEnding[0].length).trimEnd();
+  }
+  return heading;
+}
+
+function minimumUnitSectionChars(section: string): number {
+  const heading = section.match(/^#{1,6}\s+[^\n]+/u)?.[0] ?? "";
+  const firstSentence = section.match(/[。！？!?；;](?:[」』”’）)]*)/u);
+  if (firstSentence?.index !== undefined) return firstSentence.index + firstSentence[0].length;
+  return countChars(heading);
+}
+
+function selectStructuredKnowledgeContent(content: string, topic: string, maxChars: number): string {
+  const index = knowledgeIndexSection(content);
+  const units = knowledgeUnitSections(content);
+  const indexText = index ? truncateIndexSection(index, Math.min(KNOWLEDGE_INDEX_MAX_CHARS, maxChars)) : "";
+  const unitRoom = Math.max(0, maxChars - countChars(indexText) - (indexText ? 2 : 0));
+  if (!unitRoom || !units.length) return indexText;
+
+  const terms = termsForTopic(topic);
+  const ranked = units.map((text, index) => ({
+    text,
+    index,
+    score: terms.reduce((score, term) => score + (text.toLowerCase().includes(term) ? 1 : 0), 0),
+  })).sort((a, b) => b.score - a.score || a.index - b.index);
+  const guaranteedCount = Math.min(2, ranked.length);
+  const separatorBudget = Math.max(0, (guaranteedCount - 1) * 2);
+  const initialPayloadBudget = Math.max(0, unitRoom - separatorBudget);
+  const selected: string[] = [];
+
+  if (guaranteedCount === 2) {
+    const firstFullLength = countChars(ranked[0].text);
+    const secondMinimumLength = minimumUnitSectionChars(ranked[1].text);
+    if (firstFullLength + secondMinimumLength + 2 <= unitRoom) {
+      selected.push(ranked[0].text);
+      const second = truncateUnitSection(ranked[1].text, unitRoom - firstFullLength - 2);
+      if (second) selected.push(second);
+    } else {
+      const firstBudget = Math.ceil(initialPayloadBudget / 2);
+      const secondBudget = Math.floor(initialPayloadBudget / 2);
+      const first = truncateUnitSection(ranked[0].text, firstBudget);
+      const second = truncateUnitSection(ranked[1].text, secondBudget);
+      if (first) selected.push(first);
+      if (second) selected.push(second);
+    }
+  } else {
+    const first = truncateUnitSection(ranked[0].text, initialPayloadBudget);
+    if (first) selected.push(first);
+  }
+
+  let remaining = Math.max(0, unitRoom - countChars(selected.join("\n\n")));
+  for (const unit of ranked.slice(guaranteedCount)) {
+    if (remaining < 1) break;
+    const separator = selected.length ? 2 : 0;
+    const available = remaining - separator;
+    if (available < 1) break;
+    const next = truncateUnitSection(unit.text, available);
+    if (!next) continue;
+    selected.push(next);
+    remaining -= countChars(next) + separator;
+  }
+  const parts = [indexText, ...selected].filter(Boolean);
+  return parts.join("\n\n").trim();
+}
+
+/** 先保留書籍索引，再依查詢相關度選取單元，限制總長並維持句界。 */
 export function selectRelevantKnowledgeContent(content: string, topic: string, maxChars = 20_000): string {
   const normalized = content.replace(/\r\n/g, "\n").trim();
-  if ([...normalized].length <= maxChars) return normalized;
+  const limit = Math.max(0, Math.min(Math.floor(maxChars), KNOWLEDGE_CONTENT_MAX_CHARS));
+  if (/^#{1,6}\s+\[U\d{4}\]/m.test(normalized)) {
+    return selectStructuredKnowledgeContent(normalized, topic, limit);
+  }
+  if (countChars(normalized) <= limit) return normalized;
   const sections = normalized.split(/(?=^#{1,6}\s+[^\n]+\n)/gm).filter((part) => part.trim());
   const chunks = sections.length > 1 ? sections : normalized.split(/\n\s*\n/g).filter((part) => part.trim());
   const terms = termsForTopic(topic);
@@ -57,14 +183,14 @@ export function selectRelevantKnowledgeContent(content: string, topic: string, m
   const chosen: typeof ranked = [];
   let used = 0;
   for (const section of ranked) {
-    if (used >= maxChars) break;
-    const remaining = maxChars - used;
+    if (used >= limit) break;
+    const remaining = limit - used;
     const clipped = [...section.text].slice(0, remaining).join("");
     if (!clipped) continue;
     chosen.push({ ...section, text: clipped });
     used += [...clipped].length + 2;
   }
-  return chosen.sort((a, b) => a.index - b.index).map((section) => section.text).join("\n\n").slice(0, maxChars).trim();
+  return chosen.sort((a, b) => a.index - b.index).map((section) => section.text).join("\n\n").slice(0, limit).trim();
 }
 
 export function applyValidatedKnowledgeCitation(
