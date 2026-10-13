@@ -848,13 +848,32 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
 `;
     }
 
-    const response = await runQueryWithFallback(adaptPrompt, config, true, "anthropic");
-    const result = robustJSONParse(response);
+    // 平台字數上限（與看板的檢查一致，用總字數含換行）。超過就帶著實際字數要求重寫，最多重試 3 次。
+    const limit = targetPlatform === "threads" ? 500 : targetPlatform === "instagram" ? 2200 : 0;
+    const runAdapt = async (extra: string): Promise<string> => {
+      const response = await runQueryWithFallback(adaptPrompt + extra, config, true, "anthropic");
+      const result = robustJSONParse(response);
+      return stripMarkdown(result.social_copy || "");
+    };
+    // 改寫結果一律清成純文字（AI 偶爾仍會帶出 ** ## 等符號，Facebook / Threads / IG 都不吃）
+    let best = await runAdapt("");
+    if (limit > 0) {
+      const target = Math.floor(limit * 0.85);
+      for (let attempt = 0; attempt < 3 && best.length > limit; attempt++) {
+        const retry = await runAdapt(`\n\n【字數重寫】上一版共 ${best.length} 字（含換行與標籤），超過 ${targetPlatform.toUpperCase()} 上限 ${limit} 字。請重寫，總字數控制在 ${target} 字以內（含換行、標籤），只留最核心的一個重點與一個畫面，刪掉次要論點，不要用省略號或截斷收尾。上一版供你壓縮：\n"""\n${best}\n"""`);
+        if (retry && retry.length < best.length) best = retry;
+      }
+      if (best.length > limit) {
+        // 最後保險：從最後一個句號或換行處收尾，不切斷句子
+        const cut = best.slice(0, limit);
+        const idx = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("\n"), cut.lastIndexOf("！"), cut.lastIndexOf("？"));
+        best = idx > limit * 0.6 ? cut.slice(0, idx + 1).trim() : cut.trim();
+      }
+    }
     return {
       content: "",
       dispatchData: {
-        // 改寫結果一律清成純文字（AI 偶爾仍會帶出 ** ## 等符號，Facebook / Threads / IG 都不吃）
-        social_copy: stripMarkdown(result.social_copy || "")
+        social_copy: best
       }
     };
   }
