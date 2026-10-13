@@ -1139,7 +1139,7 @@ const SocialTabContent = memo(function SocialTabContent({
    * 若目前內容已經上架過（且沒有再改動）就直接沿用，避免重複上架同一篇。
    * 回傳 null 表示使用者取消或失敗（訊息已處理）。
    */
-  const ensureArticleId = async (force = false, resolvedContent?: string): Promise<string | null> => {
+  const ensureArticleId = async (force = false, resolvedContent?: string, extra?: { aeoSchema?: string; aeoFaq?: string }): Promise<string | null> => {
     const webContent = resolvedContent ?? getWebContent();
     if (webContent === null) return null;
     if (publishedArticle && publishedArticle.content === webContent && publishedArticle.image === (igImageUrl || "")) {
@@ -1153,8 +1153,8 @@ const SocialTabContent = memo(function SocialTabContent({
         brandId: pubBrandId,
         brandName: getBrandOrProjectName(brandId),
         content: webContent,
-        aeoSchema: aeoSchema || null,
-        aeoFaq: aeoFaq ? stripMarkdown(aeoFaq) : null,
+        aeoSchema: (extra?.aeoSchema ?? aeoSchema) || null,
+        aeoFaq: (extra?.aeoFaq ?? aeoFaq) ? stripMarkdown((extra?.aeoFaq ?? aeoFaq) as string) : null,
         imageUrl: igImageUrl || undefined,
         force
       })
@@ -1163,7 +1163,7 @@ const SocialTabContent = memo(function SocialTabContent({
 
     if (response.status === 422 && resData.blocked) {
       if (confirmGuardrail(resData)) {
-        return ensureArticleId(true, webContent);
+        return ensureArticleId(true, webContent, extra);
       }
       return null;
     }
@@ -1178,6 +1178,67 @@ const SocialTabContent = memo(function SocialTabContent({
     setPublishedArticle({ id: String(newId), content: webContent, image: igImageUrl || "" });
     fetchHistory();
     return String(newId);
+  };
+
+  /**
+   * 排程前自動備好官網版本：沒有官網文章（或社群貼文改過）就由社群文案產生，
+   * 再跑一次 SEO、AEO、GEO 優化並套用。已經備好的不重做。
+   * 回傳 null 代表不能自動備（例如本地模擬大腦），由呼叫端退回原本流程。
+   */
+  const prepareWebForSchedule = async (): Promise<{ content: string; aeoSchema: string; aeoFaq: string } | null> => {
+    const effectiveBrand = resolveEffectiveBrandId(brandId) || brandId;
+    const brandName = getBrandOrProjectName(brandId);
+    const sourceNow = webSourceCopy ?? val;
+    let article = hasWebArticle(webArticle) && !isArticleStale(webArticleMeta, sourceNow) ? (webArticle as string) : "";
+    let faq = aeoFaq || "";
+    let schema = aeoSchema || "";
+    let generated = false;
+    if (!article) {
+      const res = await fetch("/api/web-article", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ socialCopy: val, brandId: effectiveBrand, brandName, keywords: seoKeywords || [], brandGuidelines: getMergedBrandGuidelines(brandId), aiProvider })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) throw new Error(json.error || "自動產生官網文章失敗");
+      if (json.data.is_local_check) return null;
+      article = json.data.article as string;
+      faq = "";
+      schema = "";
+      generated = true;
+      await saveWorkspace(brandId, {
+        web_article: article,
+        web_article_meta: { generated_at: Date.now(), from_hash: textHash(val), from_platform: activePlatform || "threads" },
+        aeo_faq: "",
+        aeo_schema: ""
+      });
+    }
+    if (generated || !faq || !schema) {
+      const res = await fetch("/api/seo/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: article, brandId: effectiveBrand, brandName, keywords: seoKeywords || [], aiProvider, faqText: faq, schemaText: schema })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) throw new Error(json.error || "自動 SEO 優化失敗");
+      const r = json.data;
+      if (r.is_local_check) return null;
+      if (r.guardrail_violations && r.guardrail_violations.length > 0) {
+        // 優化版含紅線詞就不套用，保留未優化的官網文章，不擋排程
+        console.warn("[schedule] 優化版含品牌紅線詞，略過套用：", r.guardrail_violations);
+      } else {
+        article = r.optimized_content;
+        faq = faqToPlainText(r.faq);
+        schema = r.faq.length ? buildFaqJsonLd(r.faq, r.title, r.meta_description) : "";
+        await saveWorkspace(brandId, {
+          web_article: article,
+          web_article_meta: { generated_at: Date.now(), from_hash: textHash(val), from_platform: activePlatform || "threads", edited_at: Date.now() },
+          aeo_faq: faq,
+          aeo_schema: schema
+        });
+      }
+    }
+    return { content: article, aeoSchema: schema, aeoFaq: faq };
   };
 
   const handleSchedule = async (targetTime: string, force = false) => {
@@ -1209,7 +1270,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (
       !force &&
       !window.confirm(
-        `排程會「現在」先把官網文章上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
+        `排程會「現在」先自動產生官網文章並完成 SEO、AEO、GEO 優化，上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
       )
     ) {
       return;
@@ -1217,7 +1278,15 @@ const SocialTabContent = memo(function SocialTabContent({
 
     setIsScheduling(true);
     try {
-      const articleId = await ensureArticleId();
+      let prepared: Awaited<ReturnType<typeof prepareWebForSchedule>> = null;
+      try {
+        prepared = await prepareWebForSchedule();
+      } catch (prepError: any) {
+        throw new Error(`官網文章自動優化失敗，尚未排程：${prepError?.message || "未知錯誤"}`);
+      }
+      const articleId = prepared
+        ? await ensureArticleId(false, prepared.content, { aeoSchema: prepared.aeoSchema, aeoFaq: prepared.aeoFaq })
+        : await ensureArticleId();
       if (!articleId) return;
 
       const response = await fetch("/api/publish-queue", {

@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [activeBrandId, setActiveBrandId] = useState<string>("brand_a_i8");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [currentMode, setCurrentMode] = useState<"brand" | "project">("brand");
-  const [aiProvider, setAiProvider] = useState<string>("mock");
+  const [aiProvider, setAiProvider] = useState<string>("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "board">("chat");
   const [projectsCache, setProjectsCache] = useState<any[]>([]);
@@ -31,7 +31,7 @@ export default function DashboardPage() {
       if (brand && BRANDS.some((item) => item.id === brand)) { setActiveBrandId(brand); setCurrentMode("brand"); setActiveTab("board"); }
     } catch {}
     const saved = localStorage.getItem("ai_provider_override");
-    if (saved) {
+    if (saved !== null) {
       setAiProvider(saved);
     }
 
@@ -99,7 +99,8 @@ export default function DashboardPage() {
               className="min-w-0 max-w-[28vw] truncate bg-transparent text-[10px] sm:max-w-none sm:text-xs font-extrabold text-slate-100 focus:outline-none cursor-pointer pr-1"
               suppressHydrationWarning
             >
-              <option value="mock" className="bg-slate-950 text-slate-200">本地模擬 (Mock)</option>
+              <option value="" className="bg-slate-950 text-slate-200">伺服器預設（環境變數）</option>
+              <option value="mock" className="bg-slate-950 text-slate-200">本地模擬 (Mock，不產生真文章)</option>
               <option value="openai:gpt-6.1-sol" className="bg-slate-950 text-slate-200">OpenAI (GPT-6.1 Sol)</option>
               <option value="openai:gpt-6-luna" className="bg-slate-950 text-slate-200">OpenAI (GPT-6 Luna，最省)</option>
               <option value="openai" className="bg-slate-950 text-slate-200">OpenAI (環境變數預設模型)</option>
@@ -117,6 +118,12 @@ export default function DashboardPage() {
           <DerivativesEntry />
         </div>
       </header>
+
+      {aiProvider === "mock" && (
+        <div className="mx-3 mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200">
+          目前 AI 大腦是「本地模擬 (Mock)」，不會呼叫真的模型：文體生成不會依長度與主張產稿，改寫平台也只是套模板。請在右上角「AI 大腦」改選 OpenAI、Gemini 或 Anthropic Claude。
+        </div>
+      )}
 
       {/* Brand drawer for mobile/tablet */}
       {isDrawerOpen && (

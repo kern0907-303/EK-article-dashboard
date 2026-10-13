@@ -401,6 +401,52 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
         }
       };
 
+      // FB 長文完成後，順手改寫成 Threads 與 Instagram，直接存進各自平台欄位（不切換目前平台）
+      let adaptNote = "";
+      const runAutoAdapt = async (mayaData: any) => {
+        const source = mayaData?.social_copy;
+        if (!source || typeof source !== "string" || /^[⏳❌⚠]/.test(source.trim())) return;
+        if (mayaData.active_platform !== "facebook") return;
+        if (aiProvider === "mock") return;
+        const targets: Array<{ platform: "threads" | "instagram"; field: "social_copy_threads" | "social_copy_instagram"; label: string }> = [
+          { platform: "threads", field: "social_copy_threads", label: "Threads" },
+          { platform: "instagram", field: "social_copy_instagram", label: "Instagram" },
+        ];
+        const failed: string[] = [];
+        for (const t of targets) {
+          if (signal.aborted) return;
+          setProgress((p) => ({ ...p, stage: 3, note: `正在改寫 ${t.label} 版本...` }));
+          try {
+            const res = await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal,
+              body: JSON.stringify({
+                stage: "adapt",
+                ...guardBody(),
+                brandName: activeBrandName,
+                aiProvider,
+                platform: t.platform,
+                copywritingFramework: activeFramework,
+                brandGuidelines: mergedGuidelines,
+                prevData: { social_copy: source, seo_keywords: mayaData.seo_keywords || [] },
+              }),
+            });
+            const json = await res.json().catch(() => ({}));
+            const copy = json?.dispatchData?.social_copy;
+            if (!res.ok || !copy) throw new Error(json?.error || `HTTP ${res.status}`);
+            await saveWorkspace(activeBrandId, { [t.field]: copy } as any, { generated: true });
+          } catch (e: any) {
+            if (e?.name === "AbortError") return;
+            console.error(`Auto adapt ${t.label} failed:`, e);
+            failed.push(t.label);
+          }
+        }
+        if (failed.length > 0) {
+          adaptNote = `${failed.join("、")} 版本自動改寫失敗，請到看板切換平台後按「改寫」重試。`;
+        }
+      };
+
       // 順序背景發起，避免 Render 免費版同時處理兩個大腦 API 導致記憶體超載 (OOM) 與 502 崩潰
       const runSequentially = async () => {
         setIsGenerating(true);
@@ -408,13 +454,15 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
           const prevData = await runMayaIris();
           if (signal.aborted) return;
           await runJack(prevData);
+          if (signal.aborted) return;
+          if (prevData && !anyFailed) await runAutoAdapt(prevData);
         } finally {
           if (!signal.aborted) {
             setIsGenerating(false);
             const isMobileFailureMessage = window.matchMedia("(max-width: 639px)").matches;
             setProgress((p) => anyFailed
               ? { ...p, stage: -1, note: isMobileFailureMessage ? "有專家產出失敗，請到「看板」分頁查看紅字錯誤訊息，或重送一次指令。" : "有專家產出失敗，請看右側面板的紅字錯誤訊息，或重送一次指令。" }
-              : { ...p, stage: 4, note: "全部完成" });
+              : { ...p, stage: 4, note: adaptNote || "全部完成（含 Threads、Instagram 版本）" });
           }
         }
       };
