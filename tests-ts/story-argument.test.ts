@@ -50,7 +50,7 @@ t("完整版提示詞包含字數範圍與各段最少段數規則", full.includ
 t("共情版不包含完整版字數與段數規則", !empathy.includes("900 到 1400 個中文字") && !empathy.includes("切入現象 2 到 3 段") && !empathy.includes("故事 4 到 6 段") && !empathy.includes("論點支持 3 到 4 段") && !empathy.includes("解決方案 2 到 3 段"));
 t("完整版數字必須逐字出現在筆記節錄，否則不得寫出", full.includes("節錄中沒有的數字一律不得寫出"));
 t("文體同用時明確讓段落骨架與字數限制優先", buildStoryArgumentPrompt({ version: "full", thesis: "主張" }, { genreMode: true }).includes("文體提示詞的段落骨架與字數限制優先") && buildStoryArgumentPrompt({ version: "full", thesis: "主張" }, { genreMode: true }).includes("各段段數規則讓位給文體"));
-t("沒有來源時明確保留引用來源標記", full.includes("【需補：引用來源】") && full.includes("不得編造出處"));
+t("沒有來源時文章不放待補標記且不得編造出處", !full.includes("系統只會加入完整標記") && full.includes("不得編造出處"));
 t("引用提示允許 confirmed 欄位逐字含英文，並只限制引用以外新增英文書目", citedBookPrompt.includes("陶德·羅斯在《黑馬思維》提出") && citedBookPrompt.includes("只使用 title_zh 與 author_zh") && englishBookPrompt.includes("Isabella Price在《EQ》提出") && englishBookPrompt.includes("即使其中含英文字母或英文姓名") && englishBookPrompt.includes("引用以外的內文不得另加未提供的英文書名或人名") && !englishBookPrompt.includes("不得輸出 Dr.") && !englishBookPrompt.includes("不得輸出英文書名"));
 t("引用措辭提示統一使用提出並禁止評價書籍或觀點", full.includes("引用動詞一律使用「提出」") && full.includes("最著名的") && full.includes("一致認為"));
 t("提示詞要求單一論點、純文字及文體優先", full.includes("只講一個論點") && full.includes("不得出現 Markdown 符號或任何破折號") && buildStoryArgumentPrompt({ version: "full", thesis: "" }, { genreMode: true }).includes("文體提示詞的段落骨架"));

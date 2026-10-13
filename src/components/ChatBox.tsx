@@ -582,7 +582,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     });
     await saveChatMessage(activeBrandId, {
       role: "assistant",
-      content: `收到。我用【${def.name}】的骨架直接交給 Maya 寫（Facebook 長文格式）。缺素材的地方她會標【需補】，不會代寫。`,
+      content: `收到。我用【${def.name}】的骨架直接交給 Maya 寫（Facebook 長文格式）。缺素材的地方她會用泛稱情境帶過，需要補的提醒另外列在文章外面，不會代寫。`,
     });
     const storyArgument = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis, storyCitationMode, selectedKnowledgeNoteId);
     await dispatchExperts(subPrompts, signal, { settings, brandKey }, storyArgument);

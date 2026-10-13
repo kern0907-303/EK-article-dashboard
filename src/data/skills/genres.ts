@@ -65,8 +65,9 @@ export const SHARED_PREFIX = `你在替艾瑞克（Erick）寫文案。他是從
 段落極短，一到兩行一段，段間空一行。不要出現密密麻麻的文字塊。
 
 【絕對不做】
-不編造任何事。見證、數字、案例、生活細節，沒有素材就用【需補】標出位置
-並說明要補什麼，絕不代寫。
+不編造任何事。見證、數字、案例、生活細節，沒有素材就改用「很多人」這類泛稱情境帶過，絕不代寫。
+文章本文裡絕對不可以出現【需補】、待補、提醒、請作者補充這類字樣或標記。
+如果某處真的建議補上真實案例或數據，請寫在 JSON 的 post_reminders 欄位，不要寫進文章。
 不寫成教條。先下結論再給檢查表就是教條。
 不攻擊同業。需要共同敵人時，敵人是機制或結構，不是任何一群人；
 批評一個現象時，把自己也放進去。
@@ -345,7 +346,7 @@ export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
     `${g.materialLabel}：${s.material.trim() || "（使用者未提供）"}`,
     s.metaphor.trim()
       ? `比喻：${s.metaphor.trim()}`
-      : "比喻：使用者未指定。請自行提案一個，並在比喻出現的那一句後面加上【比喻待確認】讓使用者確認。",
+      : "比喻：使用者未指定。請自行提案一個。文章裡不要加任何標記，改在 JSON 的 post_reminders 欄位寫一句「本篇的比喻是（寫出比喻），請發文前確認」。",
     `長度：${lengthLine}`,
     s.cta.trim() ? `CTA：${s.cta.trim()}` : "CTA：使用者未指定，全文不放 CTA。",
   ].join("\n");
@@ -359,7 +360,8 @@ export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
     `### 輸出 JSON 格式要求：
 你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
 {
-  "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。缺素材的地方用【需補】標出並說明要補什麼。"
+  "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。本文不可出現【需補】、待補或任何提醒字樣，缺素材的地方用泛稱情境帶過。",
+  "post_reminders": ["發文前建議補上的真實素材，每項一句話，說明在第幾段補什麼。不需要補就給空陣列。這些提醒會顯示在文章外面，不會被發出去。"]
 }`,
   ].join("\n\n");
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { callErickCOO, callSeoOptimizer } from "@/lib/ai-provider";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
+import { splitPostReminders } from "@/lib/post-reminders";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
@@ -105,9 +106,11 @@ export async function POST(req: NextRequest) {
         }, undefined, undefined, "facebook");
         const text = result.dispatchData?.social_copy;
         if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
-        return stripDashes(stripMarkdown(text));
+        const split = splitPostReminders(stripDashes(stripMarkdown(text)), result.dispatchData?.post_reminders);
+        return { text: split.body, reminders: split.reminders };
       });
-      draft = generated;
+      draft = generated.text;
+      const postReminders = generated.reminders.map((item) => `發文前提醒（不在文章裡）：${item}`);
       if (!await updateJob(job.id, { status: "optimizing", current_step: "自動健檢與 SEO 優化", draft_content: draft }, "generating")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }
@@ -121,13 +124,14 @@ export async function POST(req: NextRequest) {
       const issues = checkGenreText(draft, meta, "facebook");
       const redline = inspectForPublish(draft, job.brand_id);
       const blocks = blockingIssues(issues);
-      const warnings = issues.filter((issue) => issue.level === "warn").map((issue) => issue.message);
+      const warnings = [...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message)];
       const leftover = draft.match(/【需補[^】]*】/g);
       const blockedReason = !redline.passed ? `品牌紅線：${redline.violatedWords.join("、")}` : leftover?.length ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發` : blocks.map((issue) => issue.message).join("；");
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }
 
+      if (postReminders.length && !blockedReason && job.test_run !== true) await addNotice(job.batch_id, `${brandName} 任務 ${job.id}：有 ${postReminders.length} 則發文前提醒（不在文章裡），請到自動流水線頁面查看`);
       if (blockedReason) {
         if (job.test_run !== true) await addNotice(job.batch_id, `${brandName} 任務 ${job.id}：${blockedReason}`);
       } else if (job.draft_only === true) {

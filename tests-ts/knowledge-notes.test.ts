@@ -119,22 +119,22 @@ const blankCitations = [
   applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "書名", author_zh: " ", zh_status: "confirmed" }, true),
   applyValidatedKnowledgeCitation("作者在《書名》提出觀點。", "書名", "作者", { title_zh: "書名", author_zh: "作者", zh_status: "unverified" }, true),
 ];
-t("書名或作者任一空白、或狀態非 confirmed 仍整句標記並阻擋", blankCitations.every((result) => !result.valid && result.content.endsWith("【需補：引用來源】")));
+t("書名或作者任一空白、或狀態非 confirmed 仍整句標記並阻擋", blankCitations.every((result) => !result.valid && !result.content.includes("需補") && Boolean(result.reminder)));
 const mismatch = applyValidatedKnowledgeCitation("情緒可能受到多種因素影響。\n\n出處：別本，錯誤作者", "別本", "錯誤作者", record, true);
-t("AI 出處與實際讀入筆記不一致時以完整引用來源標記阻擋", mismatch.content.endsWith("【需補：引用來源】") && !mismatch.content.includes("出處：別本") && !mismatch.valid);
-t("即使 metadata 正確，正文引用未讀入書籍仍以完整標記阻擋", applyValidatedKnowledgeCitation("正文提到《另一本書》", "黑馬思維", "陶德·羅斯", record, true).content.endsWith("【需補：引用來源】"));
+t("AI 出處與實際讀入筆記不一致時移除出處，文章不留標記，提醒另放", !mismatch.content.includes("需補") && Boolean(mismatch.reminder) && !mismatch.content.includes("出處：別本") && !mismatch.valid);
+t("即使 metadata 正確，正文引用未讀入書籍時移除該句，文章不留標記", !applyValidatedKnowledgeCitation("正文提到《另一本書》", "黑馬思維", "陶德·羅斯", record, true).content.includes("需補"));
 t("中文欄位缺漏或非 confirmed 時不使用英文書目且不產生殘缺標記", (() => {
   const result = applyValidatedKnowledgeCitation("Dr. Rose在《Dark Horse》提出一點。", "Dark Horse", "Todd Rose", { title_zh: null, author_zh: null, zh_status: "unverified" }, true);
-  return result.content === "【需補：引用來源】" && !/【需補：中文|《【需補|Dark Horse|Todd Rose|Dr\./u.test(result.content);
+  return !/需補|Dark Horse|Todd Rose|Dr\./u.test(result.content) && Boolean(result.reminder);
 })());
-t("來源不存在時只輸出整句引用來源標記", applyValidatedKnowledgeCitation("作者在《未知書》提出一點。", "未知書", "作者", null, true).content === "【需補：引用來源】");
+t("來源不存在時文章不留標記，只給提醒", (() => { const r = applyValidatedKnowledgeCitation("作者在《未知書》提出一點。", "未知書", "作者", null, true); return !r.content.includes("需補") && Boolean(r.reminder); })());
 t("AI 產生殘缺中文書目標記時只保留完整引用來源標記", (() => {
   const result = applyValidatedKnowledgeCitation("作者在《【需補：中文書名】提出一點。", "", "", null, true);
-  return result.content === "【需補：引用來源】" && !/【需補：中文|《【需補/u.test(result.content);
+  return !/需補|《【/u.test(result.content);
 })());
 t("本篇不引用時不產生出處或任何完整、殘缺需補標記", !applyValidatedKnowledgeCitation("正文\n出處：編造，作者\n作者在《【需補：中文書名】提出", "編造", "作者", null, false).content.match(/出處：|需補/u));
 t("主書名不可從英文舊欄位或副標題推導，只接受中文欄位逐字比對", !applyValidatedKnowledgeCitation("作者在《黑馬思維》提出一點。", "黑馬思維：出版副標", "陶德·羅斯", record, true).valid);
-t("需補引用來源仍由既有發佈檢查擋住", blockingIssues(checkGenreText(mismatch.content, { genre: "case", funnel: "warm", prompt_version: "test" })).some((issue) => issue.code === "need-fill"));
+t("引用來源失敗後文章不再被需補擋住", !blockingIssues(checkGenreText(mismatch.content, { genre: "case", funnel: "warm", prompt_version: "test" })).some((issue) => issue.code === "need-fill"));
 
 const eligibleNote = { id: "used", source_file: "used.md", title_zh: "黑馬思維", author_zh: "陶德·羅斯", zh_status: "confirmed" };
 const freshNote = { id: "fresh", source_file: "fresh.md", title_zh: "情緒地圖", author_zh: "作者乙", zh_status: "confirmed" };

@@ -33,7 +33,7 @@ t("包含共用前綴", p.includes("你在替艾瑞克（Erick）寫文案"));
 t("包含 I8 語氣", p.includes("本篇品牌：I8") && p.includes("不歸咎任何個人"));
 t("包含冷流量規則", p.includes("漏斗層：冷") && p.includes("全文不得出現 TimeWaver"));
 t("包含案例文骨架", p.includes("本篇文體：案例文") && p.includes("找出落差"));
-t("比喻留空 → 要求標示待確認", p.includes("【比喻待確認】"));
+t("比喻留空 → 提醒放文章外面，文章不加標記", p.includes("post_reminders") && p.includes("文章裡不要加任何標記"));
 t("CTA 留空 → 不放", p.includes("全文不放 CTA"));
 t("主張與素材代入", p.includes("決策不該都靠老闆") && p.includes("某個案"));
 t("回應文標為未啟用", GENRES.response.enabled === false);

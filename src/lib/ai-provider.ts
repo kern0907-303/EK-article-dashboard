@@ -1,5 +1,6 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
 import { stripMarkdown, stripDashes } from "@/lib/plain-text";
+import { splitPostReminders } from "@/lib/post-reminders";
 import { friendlyLeonError, hasUsableSocialCopy, LEON_GENERATION_OPTIONS } from "@/lib/expert-routing";
 import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { getBrandConversion } from "@/data/brands/conversion";
@@ -417,13 +418,15 @@ async function callStoryArgumentReselection(
       request.rewriteFull ? request.currentCopy : "",
       "", "", null, true
     );
+    // 找不到引用來源：文章裡不放任何標記；只重寫論點支持時保留原文，提醒顯示在文章外面
     const socialCopy = request.rewriteFull
       ? normalizeStoryArgumentCopy(missing.content, selection.thesis)
-      : replaceStoryArgumentSupportParagraph(request.currentCopy, missing.content, false, selection.thesis);
+      : request.currentCopy;
     return {
       content: "",
       dispatchData: {
         social_copy: socialCopy,
+        post_reminders: missing.reminder ? [missing.reminder] : [],
         citation_error: resolved.error || "no_matching_note",
         story_argument_meta: {
           ...selection,
@@ -1340,13 +1343,22 @@ ${brandContext}`;
       }
     }
 
+    // 發文前提醒放在文章外面：本文不留【需補】，提醒另存 post_reminders
+    const genreSplit = genre?.settings
+      ? (() => {
+          const r = splitPostReminders(stripMarkdown(mayaResult.social_copy || ""), (mayaResult as { post_reminders?: unknown }).post_reminders);
+          return { body: r.body, reminders: r.reminders.map((x) => stripDashes(stripMarkdown(x))) };
+        })()
+      : { body: "", reminders: [] as string[] };
+
     return {
       content: "",
       dispatchData: {
         // 文體模式整篇清成純文字；其他框架（如品牌形象與故事）保留文案內容，但一律去掉破折號分隔線與小標記號
         social_copy: storyArgument
           ? storyCitation?.content || ""
-          : genre?.settings ? stripMarkdown(mayaResult.social_copy || "") : stripDashes(mayaResult.social_copy || ""),
+          : genre?.settings ? genreSplit.body : stripDashes(mayaResult.social_copy || ""),
+        post_reminders: storyArgument ? (storyCitation?.reminder ? [storyCitation.reminder] : []) : genre?.settings ? genreSplit.reminders : [],
         seo_keywords: irisResult.seo_keywords || [],
         aeo_schema: formattedSchema,
         aeo_faq: stripMarkdown(irisResult.aeo_faq || ""),

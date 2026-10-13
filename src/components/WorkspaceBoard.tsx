@@ -328,6 +328,7 @@ function WorkspaceBoardInner({ activeBrandId, aiProvider }: WorkspaceBoardProps)
                 copyMeta={data.social_copy_meta}
                 genreMeta={data.genre_meta}
                 storyArgumentMeta={data.story_argument_meta}
+                postReminders={data.post_reminders}
                 webArticle={data.web_article}
                 webArticleMeta={data.web_article_meta}
                 webSourceCopy={pickWebSourceCopy(data)}
@@ -415,6 +416,7 @@ const SocialTabContent = memo(function SocialTabContent({
   copyMeta,
   genreMeta,
   storyArgumentMeta,
+  postReminders,
   webArticle,
   webArticleMeta,
   webSourceCopy
@@ -433,6 +435,7 @@ const SocialTabContent = memo(function SocialTabContent({
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
   genreMeta?: GenreMeta | null;
   storyArgumentMeta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
+  postReminders?: string[];
   webArticle?: string;
   webArticleMeta?: WebArticleMeta;
   webSourceCopy?: string;
@@ -2391,6 +2394,12 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       )}
 
+      {Array.isArray(postReminders) && postReminders.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-200">
+          <span className="font-bold">發文前提醒（不在文章裡，不會被發出去）</span>
+          {postReminders.map((item, i) => <p key={i} className="mt-1">{item}</p>)}
+        </div>
+      )}
       {activeStoryArgumentMeta?.thesis && (
         <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2405,7 +2414,7 @@ const SocialTabContent = memo(function SocialTabContent({
             <p className="mt-1 break-all text-slate-500">筆記追溯：{activeStoryArgumentMeta.knowledge_note_id}｜內容 MD5 {activeStoryArgumentMeta.knowledge_content_md5}</p>
           )}
           {activeStoryArgumentMeta.citation_valid === false && (
-            <p className="mt-1 text-amber-300">出處尚未通過驗證，發佈前需補齊引用來源。</p>
+            <p className="mt-1 text-amber-300">出處未通過驗證，本篇沒有出處行，文章裡也沒有任何待補標記。</p>
           )}
         </div>
       )}

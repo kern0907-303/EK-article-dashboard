@@ -53,7 +53,8 @@ export function replaceStoryArgumentSupportParagraph(
   const replacementParagraph = replacementBlocks
     .filter((block) => !/^\s*出處\s*[：:]/u.test(block))
     .join("\n\n");
-  paragraphs[2] = replacementParagraph || "【需補：引用來源】";
+  if (!replacementParagraph) throw new Error("沒有取得可用的論點支持段落，未替換原文。");
+  paragraphs[2] = replacementParagraph;
 
   return [...paragraphs, ...replacementFooter, ...tags].join("\n\n").trim();
 }

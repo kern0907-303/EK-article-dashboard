@@ -199,7 +199,7 @@ export function applyValidatedKnowledgeCitation(
   citedAuthor: unknown,
   note: Pick<KnowledgeNoteRecord, "title_zh" | "author_zh" | "zh_status"> | null,
   required: boolean
-): { content: string; valid: boolean; citationTitle: string | null; citationAuthor: string | null } {
+): { content: string; valid: boolean; citationTitle: string | null; citationAuthor: string | null; reminder: string | null } {
   const lines = normalizeStoryArgumentCopy(input).split("\n");
   const isSourceLine = (line: string) => /^\s*出處\s*[：:]/u.test(line);
   const isCitationLine = (line: string) => line.includes("《") || line.includes("需補");
@@ -210,6 +210,7 @@ export function applyValidatedKnowledgeCitation(
       valid: true,
       citationTitle: null,
       citationAuthor: null,
+      reminder: null,
     };
   }
 
@@ -226,13 +227,15 @@ export function applyValidatedKnowledgeCitation(
   const valid = Boolean(eligible && metadataMatches && bodyMatches && noPartialMarkers);
   const bodyWithoutCitation = bodyLines.filter((line) => !isCitationLine(line)).join("\n").trim();
   const body = valid ? bodyLines.join("\n").trim() : bodyWithoutCitation;
-  const source = valid ? `出處：文中引用的觀點，出自${authorZh}所著《${titleZh}》。故事情境與其他內容為艾瑞克的整理與詮釋。` : "【需補：引用來源】";
+  const source = valid ? `出處：文中引用的觀點，出自${authorZh}所著《${titleZh}》。故事情境與其他內容為艾瑞克的整理與詮釋。` : "";
   const canonical = stripDashes(stripMarkdown(source));
   return {
     content: [body, canonical].filter(Boolean).join("\n\n"),
     valid,
     citationTitle: valid ? titleZh : null,
     citationAuthor: valid ? authorZh : null,
+    // 出處驗證失敗時，文章裡不留任何標記，也不放出處行；提醒另外顯示在文章外面
+    reminder: valid ? null : "引用來源未通過驗證，本篇沒有出處行也沒有引用書籍。若要引用，請先選一筆已確認的引用筆記再重新生成。",
   };
 }
 
