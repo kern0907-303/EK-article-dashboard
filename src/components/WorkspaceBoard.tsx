@@ -569,6 +569,16 @@ const SocialTabContent = memo(function SocialTabContent({
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   // 所有品牌的排程（只給月曆標記用），不受目前品牌篩選影響
   const [allQueueItems, setAllQueueItems] = useState<QueueItem[]>([]);
+  // Threads / Instagram 排程月曆標記：各平台分開，切到哪個平台就只顯示該平台已排的日子
+  const [allSocialQueueItems, setAllSocialQueueItems] = useState<{ brand: string; platform: string; scheduled_at: string; status: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/social-queue?limit=100", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setAllSocialQueueItems(Array.isArray(d?.data) ? d.data : []); })
+      .catch(() => { /* 月曆標記讀不到時不影響主流程 */ });
+    return () => { cancelled = true; };
+  }, [socialQueueTick]);
   const [queueEnabled, setQueueEnabled] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
@@ -1858,7 +1868,12 @@ const SocialTabContent = memo(function SocialTabContent({
   // Threads / Instagram 共用的排程時間選擇列
   const socialPickerBlock = (targetPlatform: "threads" | "instagram") => (
     <div className="flex items-center gap-2 bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
-      <SchedulePicker value={socialScheduleTime} onChange={setSocialScheduleTime} accentClass={theme.primaryBg} />
+      <SchedulePicker
+        value={socialScheduleTime}
+        onChange={setSocialScheduleTime}
+        accentClass={theme.primaryBg}
+        items={allSocialQueueItems.filter((i) => i.platform === targetPlatform).map((i) => ({ brand_id: i.brand, scheduled_at: i.scheduled_at, status: i.status }))}
+      />
       <Button size="sm" variant="primary" loading={isSchedulingSocial} disabled={!socialScheduleTime} onClick={() => handleScheduleSocial(targetPlatform)}>
         {isSchedulingSocial ? "排程中..." : "確定"}
       </Button>
