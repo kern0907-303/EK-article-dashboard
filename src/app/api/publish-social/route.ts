@@ -25,7 +25,7 @@ interface PublishAnswer {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, platform, content: rawContent, imageUrl, imageUrls, force } = await req.json();
+    const { brandId, platform, content: rawContent, imageUrl, imageUrls, force, funnel } = await req.json();
     const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "";
 
     if (!brandId || !content) {
@@ -55,9 +55,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Erick 個人品牌沒有串接 Threads / Instagram 帳號，請切換到 ABL、NAS 或 I8" }, { status: 400 });
     }
 
-    const guardrail = inspectForPublish(content, String(brandId));
+    const guardrail = inspectForPublish(content, String(brandId), funnel);
     // I8 的對外內容紅線不可略過；其他品牌沿用既有覆核流程
-    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
+    if (!guardrail.passed && (!force || !guardrail.canForce)) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",
@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
           violatedWords: guardrail.violatedWords,
           context: guardrail.context,
           suggestion: guardrail.suggestion,
+          guardrailHits: guardrail.hits,
+          warnings: guardrail.warnings,
+          canForce: guardrail.canForce,
         },
         { status: 422 }
       );
@@ -107,6 +110,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      warnings: guardrail.warnings,
+      guardrailHits: guardrail.hits,
       platform,
       brand: resolveBrandContext(String(brandId)),
       account: answer.account || null,

@@ -13,7 +13,7 @@ import { inspectForPublish } from "@/lib/brand-guardrail";
  */
 export async function POST(req: NextRequest) {
   try {
-    const { content, brandId } = await req.json();
+    const { content, brandId, funnel } = await req.json();
 
     if (!content || typeof content !== "string") {
       return NextResponse.json({ error: "缺少 content" }, { status: 400 });
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "缺少 brandId" }, { status: 400 });
     }
 
-    const result = inspectForPublish(content, brandId);
+    const result = inspectForPublish(content, brandId, funnel);
 
     return NextResponse.json({
       success: true,
@@ -30,6 +30,11 @@ export async function POST(req: NextRequest) {
       context: result.context,
       violatedWords: result.violatedWords,
       suggestion: result.suggestion,
+      blockingHits: result.blockingHits,
+      warningHits: result.warningHits,
+      warnings: result.warnings,
+      guardrailHits: result.hits,
+      canForce: result.canForce,
     });
   } catch (error: any) {
     console.error("Error in /api/guardrail/check:", error);

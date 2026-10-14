@@ -25,7 +25,8 @@ import SocialQueuePanel from "@/components/SocialQueuePanel";
 import { stripMarkdown } from "@/lib/plain-text";
 import { pickAlign, clippingBounds, type PopoverAlign } from "@/lib/popover-align";
 import { textHash, resolveWebContent, hasWebArticle, hasSocialCopy, isArticleStale, countChars, type WebArticleMeta } from "@/lib/web-article";
-import { checkGenreText, blockingIssues } from "@/lib/genre-check";
+import { checkGenreText } from "@/lib/genre-check";
+import { evaluateGuardrails, formatGuardrailBlock, formatGuardrailWarning } from "@/lib/guardrail-core";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
 import { GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreMeta } from "@/data/skills/genres";
 import { SeoOptimization, SeoScore, faqToPlainText, buildFaqJsonLd, isScoreStale, healthHash } from "@/lib/seo-optimizer";
@@ -51,6 +52,9 @@ interface GuardrailBlock {
   violatedWords?: string[];
   context?: string;
   suggestion?: string | null;
+  canForce?: boolean;
+  warnings?: string[];
+  guardrailHits?: Array<{ word: string; sentence: string; category: string; level: "block" | "warn"; forceable: boolean; negated: boolean }>;
 }
 
 /**
@@ -58,16 +62,25 @@ interface GuardrailBlock {
  * 回傳 true 表示使用者確認要照原文發布。
  */
 const confirmGuardrail = (data: GuardrailBlock): boolean => {
+  if (data.canForce === false) {
+    const nonForceable = data.guardrailHits?.filter((hit) => hit.level === "block" && !hit.forceable && !hit.negated) || [];
+    const detail = nonForceable.map((hit) => `・${hit.sentence}（命中「${hit.word}」）`).join("\n");
+    alert(`這些項目不可強制發布，請先修改內容。${detail ? `\n\n${detail}` : ""}`);
+    return false;
+  }
   const words = (data.violatedWords || []).join("、");
+  const hits = data.guardrailHits?.filter((hit) => hit.level === "block" && !hit.negated) || [];
   const lines = [
     `⚠️ 品牌紅線檢查未通過（${data.context || "first_tier"}）`,
     "",
     `偵測到禁用詞：${words}`,
     "",
   ];
+  if (hits.length) lines.push("命中句子：", ...hits.map((hit) => `・${hit.sentence}（${hit.word}，${hit.category}）`), "");
   if (data.suggestion) {
     lines.push("建議改寫版本：", data.suggestion, "");
   }
+  if (data.warnings?.length) lines.push("提醒（可忽略）：", ...data.warnings.map((warning) => `・${warning}`), "");
   lines.push("按「確定」仍要照原文發布，按「取消」回去修改。");
   return window.confirm(lines.join("\n"));
 };
@@ -525,28 +538,28 @@ const SocialTabContent = memo(function SocialTabContent({
     setActiveStoryArgumentMeta(storyArgumentMeta || null);
     if (storyArgumentMeta?.knowledge_note_id) usedStoryNoteIds.current.add(storyArgumentMeta.knowledge_note_id);
   }, [storyArgumentMeta]);
-  const genreIssues = useMemo(
-    () => (genreMeta ? checkGenreText(val, genreMeta, platform) : []),
-    [val, genreMeta, platform]
+  const guardrailPreview = useMemo(
+    () => evaluateGuardrails(val, pubBrandId, genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined)),
+    [val, pubBrandId, genreMeta?.funnel, storyArgumentMeta]
   );
-  // 擋住發佈的檢查：只看「禁用詞」與「【需補】」，這兩項與平台無關
+  const genreIssues = useMemo(() => {
+    if (genreMeta) return checkGenreText(val, genreMeta, platform, pubBrandId);
+    return guardrailPreview.hits.filter((hit) => !hit.negated).map((hit) => ({
+      level: hit.level,
+      code: hit.category === "required-material" ? "need-fill" : hit.category === "funnel-warning" ? "funnel-terms" : "forbidden",
+      message: hit.level === "block" ? formatGuardrailBlock(hit) : formatGuardrailWarning(hit),
+      word: hit.word,
+      sentence: hit.sentence,
+      category: hit.category,
+      forceable: hit.forceable,
+      negated: hit.negated,
+    }));
+  }, [val, genreMeta, platform, pubBrandId, guardrailPreview]);
+  // 不可強制的 block 先在看板攔下；可強制的品牌硬紅線交給伺服器 422 與既有確認流程。
   const requireGenreOk = (): boolean => {
-    if (!genreMeta && storyArgumentMeta) {
-      const storyMetaForExistingChecks = {
-        genre: "case" as const,
-        funnel: "warm" as const,
-        prompt_version: storyArgumentMeta.prompt_version,
-      };
-      const blocks = blockingIssues(checkGenreText(val, storyMetaForExistingChecks));
-      if (blocks.length > 0) {
-        alert("⚠️ 這篇文章還不能發佈：\n\n" + blocks.map((b) => "・" + b.message).join("\n"));
-        return false;
-      }
-    }
-    if (!genreMeta) return true;
-    const blocks = blockingIssues(checkGenreText(val, genreMeta));
-    if (blocks.length === 0) return true;
-    alert("⚠️ 這篇文章還不能發佈：\n\n" + blocks.map((b) => "・" + b.message).join("\n"));
+    const nonForceable = guardrailPreview.blockingHits.filter((hit) => !hit.forceable);
+    if (nonForceable.length === 0) return true;
+    alert("⚠️ 這篇文章含不可強制的阻擋項目：\n\n" + nonForceable.map((hit) => "・" + formatGuardrailBlock(hit)).join("\n"));
     return false;
   };
   const fmtTaipei = (t?: number) =>
@@ -1001,6 +1014,7 @@ const SocialTabContent = memo(function SocialTabContent({
           imageUrl: igImageUrl || undefined,
           promptVersion: genreMeta?.prompt_version || null,
           modelVersion: genreMeta?.model_version || null,
+          funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined),
           force
         })
       });
@@ -1049,7 +1063,8 @@ const SocialTabContent = memo(function SocialTabContent({
     const targetPageConfigs = getFacebookPagesByIds(targetIds);
     const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
 
-    if (!confirm(`確定要將此篇歷史文章直接發布至社群【${pageNames}】（N8N 分流與第一則留言連結）嗎？`)) {
+    const warnings = evaluateGuardrails(articleContent, pubBrandId).warnings;
+    if (!confirm(`確定要將此篇歷史文章直接發布至社群【${pageNames}】（N8N 分流與第一則留言連結）嗎？${warnings.length ? `\n\n目前的提醒（可忽略）：\n${warnings.map((item) => `・${item}`).join("\n")}` : ""}`)) {
       return;
     }
     setIsPublishing(true);
@@ -1189,6 +1204,7 @@ const SocialTabContent = memo(function SocialTabContent({
         aeoSchema: (extra?.aeoSchema ?? aeoSchema) || null,
         aeoFaq: (extra?.aeoFaq ?? aeoFaq) ? stripMarkdown((extra?.aeoFaq ?? aeoFaq) as string) : null,
         imageUrl: igImageUrl || undefined,
+        funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined),
         force
       })
     });
@@ -1330,6 +1346,7 @@ const SocialTabContent = memo(function SocialTabContent({
           targetPages: targetIds,
           content: val,
           articleId,
+          funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined),
           imageUrl: igImageUrl || undefined,
           scheduledAt: when.toISOString(),
           force
@@ -1383,7 +1400,7 @@ const SocialTabContent = memo(function SocialTabContent({
       const response = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, imageUrl: carouselParam ? undefined : igImageUrl || undefined, imageUrls: carouselParam, force }),
+        body: JSON.stringify({ brandId: pubBrandId, platform: "threads", content: val, imageUrl: carouselParam ? undefined : igImageUrl || undefined, imageUrls: carouselParam, funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined), force }),
       });
       const resData = await response.json().catch(() => ({}));
       if (response.status === 422 && resData.blocked) {
@@ -1450,6 +1467,7 @@ const SocialTabContent = memo(function SocialTabContent({
           imageUrl: carouselParam ? undefined : igImageUrl || undefined,
           imageUrls: carouselParam,
           scheduledAt: when.toISOString(),
+          funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined),
           force,
         }),
       });
@@ -1610,7 +1628,7 @@ const SocialTabContent = memo(function SocialTabContent({
       const response = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: pubBrandId, platform: "instagram", content: val, imageUrl: igImageUrl, imageUrls: carouselParam, force }),
+        body: JSON.stringify({ brandId: pubBrandId, platform: "instagram", content: val, imageUrl: igImageUrl, imageUrls: carouselParam, funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined), force }),
       });
       const resData = await response.json().catch(() => ({}));
       if (response.status === 422 && resData.blocked) {
@@ -1654,6 +1672,7 @@ const SocialTabContent = memo(function SocialTabContent({
           imageUrl: igImageUrl || undefined,
           action: actionType,
           scheduleTime: targetTime || null,
+          funnel: genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined),
           force
         })
       });
@@ -2155,12 +2174,12 @@ const SocialTabContent = memo(function SocialTabContent({
               <span className="px-2 py-0.5 rounded-md border border-slate-800 bg-slate-900 text-slate-400">
                 約 {countChars(val)} 字{platform === "threads" ? " / 上限 500" : platform === "instagram" ? " / 上限 2200" : ""}
               </span>
-              {genreMeta && genreIssues.some((i) => i.level === "block") && (
+              {(genreMeta || genreIssues.length > 0) && genreIssues.some((i) => i.level === "block") && (
                 <span className="px-2 py-0.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-300">
                   有 {genreIssues.filter((i) => i.level === "block").length} 項擋住發佈
                 </span>
               )}
-              {genreMeta && genreIssues.some((i) => i.level === "warn") && (
+              {(genreMeta || genreIssues.length > 0) && genreIssues.some((i) => i.level === "warn") && (
                 <span className="px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300">
                   {genreIssues.filter((i) => i.level === "warn").length} 項提醒
                 </span>
@@ -2406,13 +2425,13 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       )}
 
-      {genreMeta && (
+      {(genreMeta || genreIssues.length > 0) && (
         <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[11px]">
           <div className="flex items-center justify-between">
             <span className="font-bold text-slate-200">
-              文體檢查｜{GENRES[genreMeta.genre]?.name}・{FUNNEL_LABEL[genreMeta.funnel]}
+              {genreMeta ? `文體檢查｜${GENRES[genreMeta.genre]?.name}・${FUNNEL_LABEL[genreMeta.funnel]}` : "品牌紅線檢查"}
             </span>
-            <span className="text-slate-500">提示詞版本 {genreMeta.prompt_version}</span>
+            {genreMeta && <span className="text-slate-500">提示詞版本 {genreMeta.prompt_version}</span>}
           </div>
           {genreIssues.length === 0 ? (
             <div className="mt-1.5 text-emerald-300">✓ 自動檢查全部通過。最後請念出聲，像不像自己講話。</div>

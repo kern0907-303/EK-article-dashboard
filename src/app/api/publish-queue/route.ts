@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 /** 建立排程 */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, targetPages, content: rawContent, articleId, scheduledAt, imageUrl, testMode, force } = await req.json();
+    const { brandId, targetPages, content: rawContent, articleId, scheduledAt, imageUrl, testMode, force, funnel } = await req.json();
     // 社群排程的內文也要去掉官網用的流程圖與破折號，與立即發布一致
     const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)) : rawContent;
 
@@ -111,8 +111,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 品牌紅線：與立即發布同一套規則（I8 不可用 force 略過）
-    const guardrail = inspectForPublish(content, brandId);
-    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
+    const guardrail = inspectForPublish(content, brandId, funnel);
+    if (!guardrail.passed && (!force || !guardrail.canForce)) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",
@@ -120,6 +120,9 @@ export async function POST(req: NextRequest) {
           violatedWords: guardrail.violatedWords,
           context: guardrail.context,
           suggestion: guardrail.suggestion,
+          guardrailHits: guardrail.hits,
+          warnings: guardrail.warnings,
+          canForce: guardrail.canForce,
         },
         { status: 422 }
       );
@@ -149,7 +152,7 @@ export async function POST(req: NextRequest) {
     }
 
     const rows = await res.json();
-    return NextResponse.json({ success: true, data: Array.isArray(rows) ? rows[0] : rows });
+    return NextResponse.json({ success: true, warnings: guardrail.warnings, guardrailHits: guardrail.hits, data: Array.isArray(rows) ? rows[0] : rows });
   } catch (error) {
     console.error("Error in POST /api/publish-queue:", error);
     return NextResponse.json({ error: errorMessage(error, "Internal Server Error") }, { status: 500 });

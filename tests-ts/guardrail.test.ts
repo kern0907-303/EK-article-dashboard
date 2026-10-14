@@ -9,7 +9,7 @@ const cases: Array<[string, string, boolean]> = [
   ["brand_c_abl", "信息場調頻可以治癒你的焦慮。", false],
   ["brand_a_i8", "透過靈性頻率調整來顯化你的business成長。", false],
   ["brand_a_i8", "企業卡住，不一定是努力不夠，而是還沒看見真正影響結果的關鍵因素。", true],
-  ["brand_b_nas", "透過信息場調頻來認識自己。", false],
+  ["brand_b_nas", "透過信息場調頻來認識自己。", true],
   ["brand_b_nas", "生命數字不是告訴你命運已經決定，而是讓你看懂自己的天賦與盲點。", true],
   ["personal_brand", "如何透過能量磁場無痛成交高票價諮詢", false],
 ];

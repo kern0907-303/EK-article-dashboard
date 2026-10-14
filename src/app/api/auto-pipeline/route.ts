@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { AUTO_PIPELINE_ENABLED, PIPELINE_MAX_BATCH_SIZE, parsePipelineBatch, type BatchSource, type PipelineEntry } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 import { makeBatchRow, makeJobRow, pipelineDb } from "@/lib/auto-pipeline-server";
-import { inspectForPublish } from "@/lib/brand-guardrail";
 import { blockingIssues, checkGenreText } from "@/lib/genre-check";
 import { PROMPT_VERSION } from "@/data/skills/genres";
 
@@ -79,9 +78,14 @@ export async function PATCH(req: NextRequest) {
       const currentRows = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}&select=*`);
       const current = currentRows[0];
       if (!current || !["scheduled", "manual"].includes(current.status)) return NextResponse.json({ error: "此狀態不可編輯" }, { status: 409 });
-      const redline = inspectForPublish(updatedContent, current.brand_id);
-      const issues = blockingIssues(checkGenreText(updatedContent, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook"));
-      if (!redline.passed || issues.length) return NextResponse.json({ error: "文案仍有阻擋項目，修正後再儲存。", violations: [...redline.violatedWords, ...issues.map((item) => item.message)] }, { status: 422 });
+      const checked = checkGenreText(updatedContent, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", current.brand_id);
+      const issues = blockingIssues(checked);
+      const warnings = checked.filter((item) => item.level === "warn").map((item) => item.message);
+      const negatedHits = checked.guardrailHits.filter((hit) => hit.negated);
+      if (negatedHits.length) {
+        console.info("[auto-pipeline] edited draft guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
+      }
+      if (issues.length) return NextResponse.json({ error: "文案仍有阻擋項目，修正後再儲存。", violations: issues.map((item) => item.message), warnings, guardrailHits: checked.guardrailHits }, { status: 422 });
       if (current.queue_id) {
         const queueRes = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(current.queue_id)}&source=eq.auto_pipeline&status=eq.pending`, {
           method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
@@ -91,8 +95,10 @@ export async function PATCH(req: NextRequest) {
         const queueRows = await queueRes.json();
         if (!Array.isArray(queueRows) || !queueRows.length) return NextResponse.json({ error: "排程已進入派發或完成，無法再修改" }, { status: 409 });
       }
-      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, reviewed: true, updated_at: new Date().toISOString() }) });
-      return NextResponse.json({ success: true, job: updated[0] });
+      const priorWarnings = Array.isArray(current.warnings) ? current.warnings.filter((warning: unknown) => typeof warning === "string" && warning.startsWith("發文前提醒（不在文章裡）：")) : [];
+      const nextWarnings = [...new Set([...priorWarnings, ...warnings])];
+      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: true, updated_at: new Date().toISOString() }) });
+      return NextResponse.json({ success: true, job: updated[0], warnings, guardrailHits: checked.guardrailHits });
     }
     if (action !== "cancel") return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
     const filter = typeof id === "string" ? `id=eq.${encodeURIComponent(id)}` : `batch_id=eq.${encodeURIComponent(batchId)}`;

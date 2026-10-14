@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 /** 建立排程 */
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, platform, content: rawContent, imageUrl, imageUrls, scheduledAt, force } = await req.json();
+    const { brandId, platform, content: rawContent, imageUrl, imageUrls, scheduledAt, force, funnel } = await req.json();
     const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "";
 
     if (!brandId || !content) {
@@ -98,8 +98,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 品牌紅線：與立即發布同一套規則（I8 不可用 force 略過）
-    const guardrail = inspectForPublish(content, String(brandId));
-    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
+    const guardrail = inspectForPublish(content, String(brandId), funnel);
+    if (!guardrail.passed && (!force || !guardrail.canForce)) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",
@@ -107,6 +107,9 @@ export async function POST(req: NextRequest) {
           violatedWords: guardrail.violatedWords,
           context: guardrail.context,
           suggestion: guardrail.suggestion,
+          guardrailHits: guardrail.hits,
+          warnings: guardrail.warnings,
+          canForce: guardrail.canForce,
         },
         { status: 422 }
       );
@@ -135,7 +138,7 @@ export async function POST(req: NextRequest) {
       throw new Error(`Supabase 寫入排程失敗（${res.status}）：${text.slice(0, 300)}`);
     }
     const rows = await res.json();
-    return NextResponse.json({ success: true, data: Array.isArray(rows) ? rows[0] : rows });
+    return NextResponse.json({ success: true, warnings: guardrail.warnings, guardrailHits: guardrail.hits, data: Array.isArray(rows) ? rows[0] : rows });
   } catch (error) {
     console.error("Error in POST /api/social-queue:", error);
     return NextResponse.json({ error: errorMessage(error, "Internal Server Error") }, { status: 500 });

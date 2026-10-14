@@ -7,7 +7,7 @@ import { withLeadingImage } from "@/lib/article-image.mjs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force, imageUrl } = await req.json();
+    const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force, imageUrl, funnel } = await req.json();
     // 發出去之前最後一道保險：舊草稿裡殘留的破折號也一併清掉
     const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)) : rawContent;
 
@@ -70,9 +70,9 @@ export async function POST(req: NextRequest) {
         }];
 
     // 品牌紅線檢查（以主品牌或目標粉專品牌為準）
-    const guardrail = inspectForPublish(content, brandId);
+    const guardrail = inspectForPublish(content, brandId, funnel);
     // I8 的對外內容紅線不可由前端 force 略過；其他品牌沿用既有覆核流程。
-    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
+    if (!guardrail.passed && (!force || !guardrail.canForce)) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",
@@ -80,6 +80,9 @@ export async function POST(req: NextRequest) {
           violatedWords: guardrail.violatedWords,
           context: guardrail.context,
           suggestion: guardrail.suggestion,
+          guardrailHits: guardrail.hits,
+          warnings: guardrail.warnings,
+          canForce: guardrail.canForce,
         },
         { status: 422 }
       );
@@ -102,6 +105,8 @@ export async function POST(req: NextRequest) {
         simulated: true,
         targetPages: targetPageIds,
         targetPageDetails,
+        warnings: guardrail.warnings,
+        guardrailHits: guardrail.hits,
         data: {
           brandId,
           targetPages: targetPageIds,
@@ -145,6 +150,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      warnings: guardrail.warnings,
+      guardrailHits: guardrail.hits,
       targetPages: targetPageIds,
       targetPageDetails,
       data: responseData,

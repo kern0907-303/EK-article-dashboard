@@ -3,7 +3,6 @@ import { timingSafeEqual } from "node:crypto";
 import { callErickCOO, callSeoOptimizer } from "@/lib/ai-provider";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 import { splitPostReminders } from "@/lib/post-reminders";
-import { inspectForPublish } from "@/lib/brand-guardrail";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
 import { AUTO_PIPELINE_ENABLED, isSafeToSchedule } from "@/lib/auto-pipeline";
@@ -121,12 +120,17 @@ export async function POST(req: NextRequest) {
       });
       draft = optimized;
       const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };
-      const issues = checkGenreText(draft, meta, "facebook");
-      const redline = inspectForPublish(draft, job.brand_id);
+      const issues = checkGenreText(draft, meta, "facebook", job.brand_id);
       const blocks = blockingIssues(issues);
       const warnings = [...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message)];
       const leftover = draft.match(/【需補[^】]*】/g);
-      const blockedReason = !redline.passed ? `品牌紅線：${redline.violatedWords.join("、")}` : leftover?.length ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發` : blocks.map((issue) => issue.message).join("；");
+      const negatedHits = issues.guardrailHits.filter((hit) => hit.negated);
+      if (negatedHits.length) {
+        console.info("[auto-pipeline] guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
+      }
+      const blockedReason = leftover?.length
+        ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
+        : blocks.map((issue) => issue.message).join("；");
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }

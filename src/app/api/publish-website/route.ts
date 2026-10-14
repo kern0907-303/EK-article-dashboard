@@ -6,7 +6,7 @@ import { withCoverImage } from "@/lib/article-image.mjs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { brandId, brandName, content: rawContent, aeoSchema, aeoFaq, force, promptVersion, modelVersion, imageUrl } = await req.json();
+    const { brandId, brandName, content: rawContent, aeoSchema, aeoFaq, force, promptVersion, modelVersion, imageUrl, funnel } = await req.json();
     let content = rawContent;
 
     if (!brandId || !content) {
@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
     }
 
     // I8 的對外內容紅線不可由前端 force 略過；其他品牌沿用既有覆核流程。
-    const guardrail = inspectForPublish(content, brandId);
-    if (!guardrail.passed && (!force || guardrail.context === "I8")) {
+    const guardrail = inspectForPublish(content, brandId, funnel);
+    if (!guardrail.passed && (!force || !guardrail.canForce)) {
       return NextResponse.json(
         {
           error: "品牌紅線檢查未通過",
@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
           violatedWords: guardrail.violatedWords,
           context: guardrail.context,
           suggestion: guardrail.suggestion,
+          guardrailHits: guardrail.hits,
+          warnings: guardrail.warnings,
+          canForce: guardrail.canForce,
         },
         { status: 422 }
       );
@@ -128,6 +131,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       updated: Boolean(existingId),
+      warnings: guardrail.warnings,
+      guardrailHits: guardrail.hits,
       data: responseData
     });
   } catch (error: any) {
