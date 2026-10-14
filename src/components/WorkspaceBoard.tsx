@@ -85,6 +85,11 @@ const confirmGuardrail = (data: GuardrailBlock): boolean => {
   return window.confirm(lines.join("\n"));
 };
 
+const confirmGuardrailWarnings = (action: string, warnings: string[]): boolean => {
+  if (!warnings.length) return true;
+  return window.confirm(`${action}\n\n目前的提醒（可忽略）：\n${warnings.map((warning) => `・${warning}`).join("\n")}`);
+};
+
 const getBrandOrProjectName = (id: string): string => {
   if (id && id.startsWith("project_")) {
     return getProjectName(id);
@@ -998,6 +1003,8 @@ const SocialTabContent = memo(function SocialTabContent({
     if (isPublishingWebsite || !hasCopyForActions) return;
     const webContent = resolvedContent ?? getWebContent();
     if (webContent === null) return;
+    const warnings = evaluateGuardrails(webContent, pubBrandId, genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined)).warnings;
+    if (!force && !confirmGuardrailWarnings("確定要發布官網文章嗎？", warnings)) return;
     setIsPublishingWebsite(true);
     try {
       const brandName = getBrandOrProjectName(brandId);
@@ -1056,15 +1063,16 @@ const SocialTabContent = memo(function SocialTabContent({
     }
   };
 
-  const handleSyndicateArticle = async (articleContent: string) => {
+  const handleSyndicateArticle = async (articleContent: string, force = false) => {
     if (!requireParentBrand()) return;
     if (isPublishing) return;
     const targetIds = selectedTargetPages.length > 0 ? selectedTargetPages : [getDefaultFacebookPage(pubBrandId).id];
     const targetPageConfigs = getFacebookPagesByIds(targetIds);
     const pageNames = targetPageConfigs.map((p) => p.badge).join("、") || "FB 粉絲專頁";
 
-    const warnings = evaluateGuardrails(articleContent, pubBrandId).warnings;
-    if (!confirm(`確定要將此篇歷史文章直接發布至社群【${pageNames}】（N8N 分流與第一則留言連結）嗎？${warnings.length ? `\n\n目前的提醒（可忽略）：\n${warnings.map((item) => `・${item}`).join("\n")}` : ""}`)) {
+    const funnel = genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined);
+    const warnings = evaluateGuardrails(articleContent, pubBrandId, funnel).warnings;
+    if (!force && !confirm(`確定要將此篇歷史文章直接發布至社群【${pageNames}】（N8N 分流與第一則留言連結）嗎？${warnings.length ? `\n\n目前的提醒（可忽略）：\n${warnings.map((item) => `・${item}`).join("\n")}` : ""}`)) {
       return;
     }
     setIsPublishing(true);
@@ -1078,12 +1086,20 @@ const SocialTabContent = memo(function SocialTabContent({
           targetPages: targetIds,
           content: articleContent,
           action: "now",
-          scheduleTime: null
+          scheduleTime: null,
+          funnel,
+          force,
         })
       });
 
+      const resData = await response.json().catch(() => ({}));
+      if (response.status === 422 && resData.blocked) {
+        setIsPublishing(false);
+        if (confirmGuardrail(resData)) return handleSyndicateArticle(articleContent, true);
+        return;
+      }
       if (!response.ok) {
-        throw new Error("發布失敗");
+        throw new Error(resData.error || "發布失敗");
       }
 
       setPubStatus("success");
@@ -1193,6 +1209,9 @@ const SocialTabContent = memo(function SocialTabContent({
     if (publishedArticle && publishedArticle.content === webContent && publishedArticle.image === (igImageUrl || "")) {
       return publishedArticle.id;
     }
+
+    const warnings = evaluateGuardrails(webContent, pubBrandId, genreMeta?.funnel ?? (storyArgumentMeta ? "warm" : undefined)).warnings;
+    if (!force && !confirmGuardrailWarnings("官網文章有以下提醒，仍要繼續上架並排程嗎？", warnings)) return null;
 
     const response = await fetch("/api/publish-website", {
       method: "POST",
@@ -1316,10 +1335,11 @@ const SocialTabContent = memo(function SocialTabContent({
 
     const pageNames = getFacebookPagesByIds(targetIds).map((p) => p.badge).join("、") || "FB 粉絲專頁";
     const whenText = when.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false });
+    const warnings = guardrailPreview.warnings;
     if (
       !force &&
       !window.confirm(
-        `排程會「現在」先自動產生官網文章並完成 SEO、AEO、GEO 優化，上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？`
+        `排程會「現在」先自動產生官網文章並完成 SEO、AEO、GEO 優化，上架到官網，再於 ${whenText}（台北時間）發到【${pageNames}】。\n\n確定要排程嗎？${warnings.length ? `\n\n目前的提醒（可忽略）：\n${warnings.map((warning) => `・${warning}`).join("\n")}` : ""}`
       )
     ) {
       return;
@@ -1654,6 +1674,7 @@ const SocialTabContent = memo(function SocialTabContent({
     if (!requireParentBrand()) return;
     if (!requireGenreOk()) return;
     if (isPublishing || !val) return;
+    if (!force && !confirmGuardrailWarnings("這篇內容含有以下提醒，仍要繼續嗎？", guardrailPreview.warnings)) return;
     setIsPublishing(true);
     setPubStatus("idle");
 
