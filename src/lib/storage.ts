@@ -95,6 +95,8 @@ export interface WorkspaceData {
   genre_meta?: import("@/data/skills/genres").GenreMeta | null;
   /** 發文前提醒（需補的真實素材、引用來源）。放在文章外面，不會被發出去 */
   post_reminders?: string[];
+  /** 從自動流水線帶來的預定發文時間（ISO 字串）。主工作區排程時自動帶入，排程完成後清除 */
+  suggested_schedule_at?: string | null;
   /** 故事論點框架的一句話論點，獨立顯示，不屬於社群文案正文 */
   story_argument_meta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
   /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */

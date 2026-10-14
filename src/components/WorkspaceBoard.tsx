@@ -329,6 +329,7 @@ function WorkspaceBoardInner({ activeBrandId, aiProvider }: WorkspaceBoardProps)
                 genreMeta={data.genre_meta}
                 storyArgumentMeta={data.story_argument_meta}
                 postReminders={data.post_reminders}
+                suggestedScheduleAt={data.suggested_schedule_at}
                 webArticle={data.web_article}
                 webArticleMeta={data.web_article_meta}
                 webSourceCopy={pickWebSourceCopy(data)}
@@ -417,6 +418,7 @@ const SocialTabContent = memo(function SocialTabContent({
   genreMeta,
   storyArgumentMeta,
   postReminders,
+  suggestedScheduleAt,
   webArticle,
   webArticleMeta,
   webSourceCopy
@@ -436,6 +438,7 @@ const SocialTabContent = memo(function SocialTabContent({
   genreMeta?: GenreMeta | null;
   storyArgumentMeta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
   postReminders?: string[];
+  suggestedScheduleAt?: string | null;
   webArticle?: string;
   webArticleMeta?: WebArticleMeta;
   webSourceCopy?: string;
@@ -489,6 +492,23 @@ const SocialTabContent = memo(function SocialTabContent({
   const [comfyNote, setComfyNote] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
+  // 從自動流水線帶來的預定發文時間：自動帶入排程選擇器；時間已過則只提示，不帶入
+  const [suggestedScheduleHint, setSuggestedScheduleHint] = useState("");
+  useEffect(() => {
+    if (!suggestedScheduleAt) { setSuggestedScheduleHint(""); return; }
+    const when = new Date(suggestedScheduleAt);
+    if (Number.isNaN(when.getTime())) { setSuggestedScheduleHint(""); return; }
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const text = when.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false });
+    if (when.getTime() - Date.now() < 5 * 60 * 1000) {
+      setSuggestedScheduleHint(`自動流水線原定發文時間 ${text} 已過或不足 5 分鐘，請重新選擇排程時間。`);
+      return;
+    }
+    const value = `${when.getFullYear()}-${p2(when.getMonth() + 1)}-${p2(when.getDate())}T${p2(when.getHours())}:${p2(when.getMinutes())}`;
+    setScheduleTime(value);
+    setSocialScheduleTime(value);
+    setSuggestedScheduleHint(`已帶入自動流水線設定的發文時間 ${text}（台北時間），按排程後確認即可，也可以自己改。`);
+  }, [suggestedScheduleAt]);
   const [platform, setPlatform] = useState(activePlatform || "threads");
   const [activeStoryArgumentMeta, setActiveStoryArgumentMeta] = useState(storyArgumentMeta || null);
   const [storyReselectIdea, setStoryReselectIdea] = useState("");
@@ -1330,6 +1350,7 @@ const SocialTabContent = memo(function SocialTabContent({
       alert(`📅 已排程於 ${whenText}（台北時間）發到【${pageNames}】。文章已先上架官網，可在下方「排程清單」查看狀態或取消。`);
       setShowDatePicker(false);
       setScheduleTime("");
+      void saveWorkspace(brandId, { suggested_schedule_at: null });
       fetchQueue();
     } catch (error: any) {
       console.error("Schedule error:", error);
@@ -1446,6 +1467,7 @@ const SocialTabContent = memo(function SocialTabContent({
       alert(`📅 已排程在 ${whenText}（台北時間）發布到 ${label}。可在下方「排程清單」查看或取消。`);
       setShowSocialPicker(false);
       setSocialScheduleTime("");
+      void saveWorkspace(brandId, { suggested_schedule_at: null });
       setSocialQueueTick((t) => t + 1);
     } catch (error) {
       console.error("Social schedule error:", error);
@@ -2409,6 +2431,9 @@ const SocialTabContent = memo(function SocialTabContent({
         </div>
       )}
 
+      {suggestedScheduleHint && (
+        <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/10 p-3 text-[11px] text-sky-200">{suggestedScheduleHint}</div>
+      )}
       {Array.isArray(postReminders) && postReminders.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-200">
           <span className="font-bold">發文前提醒（不在文章裡，不會被發出去）</span>

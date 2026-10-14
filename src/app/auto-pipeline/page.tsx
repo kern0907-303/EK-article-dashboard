@@ -145,7 +145,7 @@ export default function AutoPipelinePage() {
       const current = JSON.parse(localStorage.getItem(key) || "null") || { social_copy: "", web_architecture: "", seo_keywords: [], ad_data: [] };
       const existing = typeof current[field] === "string" ? current[field].trim() : "";
       if (existing && existing !== content && !window.confirm(`主工作區的「${platform === "Threads" ? "Threads" : platform === "Facebook" ? "Facebook" : "Instagram"}」分頁已經有一份文案，要用這篇取代嗎？`)) return;
-      localStorage.setItem(key, JSON.stringify({ ...current, active_platform: platformKey, social_copy: content, [field]: content }));
+      localStorage.setItem(key, JSON.stringify({ ...current, active_platform: platformKey, social_copy: content, [field]: content, suggested_schedule_at: job.scheduled_at || null }));
     } catch { setNotice("瀏覽器無法暫存文案，請改用複製貼上。"); return; }
     router.push(`/?brand=${brandId}&platform=${platformKey}&from=auto-pipeline`);
   };
