@@ -1,0 +1,15 @@
+import { stripDisclaimers, stripMarkdown, stripDashes } from "../src/lib/plain-text";
+let pass = 0, fail = 0;
+const t = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`${cond ? "✓" : "✗"} ${name}`); };
+const sample = "三分鐘不到，她什麼都沒有解決。那一晚，她睡得比較沉。\n\n（故事情境為示意）\n\n看見自己，從問一句話開始";
+const out = stripMarkdown(sample);
+t("整行（故事情境為示意）被拿掉", !out.includes("示意") && out.includes("她睡得比較沉") && out.includes("看見自己，從問一句話開始"));
+t("全形括號變化也拿掉", !stripDisclaimers("正文。\n\n（以上情境純屬虛構）").includes("虛構"));
+t("半形括號也拿掉", !stripDisclaimers("正文。\n(本文案例為示意)").includes("示意"));
+t("沒有括號的整句聲明也拿掉", !stripDisclaimers("正文。\n\n本文故事情境為示意。").includes("示意"));
+t("句中的括號聲明只拿掉括號", stripDisclaimers("她走進辦公室（故事情境為示意），坐下來。") === "她走進辦公室，坐下來。");
+t("stripDashes 也會拿掉", !stripDashes("正文\n（故事情境為示意）").includes("示意"));
+t("一般內文不受影響", stripDisclaimers("她看了一眼手機，沒有回覆。這不是示範，是她每天的樣子。") === "她看了一眼手機，沒有回覆。這不是示範，是她每天的樣子。");
+t("正常括號不受影響", stripDisclaimers("他說（停了一下）我知道了。") === "他說（停了一下）我知道了。");
+console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);
+process.exit(fail ? 1 : 0);

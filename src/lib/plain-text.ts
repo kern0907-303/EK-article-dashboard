@@ -14,6 +14,21 @@ export function stripDividers(input: string): string {
     .trim();
 }
 
+/**
+ * 拿掉 AI 常自己加上的「故事為示意、情境為虛構」這類聲明。
+ * 例：「（故事情境為示意）」「（以上情境純屬虛構）」「本文案例為示意」整行或括號都拿掉。
+ * 非紀實靠寫法（「想像一個場景」「有一種人」），不靠文章裡的聲明。
+ */
+const DISCLAIMER_WORDS = "(?:為示意|僅為示意|僅供示意|屬示意|示意用|純屬虛構|屬虛構|為虛構|虛構情境|非真實|非紀實|改編而成|匿名改寫|僅供參考)";
+const DISCLAIMER_TOPIC = "(?:故事|情境|情節|案例|人物|場景|對話|內容|文中|本文|以上|上述)";
+export function stripDisclaimers(input: string): string {
+  if (!input) return input;
+  const wrapped = new RegExp(`^[ \\t　]*[（(【\\[][^）)】\\]\\n]{0,40}${DISCLAIMER_WORDS}[^）)】\\]\\n]{0,40}[）)】\\]][ \\t　]*$`, "gm");
+  const plainLine = new RegExp(`^[ \\t　]*[^。！？，,、（）()\\n]{0,20}${DISCLAIMER_TOPIC}[^。！？，,、（）()\\n]{0,16}${DISCLAIMER_WORDS}[^。！？，,、（）()\\n]{0,10}[。.]?[ \\t　]*$`, "gm");
+  const inline = new RegExp(`[（(][^）)\\n]{0,30}${DISCLAIMER_TOPIC}[^）)\\n]{0,20}${DISCLAIMER_WORDS}[^）)\\n]{0,20}[）)]`, "g");
+  return input.replace(wrapped, "").replace(plainLine, "").replace(inline, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 const DASH_CHARS = "—―─━═–－";
 
 /**
@@ -27,6 +42,7 @@ const DASH_CHARS = "—―─━═–－";
  */
 export function stripDashes(input: string): string {
   if (!input) return input;
+  input = stripDisclaimers(input);
   const blocks: string[] = [];
   const masked = input.replace(/```[\s\S]*?```/g, (m) => {
     blocks.push(m);
