@@ -36,7 +36,7 @@ export function resolveCardSize(key) {
  */
 export const CARD_BRANDS = {
   brand_c_abl: {
-    key: "abl", label: "ABLIENE 艾伯林量子調頻", logo: "abl-logo.png",
+    key: "abl", label: "艾伯林量子調頻", logo: "abl-logo.png",
     from: "#ffffff", to: "#11e7de", text: "#0a2a33", footer: "#2f3b40",
     zone: [0.28, 0.74], logoBox: { x: 108, y: 118, h: 140 },
   },
@@ -46,12 +46,12 @@ export const CARD_BRANDS = {
     zone: [0.3, 0.76], logoBox: { x: 108, y: 108, w: 160, h: 160 },
   },
   brand_a_i8: {
-    key: "i8", label: "INITIAL8 CO.初八信息顧問", logo: "i8-logo.png",
+    key: "i8", label: "初八企業顧問", logo: "i8-logo.png",
     from: "#ffffff", to: "#0555bf", text: "#000000", footer: "#ffffff",
     zone: [0.26, 0.56], logoBox: { x: 109, y: 126, w: 108, h: 108 },
   },
   brand_b_nas: {
-    key: "nas", label: "NOAGE SPACE 平衡空間", logo: "nas-logo.png",
+    key: "nas", label: "平衡空間", logo: "nas-logo.png",
     from: "#ffffff", to: "#8c2c87", text: "#000000", footer: "#fff1e6",
     zone: [0.26, 0.56], logoBox: { x: 84, y: 83, w: 150, h: 150 },
   },

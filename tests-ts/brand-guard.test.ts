@@ -12,7 +12,7 @@ t("NASA 不算 NAS", detectBrandSignals("NASA 登月").nas.length === 0);
 t("中文夾英文的 NAS 要認得", detectBrandSignals("我的NAS很好用").nas.length === 1);
 t("單獨出現 Erick 不算 Erick 個人品牌（作者名每個品牌都會出現）", detectBrandSignals("Erick 老師說").erick.length === 0);
 t("ABL 底下提到 Erick 個人品牌 → 攔", findTextMismatch("請導向 Erick 個人品牌的諮詢", "abl", "指令")?.found === "erick");
-t("提醒文字包含來源與兩個品牌名", (() => { const d = describeMismatch(findTextMismatch("NAS 生命數字", "i8", "主張")!); return d.includes("主張") && d.includes("NAS") && d.includes("I8"); })());
+t("提醒文字包含來源與兩個品牌名", (() => { const d = describeMismatch(findTextMismatch("NAS 生命數字", "i8", "主張")!); return d.includes("主張") && d.includes("平衡空間") && d.includes("初八企業顧問"); })());
 
 t("scan：最後一則使用者訊息錯置 → 攔並標示來源", scanChatPayload({ history: [{ role: "user", content: "你好" }, { role: "user", content: "寫 ABL 量子調頻文案" }] }, "i8")?.source === "你的指令");
 t("scan：只看最後一則使用者訊息，舊訊息不算", scanChatPayload({ history: [{ role: "user", content: "寫 ABL 量子調頻文案" }, { role: "assistant", content: "好" }, { role: "user", content: "改短一點" }] }, "i8") === null);

@@ -6,13 +6,13 @@ export type GuardBrandKey = "erick" | "nas" | "abl" | "i8";
 
 export const GUARD_BRAND_LABEL: Record<GuardBrandKey, string> = {
   erick: "Erick 個人品牌",
-  nas: "NAS 平衡空間",
-  abl: "ABL 量子調頻",
-  i8: "I8 企業決策校準",
+  nas: "平衡空間",
+  abl: "艾伯林量子調頻",
+  i8: "初八企業顧問",
 };
 
 const SIGNALS: Record<GuardBrandKey, RegExp[]> = {
-  i8: [/\bI8\b/i, /Initial\s*8/i, /初八/, /企業醫生/, /企業決策校準/],
+  i8: [/\bI8\b/i, /Initial\s*8/i, /初八/, /企業顧問/, /企業醫生/, /企業決策校準/],
   nas: [/\bNAS\b/, /平衡空間/, /noage/i, /生命數字/, /生命靈數/],
   abl: [/\bABL\b/, /abliene/i, /艾伯林/, /量子調頻/, /狀態調和/, /信息場分析/],
   erick: [/Erick\s*個人品牌/i, /Erick\s*關鍵因素諮詢/i, /個人方向校準/],

@@ -50,7 +50,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
 生命數字不是為了限制你，而是協助你走回更適合自己的方向。
 
 #平衡空間 #生命數字 #自我探索 #高敏感 #人生節奏`,
-    web_architecture: `- NAS 平衡空間首頁
+    web_architecture: `- 平衡空間首頁
   - 30秒核心數字測驗 (免費體驗入口)
   - 人生方向校準解析 (個人生命數字解析)
   - 主力線上課程 (生命數字基礎班)
@@ -86,7 +86,7 @@ export const DEFAULT_MOCK_WORKSPACE: Record<string, WorkspaceData> = {
 調和不是強迫自己馬上變好，而是允許自己獲得重新安放的空間。
 
 #艾伯林量子調頻 #個人狀態調和 #量子調和 #內在消耗 #生命狀態校準`,
-    web_architecture: `- ABL 艾伯林調頻官網
+    web_architecture: `- 艾伯林量子調頻官網
   - 個人狀態燈號檢測 (內在消耗免費檢測入口)
   - 個人狀態分析 (個人信息場分析)
   - 核心調和計畫 (三個月信息場調和支持)
@@ -151,7 +151,7 @@ export const DEFAULT_MOCK_CHATS: Record<string, ChatMessage[]> = {
     {
       id: "welcome-brand-a",
       role: "assistant",
-      content: "您好！我是您的團隊總指揮 Erick 營運長。目前為【品牌 A I8 (Initial 8 CO.)】顧問機構提供決策支持。\n\n我負責將您的營運目標進行拆解，並分派給右側的四位 AI 專家：\n* **Maya**（社群文案專家）\n* **Leon**（系統架構師）\n* **Iris**（SEO 專家）\n* **Jack**（廣告數據專家）\n\n請下達對【I8 品牌】的營運方針（例如：推廣『企業關鍵因素診斷』、規劃辦公室搬遷空間優化、或是撰寫針對中小企業主的痛點文案），我將為您指派並即時更新看板！",
+      content: "您好！我是您的團隊總指揮 Erick 營運長。目前為【品牌 A 初八企業顧問】顧問機構提供決策支持。\n\n我負責將您的營運目標進行拆解，並分派給右側的四位 AI 專家：\n* **Maya**（社群文案專家）\n* **Leon**（系統架構師）\n* **Iris**（SEO 專家）\n* **Jack**（廣告數據專家）\n\n請下達對【I8 品牌】的營運方針（例如：推廣『企業關鍵因素診斷』、規劃辦公室搬遷空間優化、或是撰寫針對中小企業主的痛點文案），我將為您指派並即時更新看板！",
       timestamp: Date.now()
     }
   ],

@@ -40,9 +40,30 @@ const DASH_CHARS = "—―─━═–－";
  * 4. 有空格夾住的「 - 」「 -- 」也視為破折號處理
  * ``` 程式碼區塊（Mermaid 圖表等）原樣保留，不動。
  */
+/** 對外品牌名稱統一：平衡空間、艾伯林量子調頻、初八企業顧問。把縮寫與舊稱換成全名。 */
+export function normalizeBrandNames(input: string): string {
+  if (!input) return input;
+  return input
+    .replace(/NOAGE\s*SPACE\s*平衡空間/gi, "平衡空間")
+    .replace(/NAS\s*[（(]?\s*平衡空間[^）)\n]{0,12}[）)]?(?:\s*生命數字)?/g, "平衡空間")
+    .replace(/NAS\s*生命數字/g, "平衡空間")
+    .replace(/\bNAS\b/g, "平衡空間")
+    .replace(/ABLIENE\s*艾伯林量子調頻/gi, "艾伯林量子調頻")
+    .replace(/ABL\s*[（(]?\s*(?:艾伯林量子調頻|量子調頻)[）)]?/g, "艾伯林量子調頻")
+    .replace(/ABL\s*艾伯林調頻官網/g, "艾伯林量子調頻官網")
+    .replace(/ABL\s*(?:信息場調和|（信息場調頻）)/g, "艾伯林量子調頻")
+    .replace(/\bABL\b/g, "艾伯林量子調頻")
+    .replace(/INITIAL8\s*CO\.?\s*初八(?:信息|企業)顧問/gi, "初八企業顧問")
+    .replace(/初八信息顧問\s*[（(]?\s*I8\s*[）)]?/g, "初八企業顧問")
+    .replace(/I8\s*[（(]\s*Initial\s*8\s*CO\.?\s*[）)]/gi, "初八企業顧問")
+    .replace(/I8\s*(?:企業顧問|企業醫生)/g, "初八企業顧問")
+    .replace(/初八信息顧問/g, "初八企業顧問")
+    .replace(/\bI8\b/g, "初八企業顧問");
+}
+
 export function stripDashes(input: string): string {
   if (!input) return input;
-  input = stripDisclaimers(input);
+  input = normalizeBrandNames(stripDisclaimers(input));
   const blocks: string[] = [];
   const masked = input.replace(/```[\s\S]*?```/g, (m) => {
     blocks.push(m);

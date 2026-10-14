@@ -56,7 +56,7 @@ const NAS_QUIZ: QuizConfig = {
   slug: "nas/quiz",
   brandId: "brand_b_nas",
   shortId: "nas",
-  brandLabel: "NAS 生命數字",
+  brandLabel: "平衡空間",
   title: "你正在用不適合自己的方式努力嗎？",
   subtitle: "三分鐘生命節奏小測",
   intro:

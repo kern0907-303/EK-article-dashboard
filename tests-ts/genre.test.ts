@@ -30,7 +30,7 @@ t("生成中提示不檢查", checkGenreText("⏳ 專家助理 Maya 正在撰寫
 // 提示詞組裝：四層都在
 const p = buildGenrePrompt("i8", { genre: "case", funnel: "cold", claim: "決策不該都靠老闆", material: "某個案", metaphor: "", length: "", cta: "" });
 t("包含共用前綴", p.includes("你在替艾瑞克（Erick）寫文案"));
-t("包含 I8 語氣", p.includes("本篇品牌：I8") && p.includes("不歸咎任何個人"));
+t("包含 I8 語氣", p.includes("本篇品牌：初八企業顧問") && p.includes("不歸咎任何個人"));
 t("包含冷流量規則", p.includes("漏斗層：冷") && p.includes("全文不得出現 TimeWaver"));
 t("包含案例文骨架", p.includes("本篇文體：案例文") && p.includes("找出落差"));
 t("比喻留空 → 提醒放文章外面，文章不加標記", p.includes("post_reminders") && p.includes("文章裡不要加任何標記"));

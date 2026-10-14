@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     const job = Array.isArray(rows) ? rows[0] : rows;
     if (!job?.id) return NextResponse.json({ success: true, processed: false, reason: "目前沒有待處理項目或另一篇正在執行" });
 
-    const brandName = ({ nas: "NAS 生命數字", abl: "ABL 信息場調和", i8: "I8 企業顧問", erick: "Erick 個人品牌" } as const)[job.brand_id as "nas" | "abl" | "i8" | "erick"];
+    const brandName = ({ nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "Erick 個人品牌" } as const)[job.brand_id as "nas" | "abl" | "i8" | "erick"];
     let draft = "";
     try {
       const generated = await retryOnce(async () => {

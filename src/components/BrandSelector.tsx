@@ -17,9 +17,9 @@ export interface Brand {
 export const BRANDS: Brand[] = [
   { 
     id: "brand_a_i8", 
-    name: "I8 (Initial 8 CO.)", 
+    name: "初八企業顧問", 
     desc: "企業關鍵因素與決策校準", 
-    fbPageName: "I8 企業關鍵因素與決策校準",
+    fbPageName: "初八企業顧問",
     icon: Activity, 
     colorClass: "bg-indigo-500/10 text-indigo-400",
     borderClass: "border-indigo-500/20",
@@ -27,9 +27,9 @@ export const BRANDS: Brand[] = [
   },
   { 
     id: "brand_b_nas", 
-    name: "NAS (平衡空間)", 
+    name: "平衡空間", 
     desc: "生命數字自我探索與關係理解", 
-    fbPageName: "NAS 平衡空間生命數字",
+    fbPageName: "平衡空間",
     icon: Compass, 
     colorClass: "bg-purple-500/10 text-purple-400",
     borderClass: "border-purple-500/20",
@@ -37,9 +37,9 @@ export const BRANDS: Brand[] = [
   },
   { 
     id: "brand_c_abl", 
-    name: "ABL (量子調頻)", 
+    name: "艾伯林量子調頻", 
     desc: "信息場狀態分析與能量調和", 
-    fbPageName: "ABL 信息場狀態分析與調和",
+    fbPageName: "艾伯林量子調頻",
     icon: Sparkles, 
     colorClass: "bg-cyan-500/10 text-cyan-400",
     borderClass: "border-cyan-500/20",

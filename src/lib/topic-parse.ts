@@ -41,9 +41,9 @@ export function funnelFromText(s: string): FunnelLevel | null {
 
 export function brandKeyFromText(s: string): BrandKey | null {
   const u = s.toUpperCase();
-  if (u.includes("NAS")) return "nas";
-  if (u.includes("ABL")) return "abl";
-  if (u.includes("I8")) return "i8";
+  if (u.includes("NAS") || u.includes("平衡空間")) return "nas";
+  if (u.includes("ABL") || u.includes("艾伯林")) return "abl";
+  if (u.includes("I8") || u.includes("初八")) return "i8";
   if (u.includes("ERICK")) return "erick";
   return null;
 }

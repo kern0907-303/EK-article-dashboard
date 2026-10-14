@@ -15,8 +15,8 @@ export const PIPELINE_MIN_LEAD_MS = 30 * 60 * 1000;
 
 const BRAND_ALIASES: Record<string, PipelineBrand> = {
   nas: "nas", "生命數字": "nas", "平衡空間": "nas",
-  abl: "abl", "信息場調和": "abl", "量子調頻": "abl",
-  i8: "i8", "企業顧問": "i8", "initial 8": "i8",
+  abl: "abl", "艾伯林量子調頻": "abl", "信息場調和": "abl", "量子調頻": "abl",
+  i8: "i8", "初八企業顧問": "i8", "企業顧問": "i8", "initial 8": "i8",
   erick: "erick", "個人品牌": "erick",
 };
 

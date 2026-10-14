@@ -75,9 +75,9 @@ export function subscribeToProjects<T = any>(callback: (projects: T[]) => void):
 export const PROJECT_PARENT_KEY = "project_parent_brands";
 
 export const PARENT_BRAND_OPTIONS: { id: string; label: string }[] = [
-  { id: "brand_a_i8", label: "I8（企業顧問）" },
-  { id: "brand_b_nas", label: "NAS（生命靈數）" },
-  { id: "brand_c_abl", label: "ABL（信息場調頻）" },
+  { id: "brand_a_i8", label: "初八企業顧問" },
+  { id: "brand_b_nas", label: "平衡空間" },
+  { id: "brand_c_abl", label: "艾伯林量子調頻" },
   { id: "personal_brand", label: "Erick（個人品牌）" },
 ];
 

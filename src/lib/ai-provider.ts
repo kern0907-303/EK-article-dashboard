@@ -619,13 +619,13 @@ async function fetchMetaAdAccountInsights(adAccountId: string, accessToken: stri
 }
 
 function getBrandColorsForPrompt(brandName: string) {
-  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
-  const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
-  const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
+  const isI8 = /I8|初八/.test(brandName) || brandName.includes("brand_a");
+  const isAbl = /ABL|艾伯林/.test(brandName) || brandName.includes("brand_c");
+  const isNas = /NAS|平衡空間/.test(brandName) || brandName.includes("brand_b");
 
   if (isI8) {
     return {
-      name: "I8 (Initial 8 CO.)",
+      name: "初八企業顧問",
       colorName: "海軍深藍 (Navy Deep Blue)",
       hexPrimary: "#1e3a8a",
       hexAccent: "#3b82f6",
@@ -633,7 +633,7 @@ function getBrandColorsForPrompt(brandName: string) {
     };
   } else if (isAbl) {
     return {
-      name: "ABL (量子調頻)",
+      name: "艾伯林量子調頻",
       colorName: "蒂芬妮藍 (Tiffany Blue)",
       hexPrimary: "#0abab5",
       hexAccent: "#22d3ee",
@@ -641,7 +641,7 @@ function getBrandColorsForPrompt(brandName: string) {
     };
   } else if (isNas) {
     return {
-      name: "NAS (平衡空間)",
+      name: "平衡空間",
       colorName: "神秘紫 (Mysterious Purple)",
       hexPrimary: "#7c3aed",
       hexAccent: "#c084fc",
@@ -739,15 +739,15 @@ export async function callErickCOO(
     return parsed;
   }
 
-  const isI8Brand = brandName.includes("I8") || brandName.includes("brand_a");
+  const isI8Brand = /I8|初八/.test(brandName) || brandName.includes("brand_a");
   let brandContext = `當前切換的品牌/領域是：【${brandName}】。請確保所有對話與產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
 
   if (brandGuidelines && brandGuidelines.trim().length > 0) {
     brandContext += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
   } else {
     const isI8 = isI8Brand;
-    const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
-    const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
+    const isAbl = /ABL|艾伯林/.test(brandName) || brandName.includes("brand_c");
+    const isNas = /NAS|平衡空間/.test(brandName) || brandName.includes("brand_b");
 
     if (isI8) {
       brandContext += "\n\n" + I8_BRAND_CONTEXT;
@@ -1202,9 +1202,9 @@ ${mayaPlatformRules}
 ${diagramInstruction}
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個：
    - Erick專欄：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
-   - I8 (企業醫生)：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
-   - NAS (生命數字)：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
-   - ABL (量子調頻)：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
+   - 初八企業顧問：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
+   - 平衡空間：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
+   - 艾伯林量子調頻：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
  6. 寫作核心主題：你的整篇文章必須緊密圍繞「### 任務指派 (子提示詞)」中要求的特定內容、細節與結構展開。品牌知識背景中包含的語氣範例（例如「你不是沒有努力，而是你已經用撐住的方式活太久了」）僅供撰寫口吻與品牌世界觀的參考，**絕對不可直接拿來作為文章的最主要核心主題或標題，也絕對不能用通用的品牌常規話術取代或覆蓋了使用者指派的特定文案主題**！
    - 如果子提示詞或使用者要求分析具體事物（例如氣場、經絡、身體、情緒、理智、精神等層次），你必須在文章中開闢專門段落/部分，對這些維度進行深度、細膩的逐一分析，而不能只是用一句話含糊帶過！
 
@@ -1728,9 +1728,9 @@ async function callN8nWebhook(
 
 // 5. Mock 營運長自動拆解邏輯 (無 API 時的智慧體驗)
 async function callMockCOO(userInput: string, brandName: string): Promise<string> {
-  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
-  const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
-  const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
+  const isI8 = /I8|初八/.test(brandName) || brandName.includes("brand_a");
+  const isNas = /NAS|平衡空間/.test(brandName) || brandName.includes("brand_b");
+  const isAbl = /ABL|艾伯林/.test(brandName) || brandName.includes("brand_c");
   
   let socialCopy = "";
   let webArch = "";
@@ -1782,7 +1782,7 @@ async function callMockCOO(userInput: string, brandName: string): Promise<string
 
 #平衡空間 #生命數字 #自我探索 #高敏感 #人生節奏`;
 
-    webArch = `- NAS 平衡空間首頁
+    webArch = `- 平衡空間首頁
   - 30秒核心數字測驗 (免費體驗入口)
   - 人生方向校準解析 (個人生命數字解析)
   - 主力線上課程 (生命數字基礎班)
@@ -1819,7 +1819,7 @@ async function callMockCOO(userInput: string, brandName: string): Promise<string
 
 #艾伯林量子調頻 #個人狀態調和 #量子調和 #內在消耗 #生命狀態校準`;
 
-    webArch = `- ABL 艾伯林調頻官網
+    webArch = `- 艾伯林量子調頻官網
   - 個人狀態燈號檢測 (內在消耗免費檢測入口)
   - 個人狀態分析 (個人信息場分析)
   - 核心調和計畫 (三個月信息場調和支持)
@@ -1873,9 +1873,9 @@ graph TD
   - 主題講座與讀書會 (關鍵因素讀書會 / 內外一致練習場)
   - 高階顧問陪跑 (個人/創業者/企業主人生與事業校準)
   - 旗下品牌導流
-    - 品牌 A I8 (企業決策、團隊與成長顧問)
-    - 品牌 B NAS (生命數字自我探索與關係理解)
-    - 品牌 C ABL (信息場分析與狀態調和支持)`;
+    - 品牌 A 初八企業顧問（企業決策、團隊與成長顧問）
+    - 品牌 B 平衡空間（生命數字自我探索與關係理解）
+    - 品牌 C 艾伯林量子調頻（信息場分析與狀態調和支持）`;
 
     seo = [
       { keyword: "Erick 關鍵因素諮詢", volume: "1,200", competition: "低", outline: "介紹Erick如何引導客戶找出公司與人生的重複卡點與模式" },
@@ -2034,9 +2034,9 @@ JSON 格式要求如下：
  * Mock AEO/SEO 資料生成器 (本地模擬模式)
  */
 async function callMockAEO(brandName: string, keywords: any[]): Promise<{ schemaMarkup: string; aeoFaq: string }> {
-  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
-  const isNas = brandName.includes("NAS") || brandName.includes("brand_b");
-  const isAbl = brandName.includes("ABL") || brandName.includes("brand_c");
+  const isI8 = /I8|初八/.test(brandName) || brandName.includes("brand_a");
+  const isNas = /NAS|平衡空間/.test(brandName) || brandName.includes("brand_b");
+  const isAbl = /ABL|艾伯林/.test(brandName) || brandName.includes("brand_c");
 
   let schema = "";
   let faq = "";
@@ -2084,7 +2084,7 @@ A: 當企業正在面對需要協作的選擇，且優先順序、資訊或角�
       "name": "如何透過生命數字探索自己的天賦特質？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "平衡空間 NAS 提供專業的生命數字個人解析服務。透過主命數 1-9 的性格分析與天賦能量解碼，協助您看清思考慣性，擺脫迷惘並找到適合自己的人生節奏。"
+        "text": "平衡空間提供專業的生命數字個人解析服務。透過主命數 1-9 的性格分析與天賦能量解碼，協助您看清思考慣性，擺脫迷惘並找到適合自己的人生節奏。"
       }
     },
     {
@@ -2116,7 +2116,7 @@ A: 關係衝突多半來自於不理解彼此的思考慣性。透過生命數�
       "name": "什麼是量子調頻，它的效果如何？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "ABL 艾伯林量子調頻透過信息場分析與頻率支持，協助您看清內在消耗與情緒超載背後的隱性阻力，並在睡眠放鬆與情緒管理上提供深度的穩定與支持。"
+        "text": "艾伯林量子調頻透過信息場分析與頻率支持，協助您看清內在消耗與情緒超載背後的隱性阻力，並在睡眠放鬆與情緒管理上提供深度的穩定與支持。"
       }
     },
     {
@@ -2263,7 +2263,7 @@ export async function callTheoAnalysis(
   
   let brandPersona = "Erick 專欄：理性、深度、智慧、商業思維與人生下半場個人成長調性。";
   if (isI8) brandPersona = "I8 企業醫生：高階企管顧問、營運決策校準、系統性卡點診斷調性。";
-  else if (isNas) brandPersona = "NAS 生命數字：自我探索、天賦性格解碼、溫暖不宿命的關係說明書調性。";
+  else if (isNas) brandPersona = "平衡空間：自我探索、天賦性格解碼、溫暖不宿命的關係說明書調性。";
   else if (isAbl) brandPersona = "ABL 量子調頻：心靈調和、情緒失衡釋放、睡眠安定日常照顧調性。";
 
   let platformRules = "";
@@ -2350,14 +2350,14 @@ ${socialCopy}
 /** 取得品牌背景（官網文章用；邏輯與 callErickCOO 內相同，但不含文案框架） */
 function buildBrandContextLite(brandName: string, brandGuidelines?: string): string {
   let ctx = `當前切換的品牌/領域是：【${brandName}】。請確保所有產出完全符合此品牌的調性，並隔離其他品牌的資訊。`;
-  const isI8 = brandName.includes("I8") || brandName.includes("brand_a");
+  const isI8 = /I8|初八/.test(brandName) || brandName.includes("brand_a");
   if (brandGuidelines && brandGuidelines.trim().length > 0) {
     ctx += "\n\n【品牌定位與知識大腦規範】：\n" + brandGuidelines;
   } else if (isI8) {
     ctx += "\n\n" + I8_BRAND_CONTEXT;
-  } else if (brandName.includes("NAS") || brandName.includes("brand_b")) {
+  } else if (/NAS|平衡空間/.test(brandName) || brandName.includes("brand_b")) {
     ctx += "\n\n" + NAS_BRAND_CONTEXT + "\n\n" + NAS_WRITING_PROMPT;
-  } else if (brandName.includes("ABL") || brandName.includes("brand_c")) {
+  } else if (/ABL|艾伯林/.test(brandName) || brandName.includes("brand_c")) {
     ctx += "\n\n" + ABL_BRAND_CONTEXT;
   } else if (brandName.includes("個人") || brandName.includes("personal") || brandName.includes("Erick")) {
     ctx += "\n\n" + ERICK_BRAND_CONTEXT;

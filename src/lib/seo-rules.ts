@@ -228,9 +228,9 @@ export function scoreArticle(input: RuleInput): RuleReport {
 /** 品牌名稱 → GEO 規則用的別名清單 */
 export function brandAliasesFor(brandName: string): string[] {
   const n = brandName || "";
-  if (/I8|初八/i.test(n)) return ["I8", "初八", "企業醫生"];
-  if (/NAS|平衡空間/i.test(n)) return ["NAS", "平衡空間", "艾瑞克"];
-  if (/ABL|艾伯林|量子調頻/i.test(n)) return ["ABL", "艾伯林"];
+  if (/I8|初八/i.test(n)) return ["初八企業顧問", "I8", "初八", "企業醫生"];
+  if (/NAS|平衡空間/i.test(n)) return ["平衡空間", "NAS", "艾瑞克"];
+  if (/ABL|艾伯林|量子調頻/i.test(n)) return ["艾伯林量子調頻", "ABL", "艾伯林"];
   if (/Erick|艾瑞克/i.test(n)) return ["Erick", "艾瑞克"];
   return [];
 }
