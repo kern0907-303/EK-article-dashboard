@@ -13,6 +13,8 @@ import { cardHeadline } from "@/lib/article-image.mjs";
 import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { uploadPublicJpeg } from "@/lib/social-image-server";
+import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
+import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
 
 const CARD_BRAND_IDS: Record<string, string> = { nas: "brand_b_nas", abl: "brand_c_abl", i8: "brand_a_i8", erick: "personal_brand" };
 
@@ -119,10 +121,14 @@ export async function POST(req: NextRequest) {
         return stripDashes(stripMarkdown(result.optimized_content));
       });
       draft = optimized;
+      const mechanical = applyMechanicalFixes(draft);
+      draft = mechanical.text;
       const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };
       const issues = checkGenreText(draft, meta, "facebook", job.brand_id);
       const blocks = blockingIssues(issues);
-      const warnings = [...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message)];
+      const gateIssues = runQualityGate(draft, { platform: "facebook" });
+      const gateBlocks = gateBlockers(gateIssues);
+      const warnings = [...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message), ...mechanical.fixes.map((fix) => `自動修正：${fix}`)];
       const leftover = draft.match(/【需補[^】]*】/g);
       const negatedHits = issues.guardrailHits.filter((hit) => hit.negated);
       if (negatedHits.length) {
@@ -130,7 +136,7 @@ export async function POST(req: NextRequest) {
       }
       const blockedReason = leftover?.length
         ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
-        : blocks.map((issue) => issue.message).join("；");
+        : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`)].join("；");
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }
@@ -165,6 +171,23 @@ export async function POST(req: NextRequest) {
           throw new Error("建立社群排程失敗：資料庫拒絕無效或已取消的任務");
         }
         await updateJob(job.id, { current_step: card.url ? "已排程，未審（附品牌圖卡）" : `已排程，未審（圖卡失敗，改用圖庫：${card.error || "未知原因"}）` });
+        // 多平台延伸（預設關閉）：官網文章、IG 輪播、Threads。FB 已排好，這裡任何失敗都只通知，不影響 FB。
+        if (isMultiplatformEnabled() && job.test_run !== true) {
+          try {
+            const multi = await runMultiplatform({
+              env, jobId: job.id, brandShort: job.brand_id, brandName, master: draft,
+              fbScheduledAt: job.scheduled_at, fbQueueId: String(queueId), coverUrl: card.url,
+            });
+            const summary = summarize(multi);
+            await updateJob(job.id, { current_step: summary.step });
+            if (summary.problems.length) await addNotice(job.batch_id, `${brandName} 任務 ${job.id}：${summary.problems.join("；")}`);
+            try { await updateJob(job.id, { social_results: multi }); } catch { /* 資料表尚未新增 social_results 欄位時略過 */ }
+          } catch (multiError) {
+            const reason = multiError instanceof Error ? multiError.message : String(multiError);
+            console.error("Auto pipeline multiplatform step failed:", reason);
+            await addNotice(job.batch_id, `${brandName} 任務 ${job.id}：FB 已排程，但官網、IG、Threads 排程失敗：${reason.slice(0, 200)}`);
+          }
+        }
       }
       await pipelineDb("auto_pipeline_batches", `id=eq.${encodeURIComponent(job.batch_id)}`, { method: "PATCH", body: JSON.stringify({ status: "running", updated_at: new Date().toISOString() }) });
       try { await sendBatchNotice(job.batch_id); } catch (notificationError) { console.error("Auto pipeline batch finalization/notification failed:", notificationError); }
