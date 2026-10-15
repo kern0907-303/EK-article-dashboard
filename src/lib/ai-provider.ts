@@ -3,6 +3,7 @@ import { stripMarkdown, stripDashes } from "@/lib/plain-text";
 import { splitPostReminders } from "@/lib/post-reminders";
 import { friendlyLeonError, hasUsableSocialCopy, LEON_GENERATION_OPTIONS } from "@/lib/expert-routing";
 import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
+import { buildEntryBridgePrompt, resolveEntryBridgeBrand, resolveEntryBridgeFunnel } from "@/data/skills/entry-bridge";
 import { getBrandConversion } from "@/data/brands/conversion";
 import { I8_BRAND_CONTEXT } from "../data/brands/i8";
 import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
@@ -1204,7 +1205,7 @@ ${diagramInstruction}
    - Erick專欄：#個人品牌, #自我成長, #商業思維, #決策邏輯, #人生下半場
    - 初八企業顧問：#企業醫生, #企業管理, #決策校準, #組織優化, #營運策略
    - 平衡空間：#生命數字, #自我探索, #關係說明書, #人生節奏, #天賦性格
-   - 艾伯林量子調頻：#狀態調和, #內在消耗, #情緒穩定, #壓力管理, #自我照顧
+   - 艾伯林量子調頻：#角色盤點, #負荷來源整理, #內在消耗, #壓力管理, #自我照顧
  6. 寫作核心主題：你的整篇文章必須緊密圍繞「### 任務指派 (子提示詞)」中要求的特定內容、細節與結構展開。品牌知識背景中包含的語氣範例（例如「你不是沒有努力，而是你已經用撐住的方式活太久了」）僅供撰寫口吻與品牌世界觀的參考，**絕對不可直接拿來作為文章的最主要核心主題或標題，也絕對不能用通用的品牌常規話術取代或覆蓋了使用者指派的特定文案主題**！
    - 如果子提示詞或使用者要求分析具體事物（例如氣場、經絡、身體、情緒、理智、精神等層次），你必須在文章中開闢專門段落/部分，對這些維度進行深度、細膩的逐一分析，而不能只是用一句話含糊帶過！
 
@@ -1216,7 +1217,17 @@ ${diagramInstruction}
 
     // 文體模式：用「共用前綴 + 品牌語氣 + 漏斗層 + 文體骨架 + 本篇變數」取代預設的 Maya 提示詞。
     // 品牌既有規範只保留為事實邊界（語氣衝突時以文體提示詞為準）。
-    let finalMayaPrompt = mayaStepPrompt;
+    const entryBridgeBrand = resolveEntryBridgeBrand(brandName);
+    const entryBridgeInput = [
+      history.filter((message) => message.role === "user").map((message) => message.content).join("\n"),
+      typeof subPromptsInput === "string" ? subPromptsInput : JSON.stringify(subPromptsInput || {}),
+    ].join("\n");
+    const generalEntryBridge = !genre?.settings && entryBridgeBrand
+      ? buildEntryBridgePrompt(entryBridgeBrand, resolveEntryBridgeFunnel(entryBridgeInput))
+      : "";
+    let finalMayaPrompt = generalEntryBridge
+      ? `${mayaStepPrompt}\n\n${generalEntryBridge}`
+      : mayaStepPrompt;
     const mayaReport: AIResponseReport = { label: "Maya" };
     if (genre?.settings) {
       finalMayaPrompt = `${buildGenrePrompt(genre.brandKey, genre.settings)}
@@ -1804,34 +1815,23 @@ async function callMockCOO(userInput: string, brandName: string): Promise<string
       { label: "課程報名轉換率 (CVR)", value: "3.85%", change: "+0.45%", isPositive: true }
     ];
   } else if (isAbl) {
-    socialCopy = `你不是不夠努力，而是你的狀態需要被重新支持與調和
-
-為什麼明明看了那麼多書、學了那麼多道理，生活還是會反覆卡在相同的模式？
-你常常感到緊繃、失眠，或是明明想要往前，卻總覺得有一股隱形的阻力拉住自己？
-
-💡 其實，有些卡關並不是你做錯了什麼，而是你的能量已經「超載」了。
-當內在狀態失衡，再多的行動與意志力，也只是在消耗所剩無幾的自己。
-
-- 信息場解析：協助你看見情緒、關係與壓力背後，真正卡住的隱性阻力。
-- 三個月調和支持：透過定期的頻率支持與顧問陪伴，讓自己慢慢回到清明、穩定與行動力。
-
-調和不是強迫自己馬上變好，而是允許自己獲得重新安放的空間。
-
-#艾伯林量子調頻 #個人狀態調和 #量子調和 #內在消耗 #生命狀態校準`;
+    socialCopy = `照顧完所有人,輪到自己,什麼都不剩。
+這些角色,是你認可、也願意扛的。只是最近,身體開始有了訊號。
+身體的訊號,請讓醫師陪你確認它在說什麼。我陪你看的,是你這個人怎麼運作,這些你願意扛的角色,是怎麼一層一層疊上來的。我看的不是零件,是整個人。`;
 
     webArch = `- 艾伯林量子調頻官網
-  - 個人狀態燈號檢測 (內在消耗免費檢測入口)
-  - 個人狀態分析 (個人信息場分析)
-  - 核心調和計畫 (三個月信息場調和支持)
-  - 專題調和支持 (情緒/睡眠/自我價值/財富支持)
-  - 年度生命狀態校準計畫 (長期會員支持)
+  - 角色盤點
+  - 負荷來源整理
+  - 選擇性的頻率支持(自願、可退費、放在最後一層)
+  - 主題支持
+  - 你自己的檢視
   - 聯絡諮詢`;
 
     seo = [
-      { keyword: "量子調頻效果", volume: "5,400", competition: "中", outline: "科普信息場分析與量子頻率支持如何協助日常情緒調和" },
-      { keyword: "內在消耗改善", volume: "2,100", competition: "低", outline: "分享如何從超載焦慮與內耗中，透過調頻重新回到穩定狀態" },
-      { keyword: "高壓力情緒管理", volume: "6,800", competition: "中", outline: "為創業者與高壓決策者設計的內在狀態清理與放鬆指引" },
-      { keyword: "睡眠品質差放鬆", volume: "12,500", competition: "高", outline: "探討失眠背後的潛意識阻力，以及如何透過能量調和進行改善" }
+      { keyword: "量子調頻效果", volume: "5,400", competition: "中", outline: "整理角色負荷與日常情緒感受" },
+      { keyword: "內在消耗整理", volume: "2,100", competition: "低", outline: "分享如何從日常角色與負荷來源開始整理" },
+      { keyword: "高壓力情緒管理", volume: "6,800", competition: "中", outline: "整理高壓決策者的工作角色與日常負荷" },
+      { keyword: "睡眠品質差放鬆", volume: "12,500", competition: "高", outline: "探討生活角色與工作壓力如何影響日常休息感受" }
     ];
 
     ads = [
@@ -1850,10 +1850,10 @@ async function callMockCOO(userInput: string, brandName: string): Promise<string
 🔍 其實，你缺的往往不是方法，而是「看見關鍵」的視角。
 核心價值不在於你學了多少工具，而在於你能否看清那些一直影響結果、卻被你忽略的隱性卡點。
 
-- Erick 關鍵因素諮詢：一對一深度解析人生、關係與事業卡點，釐清下一步具體方向。
-- 人生與事業校準陪跑：整合內在狀態與外在決策，陪伴你將理解真正落實為行動。
+- Erick 關鍵因素諮詢：整理人生、關係與事業脈絡，提供你自己的檢視。
+- 人生與事業陪跑：從角色盤點與負荷來源整理開始，提供你自己的檢視。
 
-當人穩了，局才有機會重新打開。
+回到你自己的檢視，從目前站的位置開始整理。
 
 ![Erick 關鍵因素決策架構圖](https://filedn.com/your-id/website-assets/erick-decision-framework.png)
 
@@ -1875,13 +1875,13 @@ graph TD
   - 旗下品牌導流
     - 品牌 A 初八企業顧問（企業決策、團隊與成長顧問）
     - 品牌 B 平衡空間（生命數字自我探索與關係理解）
-    - 品牌 C 艾伯林量子調頻（信息場分析與狀態調和支持）`;
+    - 品牌 C 艾伯林量子調頻（角色盤點、負荷來源整理與選擇性的頻率支持）`;
 
     seo = [
       { keyword: "Erick 關鍵因素諮詢", volume: "1,200", competition: "低", outline: "介紹Erick如何引導客戶找出公司與人生的重複卡點與模式" },
       { keyword: "人生事業卡關原因", volume: "3,500", competition: "低", outline: "解析表面的資源問題與內在心理阻力之間的拉扯關係" },
       { keyword: "創業者決策陪跑", volume: "1,800", competition: "低", outline: "探討高階諮詢在創業者定位、收費模式及承接成功上的應用" },
-      { keyword: "承接成功與自我價值", volume: "2,400", competition: "低", outline: "分享如何突破『害怕成功』的潛意識限制，迎向更大格局" }
+      { keyword: "承接成功與自我價值", volume: "2,400", competition: "低", outline: "整理面對成功時的顧慮與自我價值觀察" }
     ];
 
     ads = [
@@ -2113,30 +2113,30 @@ A: 關係衝突多半來自於不理解彼此的思考慣性。透過生命數�
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "什麼是量子調頻，它的效果如何？",
+      "name": "如何開始做角色盤點與負荷來源整理？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "艾伯林量子調頻透過信息場分析與頻率支持，協助您看清內在消耗與情緒超載背後的隱性阻力，並在睡眠放鬆與情緒管理上提供深度的穩定與支持。"
+        "text": "可以先整理自己認可且願意承擔的角色，再看看哪些負荷是自己接過來的。這是看見起點與領域的整理方式，不是效果保證。"
       }
     },
     {
       "@type": "Question",
-      "name": "如何緩解高壓力情緒管理與失眠問題？",
+      "name": "身體出現訊號時可以怎麼做？",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "高壓決策者容易因為內在狀態失衡而超載。三個月的狀態調和計畫透過定期的頻率調和與顧問陪跑，協助客戶慢慢回到清明、穩定與睡眠安放狀態。"
+        "text": "身體的訊號,請讓醫師陪你確認它在說什麼。我陪你看的,是你這個人怎麼運作,這些你願意扛的角色,是怎麼一層一層疊上來的。"
       }
     }
   ]
 }
 </script>`;
-    faq = `### 🌀 AEO 常見問答集 (FAQ)
+    faq = `### AEO 常見問答集 (FAQ)
 
-#### Q: 量子調頻如何改善我的內在消耗與情緒超載？
-A: 內在消耗往往來自潛意識中反覆卡住的生命模式。ABL 的 **量子調頻效果** 透過信息場分析，找出讓您緊繃超載的隱形原因，提供信息場頻率支持，陪伴您重建穩定且不混亂的日常狀態。
+Q: 如何開始做角色盤點？
+A: 可以先列出自己認可且願意承擔的角色,再整理目前的負荷來源。
 
-#### Q: 面臨長期失眠與緊繃，該如何進行放鬆？
-A: 嚴重的 **睡眠品質差放鬆** 與高壓力情緒管理，往往需要從根本的信息場調和入手。透過三個月生命狀態校準計畫，能逐步調和並釋放壓抑的訊號，讓身心重新獲得清明安放的空間。`;
+Q: 身體出現訊號時可以怎麼做？
+A: 身體的訊號,請讓醫師陪你確認它在說什麼。我陪你看的,是你這個人怎麼運作,這些你願意扛的角色,是怎麼一層一層疊上來的。`;
   } else {
     schema = `<script type="application/ld+json">
 {
@@ -2390,11 +2390,16 @@ export async function callWebArticle(
 
   const kwList = (keywords || []).map((k) => k.keyword).filter(Boolean).slice(0, 10).join("、") || "（無）";
   const brandContext = buildBrandContextLite(brandName, brandGuidelines);
+  const bridgeBrand = resolveEntryBridgeBrand(brandName);
+  const entryBridge = bridgeBrand
+    ? buildEntryBridgePrompt(bridgeBrand, "cold")
+    : "";
 
   const prompt = `你現在是官網內容編輯 Iris。請把下面這篇【${brandName}】的社群貼文，改寫成可以發布在官網 Insights 的完整文章。
 
 【品牌背景與限制】
 ${brandContext}
+${entryBridge ? `\n\n${entryBridge}` : ""}
 
 【鐵則，違反即失敗】
 1. 絕對不可編造數據、統計、案例、客戶故事、來源、頭銜或引用。社群貼文沒有的事實，一律不得新增。

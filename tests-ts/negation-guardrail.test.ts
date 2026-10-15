@@ -48,5 +48,14 @@ const coldAbl = evaluateGuardrails("冷流量提到信息場", "ABL", "cold");
 test("ABL 沒有品牌語言警告，但冷流量既有規則仍警告", coldAbl.warningHits.some((hit) => hit.word === "信息場" && hit.category === "funnel-warning"));
 test("否定放行不改變品牌檢查通過狀態", checkText("不是治療", "ABL").passed);
 
+const brandNameOnly = evaluateGuardrails("艾伯林量子調頻", "erick");
+test("完整品牌名艾伯林量子調頻不觸發品牌語言警告", brandNameOnly.warningHits.length === 0);
+
+const standaloneFrequency = evaluateGuardrails("我用調頻幫你", "erick");
+test("完整品牌名以外單獨出現的調頻仍警告", standaloneFrequency.warningHits.some((hit) => hit.word === "調頻" && hit.category === "brand-language"));
+
+const brandNameAndStandaloneFrequency = evaluateGuardrails("艾伯林量子調頻,我用調頻幫你", "erick");
+test("排除品牌名後只警告後續獨立出現的調頻", brandNameAndStandaloneFrequency.warningHits.length === 1 && brandNameAndStandaloneFrequency.warningHits[0]?.word === "調頻" && brandNameAndStandaloneFrequency.warningHits[0]?.sentence === "艾伯林量子調頻,我用調頻幫你");
+
 console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);

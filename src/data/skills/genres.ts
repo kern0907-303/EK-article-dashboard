@@ -2,6 +2,8 @@
 // 內容來源：Erick 提供的《文案文體提示詞骨架｜四種》。改提示詞時請同步調高 PROMPT_VERSION，
 // 文章存入官網時會一併記錄版本，之後可以回頭比較哪一版寫得比較好。
 
+import { buildEntryBridgePrompt } from "./entry-bridge";
+
 export const PROMPT_VERSION = "genre-v2";
 
 export type GenreId = "case" | "breakdown" | "response" | "invite";
@@ -111,7 +113,7 @@ export const BRAND_TONES: Record<BrandKey, string> = {
 基調：有洞察、有溫度、有結構、有立場。
 說出對方說不出來的東西，但不要高高在上分析人。
 敢講真正相信的觀點，不討好。
-這個品牌負責建立信任，不主動深入任何子品牌的技術語言。`,
+這個品牌提供你自己的檢視，不主動深入任何子品牌的技術語言。`,
   nas: `【本篇品牌：平衡空間】
 基調：溫暖。
 對外一律用本名「艾瑞克」。
@@ -355,10 +357,13 @@ export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
     s.cta.trim() ? `CTA：${s.cta.trim()}` : "CTA：使用者未指定，全文不放 CTA。",
   ].join("\n");
 
+  const entryBridge = buildEntryBridgePrompt(brandKey, s.funnel);
+
   return [
     SHARED_PREFIX,
     BRAND_TONES[brandKey],
     FUNNEL_RULES[s.funnel],
+    ...(entryBridge ? [entryBridge] : []),
     g.skeleton,
     variables,
     `### 輸出 JSON 格式要求：

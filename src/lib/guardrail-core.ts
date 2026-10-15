@@ -123,6 +123,17 @@ function isNegated(sentence: string, start: number, length: number): boolean {
   return NEGATION_TERMS.some((term) => window.includes(term));
 }
 
+function isInsideExcludedBrandName(sentence: string, start: number, length: number): boolean {
+  const excludedName = "艾伯林量子調頻";
+  let nameStart = sentence.indexOf(excludedName);
+  while (nameStart >= 0) {
+    const nameEnd = nameStart + excludedName.length;
+    if (start >= nameStart && start + length <= nameEnd) return true;
+    nameStart = sentence.indexOf(excludedName, nameStart + excludedName.length);
+  }
+  return false;
+}
+
 function toWarningMessage(hit: GuardrailHit): string {
   const category = {
     "medical-claim": "醫療宣稱",
@@ -166,6 +177,10 @@ export function evaluateGuardrails(
       while (from <= sentence.length - rule.word.length) {
         const start = sentence.toLocaleLowerCase().indexOf(rule.word.toLocaleLowerCase(), from);
         if (start < 0) break;
+        if (rule.category === "brand-language" && isInsideExcludedBrandName(sentence, start, rule.word.length)) {
+          from = start + Math.max(1, rule.word.length);
+          continue;
+        }
         const negated = isNegated(sentence, start, rule.word.length);
         hits.push({
           word: rule.word,

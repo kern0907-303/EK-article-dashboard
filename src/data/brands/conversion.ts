@@ -49,11 +49,11 @@ export const BRAND_CONVERSIONS: Record<string, BrandConversion> = {
     brandId: "brand_c_abl",
     shortId: "abl",
     stage: "nurture",
-    ctaLabel: "免費做狀態自我檢視",
+    ctaLabel: "免費做角色盤點",
     ctaUrl: "https://erickfirm.com/abl/check",
     leadMagnet:
-      "狀態自我檢視表，幫你看清目前的內在消耗來自哪裡。留下 email 即可收到個人化的整理建議。",
-    socialCommentText: "閱讀完整文章與狀態調和指南",
+      "角色盤點表，陪你整理目前認可且願意承擔的角色與負荷來源。留下 email 即可收到個人化的整理建議。",
+    socialCommentText: "閱讀完整文章與負荷來源整理指南",
   },
 
   brand_a_i8: {
