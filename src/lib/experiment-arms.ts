@@ -1,6 +1,8 @@
 // 成效回流實驗的純邏輯（不連資料庫、不呼叫網路），方便單元測試。
 // 一次只改一個變數：目前只開放「structure（開頭結構）」，每個品牌同時只跑一個實驗，兩個臂（arm）對打。
 
+import { parseTopicTags, type TopicTagInput } from "@/lib/topic-feedback";
+
 export const EXPERIMENT_VARIABLES = ["structure"] as const;
 export type ExperimentVariable = (typeof EXPERIMENT_VARIABLES)[number];
 
@@ -173,6 +175,8 @@ export interface ParsedDecision {
   start: { brand: ExperimentBrand; variable: ExperimentVariable; armA: string; armB: string } | null;
   /** experimentId 可以是既有實驗的 UUID，或 "new"（指這次 start 同時開的新實驗） */
   nextDays: { brand: ExperimentBrand; date: string; experimentId: string; arm: string }[];
+  /** 題材標記（選填）：把成熟貼文歸到關鍵字宇宙的題材，伺服器端再依品牌白名單檢查 */
+  topicTags: TopicTagInput[];
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -183,7 +187,7 @@ export function parseDecision(raw: unknown): { ok: true; value: ParsedDecision }
   const errors: string[] = [];
   if (!raw || typeof raw !== "object") return { ok: false, errors: ["請求內容必須是 JSON 物件"] };
   const body = raw as Record<string, unknown>;
-  const allowedKeys = new Set(["summary", "conclude", "start", "next_days", "schema_version"]);
+  const allowedKeys = new Set(["summary", "conclude", "start", "next_days", "topic_tags", "schema_version"]);
   for (const key of Object.keys(body)) if (!allowedKeys.has(key)) errors.push(`不允許的欄位：${key}`);
 
   const summary = typeof body.summary === "string" ? body.summary.trim() : "";
@@ -224,8 +228,11 @@ export function parseDecision(raw: unknown): { ok: true; value: ParsedDecision }
     }
   }
 
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { summary, conclude, start, nextDays } };
+  const tags = parseTopicTags(body.topic_tags);
+  if (!tags.ok) errors.push(...tags.errors);
+
+  if (errors.length || !tags.ok) return { ok: false, errors };
+  return { ok: true, value: { summary, conclude, start, nextDays, topicTags: tags.value } };
 }
 
 /** 台北時間的 YYYY-MM-DD */
