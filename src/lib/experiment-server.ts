@@ -3,10 +3,10 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
-import { getSocialMetrics, type SocialPost, type SocialSyncLog } from "@/lib/social-metrics-server";
+import { getSocialMetrics, type SocialPost } from "@/lib/social-metrics-server";
 import {
   EXPERIMENT_BRANDS, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
-  addDays, armDirective, judgeExperiment, median, parseDecision, relativeReward, rewardOf, taipeiDate,
+  addDays, armDirective, judgeExperiment, latestSyncTime, median, parseDecision, relativeReward, rewardOf, taipeiDate,
   type ExperimentBrand, type ExperimentVerdict, type ParsedDecision, type Platform,
 } from "@/lib/experiment-arms";
 
@@ -74,16 +74,6 @@ export interface SnapshotSummary {
   queueRowsChecked: number; matched: number; unmatched: number; noSyncTime: number; inserted: number; note: string;
 }
 
-function latestSyncTime(logs: SocialSyncLog[], post: SocialPost): string | null {
-  let best: string | null = null;
-  for (const log of logs) {
-    if (log.platform !== post.platform || log.account_id !== post.account_id || !log.run_at) continue;
-    if (log.status !== "ok" && log.status !== "partial") continue;
-    if (!best || Date.parse(log.run_at) > Date.parse(best)) best = log.run_at;
-  }
-  return best;
-}
-
 export async function ingestSnapshots(now = new Date()): Promise<SnapshotSummary> {
   const metrics = await getSocialMetrics(false);
   if (!metrics.ok) throw new Error(`讀取成效資料失敗：${metrics.error}`);
@@ -107,7 +97,7 @@ export async function ingestSnapshots(now = new Date()): Promise<SnapshotSummary
     const post = (postId && byId.get(`${q.platform}:${postId}`)) || (q.post_url ? byUrl.get(`${q.platform}:${q.post_url}`) : undefined);
     if (!post || !post.post_id || !post.published_at) { unmatched += 1; continue; }
     matched += 1;
-    const syncedAt = latestSyncTime(metrics.data.sync_log, post);
+    const syncedAt = latestSyncTime(metrics.data.sync_log, post.platform, post.account_label, post.account_id);
     if (!syncedAt) { noSyncTime += 1; continue; }
     rows.push({
       queue_id: q.id, platform: q.platform, post_id: post.post_id, brand: q.brand, published_at: new Date(post.published_at).toISOString(),

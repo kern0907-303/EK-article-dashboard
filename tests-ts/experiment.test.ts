@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  MATURE_HOURS, MAX_DAYS, MIN_DAYS, STRUCTURE_ARMS, addDays, armDirective, judgeExperiment, mean, parseDecision,
+  MATURE_HOURS, MAX_DAYS, MIN_DAYS, STRUCTURE_ARMS, addDays, armDirective, judgeExperiment, latestSyncTime, mean, parseDecision,
   probBBeatsA, relativeReward, rewardOf, seededRandom, taipeiDate,
 } from "../src/lib/experiment-arms";
 
@@ -79,5 +79,20 @@ for (const bad of [
 ]) {
   assert.equal(parseDecision(bad).ok, false, JSON.stringify(bad));
 }
+
+// 同步時間：n8n 日誌的 account_id 是名稱（對應貼文的 account_label），不是數字 ID（用 2026-10-17 線上實際格式）
+const logs = [
+  { platform: "threads", account_id: "Threads I8 / initial8.erick", status: "ok", run_at: "2026-10-12T03:00:04.817+08:00" },
+  { platform: "threads", account_id: "Threads I8 / initial8.erick", status: "ok", run_at: "2026-10-15T03:00:05.203+08:00" },
+  { platform: "threads", account_id: "Threads I8 / initial8.erick", status: "error", run_at: "2026-10-16T03:00:05.203+08:00" },
+  { platform: "threads", account_id: "Threads NAS / noagespace", status: "ok", run_at: "2026-10-15T03:00:05.230+08:00" },
+  { platform: "instagram", account_id: "Instagram I8 / initial8.erick", status: "ok", run_at: "2026-10-15T03:20:33.132+08:00" },
+];
+assert.equal(latestSyncTime(logs, "threads", "Threads I8 / initial8.erick", "28572242392446141"), "2026-10-15T03:00:05.203+08:00");
+assert.equal(latestSyncTime(logs, "instagram", "Threads I8 / initial8.erick", "28572242392446141"), null);
+assert.equal(latestSyncTime(logs, "threads", "別的帳號", "28572242392446141"), null);
+assert.equal(latestSyncTime([{ platform: "threads", account_id: "28572242392446141", status: "partial", run_at: "2026-10-15T03:00:00+08:00" }], "threads", "x", "28572242392446141"), "2026-10-15T03:00:00+08:00");
+// 貼文發佈時間格式（無冒號的時區）也要能解析
+assert.equal(Number.isNaN(Date.parse("2026-10-14T02:30:46+0000")), false);
 
 console.log("experiment tests passed");
