@@ -280,7 +280,7 @@ export async function applyDecision(raw: unknown, now = new Date()): Promise<Dec
     if (d.nextDays.some((n) => n.experimentId === "new") && !startedId) throw new Error("新實驗沒有取得編號，無法寫入參數");
     const paramRows = d.nextDays.map((n) => ({ brand: n.brand, valid_date: n.date, experiment_id: n.experimentId === "new" ? startedId : n.experimentId, arm: n.arm, run_id: runId }));
     if (paramRows.length) {
-      await pipelineDb("strategy_params", "on_conflict=brand,valid_date", { method: "POST", body: JSON.stringify(paramRows), headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+      await pipelineDb("strategy_params", "on_conflict=brand,valid_date", { method: "POST", body: JSON.stringify(paramRows), headers: { Prefer: "resolution=merge-duplicates,return=representation" } });
       applied.push(`寫入 ${paramRows.length} 筆未來幾天的參數`);
     }
     return { ok: true, applied };
