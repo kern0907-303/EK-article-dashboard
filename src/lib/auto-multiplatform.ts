@@ -134,9 +134,9 @@ async function enqueueSocial(env: SupabaseEnv, row: Record<string, unknown>): Pr
   let res = await attempt(row);
   if (!res.ok && res.status === 400) {
     const text = await res.clone().text();
-    if (/job_id|article_id|image_urls|column/i.test(text)) {
-      const { job_id: _job, article_id: _article, ...rest } = row;
-      void _job; void _article;
+    if (/job_id|article_id|image_urls|experiment_json|column/i.test(text)) {
+      const { job_id: _job, article_id: _article, experiment_json: _experiment, ...rest } = row;
+      void _job; void _article; void _experiment;
       res = await attempt(rest);
     }
   }
@@ -158,6 +158,8 @@ export interface MultiplatformInput {
   fbScheduledAt: string;
   fbQueueId: string;
   coverUrl: string | null;
+  /** 成效回流實驗標籤：寫進 Threads / IG 排程列，之後成效才能對回是哪個結構臂 */
+  experiment?: { experiment_id: string; variable: string; arm: string };
 }
 
 export interface MultiplatformResult {
@@ -290,6 +292,7 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
     const id = await enqueueSocial(env, {
       platform: "instagram", brand: brandShort, content, image_url: imageUrls[0], image_urls: imageUrls,
       scheduled_at: times.instagram, status: "pending", job_id: jobId, ...(articleId ? { article_id: articleId } : {}),
+      ...(input.experiment ? { experiment_json: input.experiment } : {}),
     });
     result.instagram = { ok: true, id, scheduledAt: times.instagram, slides: imageUrls.length };
   } catch (error) {
@@ -309,6 +312,7 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
       platform: "threads", brand: brandShort, content,
       image_url: withImages ? imageUrls[0] : null, ...(withImages ? { image_urls: imageUrls } : {}),
       scheduled_at: times.threads, status: "pending", job_id: jobId, ...(articleId ? { article_id: articleId } : {}),
+      ...(input.experiment ? { experiment_json: input.experiment } : {}),
     });
     result.threads = { ok: true, id, scheduledAt: times.threads, slides: withImages ? imageUrls.length : 0 };
     if (!withImages) result.threads.error = `Threads 改為純文字：${imageError || "圖卡不足"}`;
