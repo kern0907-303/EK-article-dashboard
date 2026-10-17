@@ -14,6 +14,7 @@ import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { uploadPublicJpeg } from "@/lib/social-image-server";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
+import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
 import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
 
 const CARD_BRAND_IDS: Record<string, string> = { nas: "brand_b_nas", abl: "brand_c_abl", i8: "brand_a_i8", erick: "personal_brand" };
@@ -99,10 +100,13 @@ export async function POST(req: NextRequest) {
 
     const brandName = ({ nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "Erick 個人品牌" } as const)[job.brand_id as "nas" | "abl" | "i8" | "erick"];
     let draft = "";
+    // 成效回流實驗（EXPERIMENT_ENABLED=true 才會生效）：依預定發文日查當天的結構臂，查不到就照原流程
+    let experiment: ExperimentAssignment | null = null;
     try {
+      experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await retryOnce(async () => {
         const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-          maya: job.prompt,
+          maya: experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt,
           iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
         }, undefined, undefined, "facebook");
         const text = result.dispatchData?.social_copy;
@@ -177,6 +181,7 @@ export async function POST(req: NextRequest) {
             const multi = await runMultiplatform({
               env, jobId: job.id, brandShort: job.brand_id, brandName, master: draft,
               fbScheduledAt: job.scheduled_at, fbQueueId: String(queueId), coverUrl: card.url,
+              ...(experiment ? { experiment: { experiment_id: experiment.experimentId, variable: experiment.variable, arm: experiment.arm } } : {}),
             });
             const summary = summarize(multi);
             await updateJob(job.id, { current_step: summary.step });
