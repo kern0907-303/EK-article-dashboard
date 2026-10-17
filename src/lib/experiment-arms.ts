@@ -240,3 +240,27 @@ export function addDays(date: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+export interface SyncLogLike {
+  platform: string | null;
+  account_id: string | null;
+  status: string | null;
+  run_at: string | null;
+}
+
+/**
+ * 某個帳號最近一次成功的 n8n 同步時間。
+ * 注意：n8n 的 social_sync_log.account_id 記的是名稱（例如「Threads I8 / initial8.erick」），
+ * 對應貼文的 account_label，不是貼文的數字 account_id，所以兩者都要比對。
+ */
+export function latestSyncTime(logs: SyncLogLike[], platform: string | null, accountLabel: string | null, accountId: string | null): string | null {
+  let best: string | null = null;
+  for (const log of logs) {
+    if (log.platform !== platform || !log.run_at) continue;
+    if (log.account_id !== accountLabel && log.account_id !== accountId) continue;
+    if (log.status !== "ok" && log.status !== "partial") continue;
+    if (Number.isNaN(Date.parse(log.run_at))) continue;
+    if (!best || Date.parse(log.run_at) > Date.parse(best)) best = log.run_at;
+  }
+  return best;
+}
