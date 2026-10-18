@@ -8,7 +8,7 @@ import {
   OTHER_TOPIC, allowedTopicsFor, scoreTopics, type TopicBrand, type TopicLabel, type TopicObservation,
 } from "@/lib/topic-feedback";
 import {
-  EXPERIMENT_BRANDS, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
+  EXPERIMENT_BRANDS, GENRE_ARMS, GENRE_DEFAULT_ARM, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
   addDays, armDirective, judgeExperiment, latestSyncTime, median, parseDecision, relativeReward, rewardOf, taipeiDate,
   type ExperimentBrand, type ExperimentVerdict, type ParsedDecision, type Platform,
 } from "@/lib/experiment-arms";
@@ -63,7 +63,15 @@ export async function resolveExperimentArm(brand: string, scheduledAtIso: string
     const exps = await pipelineDb<ExperimentRow[]>("experiments", `id=eq.${encodeURIComponent(row.experiment_id)}&status=eq.running&select=id,variable,arm_a,arm_b`);
     const exp = exps[0];
     if (!exp || (row.arm !== exp.arm_a && row.arm !== exp.arm_b)) return null;
-    const directive = armDirective(exp.variable, row.arm);
+    let directive = armDirective(exp.variable, row.arm);
+    // 文體實驗進行時，結構鎖在該品牌上一輪結構實驗的勝者（沒有勝者就不加結構指令，維持原流程）
+    if (directive && exp.variable === "genre") {
+      const prior = await pipelineDb<{ winner: string | null }[]>(
+        "experiments", `brand=eq.${brand}&variable=eq.structure&status=eq.concluded&winner=not.is.null&order=concluded_at.desc&limit=1&select=winner`,
+      );
+      const locked = prior[0]?.winner ? armDirective("structure", prior[0].winner) : null;
+      if (locked) directive = `${directive}\n\n${locked}`;
+    }
     return directive ? { experimentId: exp.id, variable: exp.variable, arm: row.arm, directive } : null;
   } catch (error) {
     console.error("[experiment] resolveExperimentArm failed:", safeMessage(error));
@@ -201,6 +209,7 @@ export async function buildReport(now = new Date()) {
     generated_at: now.toISOString(), today_taipei: today,
     rules: { min_days: MIN_DAYS, max_days: MAX_DAYS, min_mature_posts_per_arm: MIN_MATURE_POSTS_PER_ARM, mature_hours: MATURE_HOURS, win_probability: WIN_PROBABILITY, max_ahead_days: MAX_AHEAD_DAYS },
     available_structure_arms: ["story_open", "question_open", "claim_open"],
+    available_genre_arms: Object.keys(GENRE_ARMS),
     running_experiments: experiments,
     recent_finished: state.experiments.filter((e) => e.status !== "running").slice(0, 5).map((e) => ({ experiment_id: e.id, brand: e.brand, arm_a: e.arm_a, arm_b: e.arm_b, status: e.status, winner: e.winner, note: e.decision_note })),
     brands_without_running_experiment: EXPERIMENT_BRANDS.filter((brand) => !running.some((e) => e.brand === brand)),
@@ -252,6 +261,16 @@ export async function applyDecision(raw: unknown, now = new Date()): Promise<Dec
     const pendingWinner = plannedConclusions.find((p) => p.exp.brand === s.brand && p.exp.variable === s.variable && p.winner);
     const champion = pendingWinner?.winner ?? previous?.winner ?? null;
     if (champion && s.armA !== champion) errors.push(`${s.brand} 上一輪勝者是 ${champion}，新實驗的 arm_a 必須沿用它（冠軍對挑戰者）`);
+    const samePair = (e: ExperimentRow) => e.brand === s.brand && e.variable === s.variable && (e.status === "concluded" || e.status === "inconclusive")
+      && ((e.arm_a === s.armA && e.arm_b === s.armB) || (e.arm_a === s.armB && e.arm_b === s.armA));
+    if (state.experiments.some(samePair)) errors.push(`${s.brand} 的 ${s.variable} 已經測過 ${s.armA} 對 ${s.armB}，不重複開同一組；請換沒對打過的組合`);
+    if (s.variable === "genre") {
+      // 順序：結構先收斂，才開文體。含這次請求裡正要結案的結構實驗。
+      const structureDone = state.experiments.some((e) => e.brand === s.brand && e.variable === "structure" && (e.status === "concluded" || e.status === "inconclusive"))
+        || plannedConclusions.some((p) => p.exp.brand === s.brand && p.exp.variable === "structure");
+      if (!structureDone) errors.push(`${s.brand} 還沒完成任何一輪結構實驗，不能開文體實驗（先讓結構收斂）`);
+      if (!champion && s.armA !== GENRE_DEFAULT_ARM) errors.push(`第一次開文體實驗時 arm_a 必須是預設的 ${GENRE_DEFAULT_ARM}`);
+    }
   }
 
   const today = taipeiDate(now);
