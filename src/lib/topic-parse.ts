@@ -29,6 +29,7 @@ export function genreFromText(s: string): GenreId | null {
   if (s.includes("案例")) return "case";
   if (s.includes("拆解")) return "breakdown";
   if (s.includes("邀請")) return "invite";
+  if (s.includes("寵粉")) return "fan";
   return null; // 回應文目前未開放，不自動帶入
 }
 
@@ -173,7 +174,7 @@ export function parsePastedTopics(input: string): PastedBundle {
 
 /** 依文體決定「素材」欄要預填什麼。案例文需要真實個案，系統不代填。 */
 export function materialFor(t: PastedTopic, genre: GenreId): string {
-  if (genre === "case" || genre === "invite") return "";
+  if (genre === "case" || genre === "invite" || genre === "fan") return "";
   const parts: string[] = [];
   if (t.audienceVoice[0]) parts.push(`讀者會說的那句話：${t.audienceVoice[0]}`);
   if (t.marketView) parts.push(`市場常見說法（要拆的誤解）：${t.marketView}`);

@@ -493,6 +493,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     const need = t.needMaterial && !/^無需/.test(t.needMaterial) ? t.needMaterial : "";
     if (g === "case") notes.push(`案例文需要真實個案，系統不會代寫。請貼上個案摘要${need ? "。調研建議補：" + need : "。"}`);
     else if (g === "invite") notes.push(`邀請文請補素材欄：導向的網址、點進去會得到什麼、邀請對象。${need ? "調研建議補：" + need : ""}`);
+    else if (g === "fan") notes.push("寵粉文請在素材欄貼上你的口述逐字稿，系統只用你講過的內容，不會補沒有的情節。");
     else if (g === "breakdown") notes.push(`拆解文請在素材欄補上要用的框架（四層／領域／隱態顯態／內外一致）。事件內容是 AI 搜尋的，貼文前先核對來源。${need ? "調研建議補：" + need : ""}`);
     setPasteNotes(notes);
     setPasteApplied(`題目 ${t.index}｜${t.mode || "選題"}：${t.title || t.claim}`);
@@ -1086,7 +1087,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 文體
                 <select
                   value={genreId}
-                  onChange={(e) => { setGenreId(e.target.value as GenreId); setGenreError(""); }}
+                  onChange={(e) => { const next = e.target.value as GenreId; setGenreId(next); setGenreError(""); if (next === "fan") setFunnel("hot"); }}
                   className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {GENRE_LIST.map((g) => (

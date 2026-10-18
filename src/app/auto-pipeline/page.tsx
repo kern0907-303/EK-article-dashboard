@@ -79,7 +79,7 @@ export default function AutoPipelinePage() {
       const chosen = bundle.topics.filter((t) => selectedTopics.includes(t.index));
       if (!bundle.brandKey || chosen.length === 0) { setNotice("請確認調研文字含品牌名稱，並至少勾選一個選題。"); return; }
       const next = chosen.map((topic) => {
-        const genre = topic.genre && GENRES[topic.genre].enabled ? topic.genre : null;
+        const genre = topic.genre && topic.genre !== "fan" && GENRES[topic.genre].enabled ? topic.genre : null;
         const warning = [...(!genre ? ["選題文體無法辨識或尚未啟用"] : []), "缺少日期"];
         const funnel = topic.funnel || "cold";
         const settings = genre ? {

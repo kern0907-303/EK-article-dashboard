@@ -1,6 +1,7 @@
 import { checkGenreText, blockingIssues } from "../src/lib/genre-check";
-import { buildGenrePrompt, GENRES, brandKeyFromId, PROMPT_VERSION, SHARED_PREFIX } from "../src/data/skills/genres";
+import { buildGenrePrompt, GENRES, brandKeyFromId, PROMPT_VERSION, SHARED_PREFIX, goalOf } from "../src/data/skills/genres";
 import { stripMarkdown, stripDividers, stripDashes } from "../src/lib/plain-text";
+import { genreFromText, materialFor, parsePastedTopics } from "../src/lib/topic-parse";
 
 let pass = 0, fail = 0;
 const t = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`${cond ? "✓" : "✗"} ${name}`); };
@@ -56,5 +57,28 @@ t("stripDividers 移除 --- 與 === 線", stripDividers("甲\n---\n乙\n===\n丙
 t("共用前綴不再要求 ── 當小標", !SHARED_PREFIX.includes("小標用 ──"));
 void filler;
 
+// ───────────── 寵粉文（v3） ─────────────
+{
+  const fanSettings = (funnel: any = "hot") => ({ genre: "fan" as const, funnel, claim: "謝謝一路跟著的人", material: "我最近在課堂上說了一句話，大家都笑了。", metaphor: "", length: "", cta: "" });
+  const brands = ["nas", "abl", "i8", "erick"] as const;
+  t("寵粉文已啟用且要口述逐字稿", GENRES.fan.enabled === true && GENRES.fan.materialRequired === true && GENRES.fan.materialLabel === "口述逐字稿");
+  t("版本升為 genre-v3", PROMPT_VERSION === "genre-v3");
+  const prompts = brands.map((b) => buildGenrePrompt(b, fanSettings()));
+  t("四個品牌的寵粉提示詞都含寵粉骨架與領域", prompts.every((p) => p.includes("【本篇文體：寵粉文】") && p.includes("【寵粉領域：")));
+  t("各品牌領域寫法不同", new Set(prompts.map((p) => p.match(/【寵粉領域：[^】]+】/)?.[0])).size === 4);
+  t("平衡空間領域含生命數字語彙", prompts[0].includes("【寵粉領域：平衡空間】") && prompts[0].includes("主命數"));
+  t("艾伯林領域限制 TimeWaver 與保證效果", prompts[1].includes("TimeWaver 只能出現在經歷陳述") && prompts[1].includes("不保證效果"));
+  t("初八領域不歸咎個人", prompts[2].includes("不指向任何個人"));
+  t("寵粉文不套用給陌生人的入口橋接", !prompts[0].includes("【入口橋接規則") && !prompts[1].includes("【入口橋接規則"));
+  t("寵粉文一律用熱層規則，即使選了冷", buildGenrePrompt("abl", fanSettings("cold")).includes("【漏斗層：熱】") && !buildGenrePrompt("abl", fanSettings("cold")).includes("【漏斗層：冷】"));
+  t("其他文體不帶寵粉領域", !buildGenrePrompt("nas", { genre: "case", funnel: "cold", claim: "x", material: "y", metaphor: "", length: "", cta: "" }).includes("【寵粉領域："));
+  t("寵粉骨架與領域本身不含破折號", !/[—─–]/.test(GENRES.fan.skeleton) && !/[—─–]/.test(prompts.map((p) => p.match(/【寵粉領域：[\s\S]*?(?=\n\n【本篇文體)/)?.[0] || "").join("")));
+  t("goalOf 對照：冷=破圈 溫=信任 寵粉文=寵粉", goalOf("case", "cold") === "reach" && goalOf("breakdown", "warm") === "trust" && goalOf("fan", "hot") === "fan");
+  t("文字能辨識寵粉文", genreFromText("寵粉文") === "fan");
+  t("寵粉文不代填素材，等你的逐字稿", materialFor(parsePastedTopics("題目 1｜x\n標題\n【建議】寵粉文｜熱流量\n【主張】甲").topics[0], "fan") === "");
+  t("寵粉文字數區間 500 到 1100", GENRES.fan.lengthRange[0] === 500 && GENRES.fan.lengthRange[1] === 1100);
+}
+
 console.log(`\n結果: ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);
+

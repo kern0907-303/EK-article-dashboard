@@ -4,9 +4,9 @@
 
 import { buildEntryBridgePrompt } from "./entry-bridge";
 
-export const PROMPT_VERSION = "genre-v2";
+export const PROMPT_VERSION = "genre-v3";
 
-export type GenreId = "case" | "breakdown" | "response" | "invite";
+export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan";
 export type FunnelLevel = "cold" | "warm" | "hot";
 export type BrandKey = "erick" | "nas" | "abl" | "i8";
 
@@ -43,10 +43,22 @@ export interface GenreDef {
 }
 
 export const FUNNEL_LABEL: Record<FunnelLevel, string> = {
-  cold: "冷（陌生讀者）",
-  warm: "溫（已有初步認識）",
-  hot: "熱（正在評估）",
+  cold: "冷，破圈（陌生讀者）",
+  warm: "溫，建立信任（已有初步認識）",
+  hot: "熱（正在評估，或老客人）",
 };
+
+/** 三個寫作目標：破圈、建立信任、寵粉。前兩個對應漏斗層，寵粉是獨立文體。 */
+export type WritingGoal = "reach" | "trust" | "fan";
+export const GOAL_LABEL: Record<WritingGoal, string> = {
+  reach: "破圈，寫給不認識的人看",
+  trust: "建立信任，讓人相信我是真的內行",
+  fan: "寵粉，寫給老客人讓鐵粉更鐵",
+};
+export function goalOf(genre: GenreId, funnel: FunnelLevel): WritingGoal {
+  if (genre === "fan") return "fan";
+  return funnel === "cold" ? "reach" : "trust";
+}
 
 export function brandKeyFromId(brandId: string): BrandKey {
   if (brandId.includes("i8")) return "i8";
@@ -145,7 +157,33 @@ TimeWaver 只能出現在經歷陳述（例如「我從 2018 年開始學」）�
 不提設備規格，不保證效果。`,
 };
 
-// ───────────── 第三層：四個文體骨架 ─────────────
+
+// ───────────── 寵粉文：各品牌的領域寫法 ─────────────
+export const BRAND_FAN_DOMAIN: Record<BrandKey, string> = {
+  erick: `【寵粉領域：Erick 個人品牌】
+老客人是長期跟著你看文章、參加過活動或做過諮詢的人。
+題材：你自己的近況與思考、這週遇到的一個觀察、對長期讀者的感謝與交代。
+可以講你怎麼做決定、怎麼看自己的限制。不談任何子品牌的技術語言。`,
+  nas: `【寵粉領域：平衡空間】
+老客人是上過課、做過生命數字解析、或長期追蹤的人。
+題材：課堂上或解析時的一句話、學員在關係與自我理解上的轉變（去識別）、
+數字節奏的提醒、你自己走生命數字二十年的日常、下一梯課的預告與感謝。
+主命數、天賦、節奏這些詞可以直接用，不必再解釋。對外用本名「艾瑞克」。
+不做鐵口直斷，不預言，不談吉凶。`,
+  abl: `【寵粉領域：艾伯林量子調頻】
+老客人是做過狀態分析、或在穩頻、調頻、校頻方案裡的成員。
+題材：這陣子陪成員時看到的共同狀態、成員的小進展（去識別）、
+成員專屬的提醒與使用方式、下一階段的預告、對一路撐著的人的感謝。
+「調頻」「信息場」可以用，但仍先用生活語言講一次它在說什麼。
+TimeWaver 只能出現在經歷陳述。不保證效果，身心描述停在觀察層。`,
+  i8: `【寵粉領域：初八企業顧問】
+老客人是已合作的企業主、主管，或長期追蹤的決策者。
+題材：陪跑現場看到的共通卡點（去識別，不寫產業加地區加規模的組合）、
+一季一次的節奏提醒、客戶間常被問的問題、內部做法的預告與感謝。
+語氣精準，診斷指向結構、順序、權責，不指向任何個人。不談靈性或能量詞彙。`,
+};
+
+// ───────────── 第三層：文體骨架 ─────────────
 export const GENRES: Record<GenreId, GenreDef> = {
   case: {
     id: "case",
@@ -251,6 +289,60 @@ export const GENRES: Record<GenreId, GenreDef> = {
 要有故事、有情緒、有解方，讀完要讓人「原來如此」。
 常見失敗：框架講得完整但沒套回讀者身上，變成上課。`,
   },
+  fan: {
+    id: "fan",
+    name: "寵粉文",
+    enabled: true,
+    lengthRange: [500, 1100],
+    when: "寫給老客人、學員、會員、長期追蹤的人。你口述一段話，系統依品牌領域整理成文章。不拉新、不賣東西。",
+    materialLabel: "口述逐字稿",
+    materialRequired: true,
+    materialHint: "把你想對老客人說的話直接口述或貼上來，亂一點沒關係，不用整理。系統只用你講過的內容，不會補沒有的情節。",
+    skeleton: `【本篇文體：寵粉文】
+
+你會拿到一段口述逐字稿。讀者是老客人，不是陌生人，也不是來評估的人。
+這一篇的目的只有一個：讓已經在身邊的人覺得被看見、被記得，更確定跟對人。
+
+先做三件事再動筆：
+
+一、只用逐字稿裡真的有的事。
+   沒講過的細節不補，沒有的數字不寫。素材不夠就寫短，不要灌水。
+
+二、把口述整理成書面，但保留口氣。
+   去掉贅詞與重複，保留你說話的節奏、口頭禪和自嘲的地方，那是老客人認得的聲音。
+
+三、去識別化。
+   提到學員、客戶或成員的地方，不寫姓名、不寫可辨認的細節。
+
+骨架：
+
+1　像對熟人開口
+   不要自我介紹，不要鋪陳。從最近的一件事或一句話直接開始。
+   可以用「我們」「你們之中有人」這類說法，但不要點名任何人。
+
+2　講那件事，講得具體
+   逐字稿裡最有畫面的那一段放在這裡，不要先講道理。
+
+3　我從這件事看到什麼
+   一到兩個觀察，誠實，包含自己的限制或看走眼的地方。
+
+4　只有老客人懂的那一層
+   這裡可以用品牌領域裡的內行話，不需要像對陌生人一樣先解釋。
+   但每個專有詞仍用一句話帶過它在說什麼，不要變成上課。
+
+5　感謝或交代
+   謝謝一路跟著的人，或交代接下來會怎麼走。要具體，不要寫成客套。
+
+6　收尾
+   一句短的。可以留一個輕的動作（回覆一句話、留言、告訴我你的狀態），
+   但不推銷、不催促、不用限時限量。老客人不需要被說服。
+
+長度：500 到 1100 字。這一種要溫和、要短。
+
+注意：不要出現成交導向的句子，不要寫成活動廣告。
+如果逐字稿裡提到日期、活動名稱或要老客人去做的動作，把需要發文前核對的地方寫進 post_reminders，不要寫進文章。
+常見失敗：整理得太漂亮而失去口氣，或把感謝寫成公關稿。`,
+  },
   response: {
     id: "response",
     name: "回應文",
@@ -340,7 +432,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
   },
 };
 
-export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.response];
+export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.response];
 
 /** 組出送給 Maya 的完整提示詞（四層串接 + 輸出格式） */
 export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
@@ -357,13 +449,16 @@ export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
     s.cta.trim() ? `CTA：${s.cta.trim()}` : "CTA：使用者未指定，全文不放 CTA。",
   ].join("\n");
 
-  const entryBridge = buildEntryBridgePrompt(brandKey, s.funnel);
+  // 寵粉文的讀者是老客人，不套用給陌生人看的入口橋接規則，改用品牌領域寫法
+  const entryBridge = s.genre === "fan" ? "" : buildEntryBridgePrompt(brandKey, s.funnel);
+  const fanDomain = s.genre === "fan" ? BRAND_FAN_DOMAIN[brandKey] : "";
 
   return [
     SHARED_PREFIX,
     BRAND_TONES[brandKey],
-    FUNNEL_RULES[s.funnel],
+    s.genre === "fan" ? FUNNEL_RULES.hot : FUNNEL_RULES[s.funnel],
     ...(entryBridge ? [entryBridge] : []),
+    ...(fanDomain ? [fanDomain] : []),
     g.skeleton,
     variables,
     `### 輸出 JSON 格式要求：
