@@ -5,6 +5,9 @@ import type { NextRequest } from "next/server";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { getSocialMetrics, type SocialPost } from "@/lib/social-metrics-server";
 import {
+  OTHER_TOPIC, allowedTopicsFor, scoreTopics, type TopicBrand, type TopicLabel, type TopicObservation,
+} from "@/lib/topic-feedback";
+import {
   EXPERIMENT_BRANDS, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
   addDays, armDirective, judgeExperiment, latestSyncTime, median, parseDecision, relativeReward, rewardOf, taipeiDate,
   type ExperimentBrand, type ExperimentVerdict, type ParsedDecision, type Platform,
@@ -119,16 +122,19 @@ export async function ingestSnapshots(now = new Date()): Promise<SnapshotSummary
 
 interface MaturePost {
   queueId: string; brand: ExperimentBrand; platform: Platform; experimentId: string | null; arm: string | null;
-  title: string; publishedAt: string; ageHoursAtRead: number; reward: number; relative: number;
+  title: string; snippet: string; topic: string | null; publishedAt: string; ageHoursAtRead: number; reward: number; relative: number;
 }
 
 async function loadState(now: Date) {
   const since = new Date(now.getTime() - 30 * DAY_MS).toISOString();
-  const [experiments, queue, snaps] = await Promise.all([
+  const [experiments, queue, snaps, topicRows] = await Promise.all([
     pipelineDb<ExperimentRow[]>("experiments", "order=started_at.desc&limit=30&select=*"),
     pipelineDb<QueueRow[]>("social_publish_queue", `status=eq.sent&sent_at=gte.${encodeURIComponent(since)}&select=id,platform,brand,content,sent_at,experiment_json&limit=1000`),
     pipelineDb<SnapshotRow[]>("post_snapshots", `published_at=gte.${encodeURIComponent(since)}&order=source_synced_at.desc&select=*&limit=5000`),
+    // 題材標記表還沒建（尚未執行新版 SQL）時視為沒有標記，不影響實驗本身
+    pipelineDb<{ queue_id: string; topic: string }[]>("post_topics", "select=queue_id,topic&limit=5000").catch(() => [] as { queue_id: string; topic: string }[]),
   ]);
+  const topicByQueue = new Map(topicRows.map((t) => [t.queue_id, t.topic]));
   const queueById = new Map(queue.map((q) => [q.id, q]));
   // 每篇取「發文後至少 MATURE_HOURS 小時才讀到」的最新一筆；沒有就是還沒成熟
   const matureByQueue = new Map<string, SnapshotRow>();
@@ -151,13 +157,14 @@ async function loadState(now: Date) {
   }
   const mature: MaturePost[] = raw.map(({ snap, q, reward }) => ({
     queueId: q.id, brand: snap.brand, platform: snap.platform, experimentId: q.experiment_json?.experiment_id || null, arm: q.experiment_json?.arm || null,
-    title: String(q.content || "").split("\n")[0].replace(/^【|】$/g, "").slice(0, 40), publishedAt: snap.published_at,
+    title: String(q.content || "").split("\n")[0].replace(/^【|】$/g, "").slice(0, 40),
+    snippet: String(q.content || "").replace(/\s+/g, " ").trim().slice(0, 160), topic: topicByQueue.get(q.id) || null, publishedAt: snap.published_at,
     ageHoursAtRead: Math.round((Date.parse(snap.source_synced_at) - Date.parse(snap.published_at)) / 3600000),
     reward: Math.round(reward), relative: relativeReward(reward, median(base.get(`${snap.brand}:${snap.platform}`) || [])),
   }));
   const taggedSent = queue.filter((q) => q.experiment_json?.experiment_id);
   const immature = taggedSent.filter((q) => !matureByQueue.has(q.id)).length;
-  return { experiments, queue, mature, immature, unreadQueue: queue.filter((q) => !lastReadByQueue.has(q.id)).length };
+  return { experiments, queue, mature, topicByQueue, immature, unreadQueue: queue.filter((q) => !lastReadByQueue.has(q.id)).length };
 }
 
 function verdictFor(exp: ExperimentRow, mature: MaturePost[], now: Date): { verdict: ExperimentVerdict; a: MaturePost[]; b: MaturePost[] } {
@@ -198,8 +205,12 @@ export async function buildReport(now = new Date()) {
     recent_finished: state.experiments.filter((e) => e.status !== "running").slice(0, 5).map((e) => ({ experiment_id: e.id, brand: e.brand, arm_a: e.arm_a, arm_b: e.arm_b, status: e.status, winner: e.winner, note: e.decision_note })),
     brands_without_running_experiment: EXPERIMENT_BRANDS.filter((brand) => !running.some((e) => e.brand === brand)),
     scheduled_params: params,
+    allowed_topics: Object.fromEntries((["nas", "abl", "i8"] as TopicBrand[]).map((b) => [b, allowedTopicsFor(b)])),
+    posts_needing_topic: state.mature.filter((m) => !m.topic).sort((x, y) => Date.parse(y.publishedAt) - Date.parse(x.publishedAt)).slice(0, 40)
+      .map((m) => ({ queue_id: m.queueId, brand: m.brand, platform: m.platform, title: m.title, text_start: m.snippet })),
+    topic_scores: scoreTopics(state.mature.filter((m): m is MaturePost & { topic: string } => !!m.topic).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic, relative: m.relative }))),
     data_quality: { sent_posts_30d: state.queue.length, never_read_by_sync: state.unreadQueue, tagged_posts_not_yet_mature: state.immature, mature_posts: state.mature.length },
-    recent_mature_posts: state.mature.sort((x, y) => Date.parse(y.publishedAt) - Date.parse(x.publishedAt)).slice(0, 40).map((m) => ({ brand: m.brand, platform: m.platform, arm: m.arm, title: m.title, published_at: m.publishedAt, age_hours_at_read: m.ageHoursAtRead, reward: m.reward, relative_reward: Math.round(m.relative * 100) / 100 })),
+    recent_mature_posts: state.mature.sort((x, y) => Date.parse(y.publishedAt) - Date.parse(x.publishedAt)).slice(0, 40).map((m) => ({ brand: m.brand, platform: m.platform, arm: m.arm, topic: m.topic, title: m.title, published_at: m.publishedAt, age_hours_at_read: m.ageHoursAtRead, reward: m.reward, relative_reward: Math.round(m.relative * 100) / 100 })),
   };
 }
 
@@ -258,6 +269,17 @@ export async function applyDecision(raw: unknown, now = new Date()): Promise<Dec
     if (exp.brand !== n.brand) { errors.push(`next_days 的品牌 ${n.brand} 與實驗 ${n.experimentId} 不符`); continue; }
     if (n.arm !== exp.arm_a && n.arm !== exp.arm_b) errors.push(`next_days 的臂 ${n.arm} 不屬於實驗 ${n.experimentId}`);
   }
+  const queueById = new Map(state.queue.map((q) => [q.id, q]));
+  const newTopicRows: { queue_id: string; brand: string; topic: string }[] = [];
+  for (const t of d.topicTags) {
+    const q = queueById.get(t.queueId);
+    if (!q) { errors.push(`topic_tags 找不到最近 30 天已發出的貼文 ${t.queueId}`); continue; }
+    if (!(EXPERIMENT_BRANDS as string[]).includes(q.brand)) { errors.push(`topic_tags 的貼文 ${t.queueId} 品牌 ${q.brand} 不在題材回流範圍`); continue; }
+    if (!allowedTopicsFor(q.brand as TopicBrand).includes(t.topic)) { errors.push(`topic_tags 的題材「${t.topic}」不在 ${q.brand} 的允許清單內（必須是 report 的 allowed_topics，或「${OTHER_TOPIC}」）`); continue; }
+    const existing = state.topicByQueue.get(t.queueId);
+    if (existing) { if (existing !== t.topic) errors.push(`貼文 ${t.queueId} 已標記為「${existing}」，不可改標為「${t.topic}」`); continue; }
+    newTopicRows.push({ queue_id: t.queueId, brand: q.brand, topic: t.topic });
+  }
   if (errors.length) { await logRun("rejected", raw, { errors }); return { ok: false, status: 422, errors }; }
 
   const applied: string[] = [];
@@ -283,6 +305,10 @@ export async function applyDecision(raw: unknown, now = new Date()): Promise<Dec
       await pipelineDb("strategy_params", "on_conflict=brand,valid_date", { method: "POST", body: JSON.stringify(paramRows), headers: { Prefer: "resolution=merge-duplicates,return=representation" } });
       applied.push(`寫入 ${paramRows.length} 筆未來幾天的參數`);
     }
+    if (newTopicRows.length) {
+      await pipelineDb("post_topics", "on_conflict=queue_id", { method: "POST", body: JSON.stringify(newTopicRows.map((r) => ({ ...r, run_id: runId, tagged_by: "analyst" }))), headers: { Prefer: "resolution=ignore-duplicates,return=representation" } });
+      applied.push(`標記 ${newTopicRows.length} 篇貼文的題材`);
+    }
     return { ok: true, applied };
   } catch (error) {
     const message = safeMessage(error);
@@ -299,5 +325,27 @@ async function logRun(status: "accepted" | "rejected", request: unknown, result:
   } catch (error) {
     console.error("[experiment] analyst_runs log failed:", safeMessage(error));
     return null;
+  }
+}
+
+
+// ───────────── 題材成效標籤：給話題雷達的關鍵字 API 使用 ─────────────
+
+export interface TopicLabelEntry { label: TopicLabel; posts: number }
+
+/** 回傳 { 關鍵字: { nas?: {label, posts}, abl?, i8? } }。功能未啟用、資料表不存在或任何錯誤都回空物件，雷達照原樣運作。只含標籤與篇數，不含原始數字。 */
+export async function getTopicLabels(now = new Date()): Promise<Record<string, Partial<Record<TopicBrand, TopicLabelEntry>>>> {
+  if (!isExperimentEnabled()) return {};
+  try {
+    const state = await loadState(now);
+    const observations: TopicObservation[] = state.mature.filter((m) => !!m.topic).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic as string, relative: m.relative }));
+    const out: Record<string, Partial<Record<TopicBrand, TopicLabelEntry>>> = {};
+    for (const score of scoreTopics(observations)) {
+      (out[score.topic] = out[score.topic] || {})[score.brand] = { label: score.label, posts: score.posts };
+    }
+    return out;
+  } catch (error) {
+    console.error("[experiment] getTopicLabels failed:", safeMessage(error));
+    return {};
   }
 }
