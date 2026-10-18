@@ -1,9 +1,10 @@
 // 成效回流實驗的純邏輯（不連資料庫、不呼叫網路），方便單元測試。
-// 一次只改一個變數：目前只開放「structure（開頭結構）」，每個品牌同時只跑一個實驗，兩個臂（arm）對打。
+// 一次只改一個變數：目前開放「structure（開頭結構）」與「genre（文體）」，每個品牌同時只跑一個實驗，兩個臂（arm）對打。
+// 順序由伺服器強制：品牌要先完成一輪結構實驗，才能開文體實驗；文體實驗進行時，結構鎖在上一輪的勝者。
 
 import { parseTopicTags, type TopicTagInput } from "@/lib/topic-feedback";
 
-export const EXPERIMENT_VARIABLES = ["structure"] as const;
+export const EXPERIMENT_VARIABLES = ["structure", "genre"] as const;
 export type ExperimentVariable = (typeof EXPERIMENT_VARIABLES)[number];
 
 export type ExperimentBrand = "nas" | "abl" | "i8";
@@ -28,12 +29,53 @@ export const STRUCTURE_ARMS: Record<string, { label: string; directive: string }
   },
 };
 
+/** 文體實驗的兩個臂。只換文體骨架，品牌規範、紅線、禁用詞與事實邊界一律照原本規則。邀請文與案例文不進實驗。 */
+export const GENRE_ARMS: Record<string, { label: string; directive: string }> = {
+  breakdown: {
+    label: "拆解",
+    directive: [
+      "【本篇文體實驗指令：拆解】",
+      "這一篇的文體是「拆解文」，優先於提示詞裡原本建議的文體。只換文體骨架，標題、品牌規範、紅線、事實邊界與禁用詞一律照原本規則。",
+      "骨架：",
+      "一、現象開場：寫出讀者會說的那句口語原話。",
+      "二、先拆掉自責：把讀者第一個反應（檢討自己）寫出來，再拆掉。",
+      "三、為什麼看不見：用讀者一定有過的日常比喻說明。",
+      "四、把框架攤開：一層一層講，每一層只做一件事。",
+      "五、套回讀者身上：框架講完立刻拿去看讀者自己，不要停在概念。",
+      "六、一個最小的動作：十分鐘內做得完、不用買東西、不用預約任何人。",
+      "七、收尾：收在「你現在知道可以從哪裡動」，不收在「你學會了」。",
+      "不要先下結論再給檢查表。字數照原提示詞的要求。",
+    ].join("\n"),
+  },
+  stance: {
+    label: "觀點表態",
+    directive: [
+      "【本篇文體實驗指令：觀點表態】",
+      "這一篇的文體是「觀點表態」，優先於提示詞裡原本建議的文體。只換文體骨架，標題、品牌規範、紅線、事實邊界與禁用詞一律照原本規則。",
+      "骨架：",
+      "一、先講一個多數人習以為常的說法，用口語，不批評說這句話的人。",
+      "二、緊接著表態：一句話講出「我不這樣看」和自己的主張。主張要與常見說法形成真正的對立，不是換句話說。",
+      "三、講理由：兩到三個，每個理由用一個日常生活的情境撐起來。不引用沒有出處的數據，不編造個案，不編造我自己的經歷。",
+      "四、承認對方成立的那一部分，並且把「我們」放進被批評的範圍，不寫成只有別人犯錯。批評的對象是機制或習慣，不是任何一群人。",
+      "五、給一個讀者能自己檢驗的小問題或十分鐘的小動作，讓他自己判斷這個觀點成不成立。",
+      "六、收尾：收在一句立場，不用急迫感，不推銷。",
+      "不寫成教條，不用「你大概不夠格」這類話術。字數照原提示詞的要求。",
+    ].join("\n"),
+  },
+};
+
+/** 文體實驗的預設（對照）臂：第一次開文體實驗時 arm_a 必須是它 */
+export const GENRE_DEFAULT_ARM = "breakdown";
+
+const ARMS_BY_VARIABLE: Record<string, Record<string, { label: string; directive: string }>> = { structure: STRUCTURE_ARMS, genre: GENRE_ARMS };
+
 export function isKnownArm(variable: string, arm: string): boolean {
-  return variable === "structure" && Object.prototype.hasOwnProperty.call(STRUCTURE_ARMS, arm);
+  const arms = ARMS_BY_VARIABLE[variable];
+  return !!arms && Object.prototype.hasOwnProperty.call(arms, arm);
 }
 
 export function armDirective(variable: string, arm: string): string | null {
-  return isKnownArm(variable, arm) ? STRUCTURE_ARMS[arm].directive : null;
+  return isKnownArm(variable, arm) ? ARMS_BY_VARIABLE[variable][arm].directive : null;
 }
 
 // ───────────── 規則常數（改這裡就能調整，不用動資料庫）─────────────
@@ -209,8 +251,8 @@ export function parseDecision(raw: unknown): { ok: true; value: ParsedDecision }
   if (body.start !== undefined && body.start !== null) {
     const row = body.start as Record<string, unknown>;
     if (!EXPERIMENT_BRANDS.includes(row.brand as ExperimentBrand)) errors.push("start.brand 必須是 nas、abl 或 i8");
-    else if (!EXPERIMENT_VARIABLES.includes(row.variable as ExperimentVariable)) errors.push("start.variable 目前只開放 structure");
-    else if (typeof row.arm_a !== "string" || typeof row.arm_b !== "string" || !isKnownArm(String(row.variable), row.arm_a) || !isKnownArm(String(row.variable), row.arm_b)) errors.push("start 的 arm_a、arm_b 必須是已定義的結構");
+    else if (!EXPERIMENT_VARIABLES.includes(row.variable as ExperimentVariable)) errors.push("start.variable 必須是 structure 或 genre");
+    else if (typeof row.arm_a !== "string" || typeof row.arm_b !== "string" || !isKnownArm(String(row.variable), row.arm_a) || !isKnownArm(String(row.variable), row.arm_b)) errors.push("start 的 arm_a、arm_b 必須是該變數已定義的臂");
     else if (row.arm_a === row.arm_b) errors.push("start 的兩個臂不可相同");
     else start = { brand: row.brand as ExperimentBrand, variable: row.variable as ExperimentVariable, armA: row.arm_a as string, armB: row.arm_b as string };
   }
