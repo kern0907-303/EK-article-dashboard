@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyMechanicalFixes, checkHonesty, enforceCopyRules, checkConsistency, checkFormat, checkGarbled, gateBlockers, runQualityGate } from "../src/lib/quality-gate";
+import { applyMechanicalFixes, enforceCopyRules, checkConsistency, checkFormat, checkGarbled, gateBlockers, runQualityGate } from "../src/lib/quality-gate";
 
 const codes = (issues: { code: string }[]) => issues.map((issue) => issue.code);
 const good = "很多人以為努力就會有結果，但真正卡住的往往不是不夠努力。我們這週聊三個常見的盲點，第一個是方向，第二個是節奏，第三個是你願不願意先停下來看一看。";
@@ -68,14 +68,12 @@ assert.ok(!fixed.text.split("\n").some((line) => line.trim() === "，"));
 assert.ok(fixed.fixes.length >= 3);
 assert.deepEqual(applyMechanicalFixes(good), { text: good, fixes: [] });
 
-// 內容誠實：編造的具名人物（本次被擋下的實例）
-assert.ok(codes(checkHonesty("一位女性，我們叫她 Joanna，每天很累。")).includes("invented_person"));
-assert.ok(codes(checkHonesty("有位客人名叫小美，說她睡不好。")).includes("invented_person"));
-assert.deepEqual(checkHonesty("一位女性，每天很累。有一種人總是睡不好。"), []);
 // 單一入口：實例全文一次處理
-const failing = enforceCopyRules("ABL 信息場調和幫你。\n一位女性，我們叫她 Joanna。\n\n（故事情境為示意）", "facebook");
+const failing = enforceCopyRules("ABL 信息場調和幫你。\n一位女性，我們叫她 Joanna，每天很累。\n\n（故事情境為示意）", "facebook");
 assert.ok(!/故事情境為示意|ABL/.test(failing.text));
-assert.ok(failing.blockers.some((b) => b.code === "invented_person"));
+// 故事與人名是允許的寫法，不會被擋
+assert.equal(failing.blockers.length, 0);
+assert.ok(failing.text.includes("Joanna"));
 assert.equal(enforceCopyRules(good, "facebook").blockers.length, 0);
 
 console.log("quality-gate tests passed");

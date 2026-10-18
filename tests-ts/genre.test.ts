@@ -62,7 +62,7 @@ void filler;
   const fanSettings = (funnel: any = "hot") => ({ genre: "fan" as const, funnel, claim: "謝謝一路跟著的人", material: "我最近在課堂上說了一句話，大家都笑了。", metaphor: "", length: "", cta: "" });
   const brands = ["nas", "abl", "i8", "erick"] as const;
   t("寵粉文已啟用且要口述逐字稿", GENRES.fan.enabled === true && GENRES.fan.materialRequired === true && GENRES.fan.materialLabel === "口述逐字稿");
-  t("版本升為 genre-v3", PROMPT_VERSION === "genre-v3");
+  t("版本升為 genre-v4", PROMPT_VERSION === "genre-v4");
   const prompts = brands.map((b) => buildGenrePrompt(b, fanSettings()));
   t("四個品牌的寵粉提示詞都含寵粉骨架與領域", prompts.every((p) => p.includes("【本篇文體：寵粉文】") && p.includes("【寵粉領域：")));
   t("各品牌領域寫法不同", new Set(prompts.map((p) => p.match(/【寵粉領域：[^】]+】/)?.[0])).size === 4);

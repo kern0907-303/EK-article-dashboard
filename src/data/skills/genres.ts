@@ -4,7 +4,7 @@
 
 import { buildEntryBridgePrompt } from "./entry-bridge";
 
-export const PROMPT_VERSION = "genre-v3";
+export const PROMPT_VERSION = "genre-v4";
 
 export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan";
 export type FunnelLevel = "cold" | "warm" | "hot";
@@ -82,7 +82,7 @@ export const SHARED_PREFIX = `你在替艾瑞克（Erick）寫文案。他是從
 段落極短，一到兩行一段，段間空一行。不要出現密密麻麻的文字塊。
 
 【絕對不做】
-不編造任何事。見證、數字、案例、生活細節，沒有素材就改用「很多人」這類泛稱情境帶過，絕不代寫。
+可以用生動的情境、場景與故事（含虛構的人物與名字）讓文章好讀，但不可把它說成真實客戶或真人真事。不編造數字、成效、見證、客戶回饋、證照與經歷，也不寫「某位客戶說」這類看起來像真實紀錄的話；沒有素材的事實類內容，改用「很多人」這類泛稱帶過。
 文章本文裡絕對不可以出現【需補】、待補、提醒、請作者補充這類字樣或標記。
 文章裡不要加任何聲明或括號註記，例如「（故事情境為示意）」「（以上為虛構）」「本文案例為示意」。非紀實靠寫法，用「想像一個場景」「有一種人」「很多人」這類說法，不靠聲明。
 如果某處真的建議補上真實案例或數據，請寫在 JSON 的 post_reminders 欄位，不要寫進文章。

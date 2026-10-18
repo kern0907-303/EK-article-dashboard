@@ -131,26 +131,11 @@ export function checkConsistency(master: string, derived: string): GateIssue[] {
   return issues;
 }
 
-// 編造的具名人物：「我們叫她 Joanna」「名叫小美」「化名」。文章只能用「一位女性」「有一種人」這類不具名寫法。
-const INVENTED_PERSON = [
-  /(?:我們|我|大家|姑且|就)?(?:叫|稱|喊)(?:做|作)?\s*(?:她|他|這位[一-鿿]{0,4}|對方|牠)\s*[「『"]?[A-Z][a-zA-Z]{1,}/,
-  /(?:名叫|名為|取名(?:為|叫)?|化名(?:為|叫)?|假名(?:為|叫)?)\s*[「『"]?(?:[A-Z][a-zA-Z]{1,}|小[一-鿿]|[阿老][一-鿿]|[一-鿿]{2,3}(?=[，。、\s]))/,
-  /(?:她|他|這位[一-鿿]{0,4})(?:的)?(?:化名|假名)/,
-  /(?:以下|文中|本文)[一-鿿]{0,6}(?:人物|姓名|名字)[一-鿿]{0,6}(?:化名|已更改|為假)/,
-];
-
-/** 內容誠實：不可出現編造的具名人物。用字串規則判斷，無法自動修正，只能擋下重寫。 */
-export function checkHonesty(text: string): GateIssue[] {
-  const body = String(text || "");
-  const hit = INVENTED_PERSON.map((re) => body.match(re)).find(Boolean);
-  return hit ? [{ level: "block", code: "invented_person", message: `出現編造的具名人物（「${hit[0].slice(0, 14)}」），請改成不具名寫法，例如「一位女性」` }] : [];
-}
-
 export interface GateOptions { platform: GatePlatform; master?: string }
 
 /** 一次跑完所有機械檢查 */
 export function runQualityGate(text: string, options: GateOptions): GateIssue[] {
-  const issues = [...checkGarbled(text), ...checkFormat(text, options.platform), ...checkHonesty(text)];
+  const issues = [...checkGarbled(text), ...checkFormat(text, options.platform)];
   if (options.master && options.platform !== "facebook") issues.push(...checkConsistency(options.master, text));
   return issues;
 }

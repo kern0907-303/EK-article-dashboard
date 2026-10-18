@@ -18,6 +18,8 @@ const PUBLIC_PATHS = [
   "/api/auto-pipeline/test-queue",
   // 成效回流：pg_cron 與成效分析員只能以 Bearer secret 呼叫，route handler 會再驗證各自的 secret。
   "/api/experiment",
+  // 品管檢查：給編輯 AI（Paperclip）以 Bearer secret 呼叫，route handler 會驗證。
+  "/api/quality-gate",
   "/nas/quiz",
   "/abl/check",
   "/i8/diagnosis",
