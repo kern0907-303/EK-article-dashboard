@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripDashes, stripDiagramBlocks } from "@/lib/plain-text";
+import { enforceCopyRules, gateMessage } from "@/lib/quality-gate";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { brandKeyFromId } from "@/data/skills/genres";
 import { publicImagePrefix } from "@/lib/social-image-server";
@@ -56,10 +57,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const { brandId, platform, content: rawContent, imageUrl, imageUrls, scheduledAt, force, funnel } = await req.json();
-    const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "";
+    const enforced = enforceCopyRules(typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "", platform === "instagram" ? "instagram" : "threads");
+    const content = enforced.text;
 
     if (!brandId || !content) {
       return NextResponse.json({ error: "缺少 brandId 或內容" }, { status: 400 });
+    }
+    if (enforced.blockers.length) {
+      return NextResponse.json({ error: `品管關卡擋下：${gateMessage(enforced.blockers)}`, gateBlocked: true, blockers: enforced.blockers }, { status: 422 });
     }
     if (platform !== "threads" && platform !== "instagram") {
       return NextResponse.json({ error: "platform 必須是 threads 或 instagram" }, { status: 400 });

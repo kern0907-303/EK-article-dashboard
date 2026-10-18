@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { stripDashes, stripDiagramBlocks } from "@/lib/plain-text";
+import { enforceCopyRules, gateMessage } from "@/lib/quality-gate";
 import { FACEBOOK_PAGES } from "@/lib/facebook-pages";
 import {
   QUEUE_MAX_LEAD_MS,
@@ -51,10 +52,14 @@ export async function POST(req: NextRequest) {
   try {
     const { brandId, targetPages, content: rawContent, articleId, scheduledAt, imageUrl, testMode, force, funnel } = await req.json();
     // 社群排程的內文也要去掉官網用的流程圖與破折號，與立即發布一致
-    const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)) : rawContent;
+    const enforced = typeof rawContent === "string" ? enforceCopyRules(stripDashes(stripDiagramBlocks(rawContent)), "facebook") : null;
+    const content = enforced ? enforced.text : rawContent;
 
     if (!brandId || !content) {
       return NextResponse.json({ error: "缺少 brandId 或 content" }, { status: 400 });
+    }
+    if (enforced?.blockers.length) {
+      return NextResponse.json({ error: `品管關卡擋下：${gateMessage(enforced.blockers)}`, gateBlocked: true, blockers: enforced.blockers }, { status: 422 });
     }
     if (!scheduleContractAllowed("manual", articleId)) {
       return NextResponse.json({ error: "缺少 articleId：排程前文章必須先上架官網" }, { status: 400 });

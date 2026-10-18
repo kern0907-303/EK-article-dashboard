@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripDashes, stripDiagramBlocks } from "@/lib/plain-text";
+import { enforceCopyRules, gateMessage } from "@/lib/quality-gate";
 import { inspectForPublish } from "@/lib/brand-guardrail";
 import { FACEBOOK_PAGES, getDefaultFacebookPage, getFacebookPagesByIds } from "@/lib/facebook-pages";
 import { publicImagePrefix } from "@/lib/social-image-server";
@@ -9,13 +10,17 @@ export async function POST(req: NextRequest) {
   try {
     const { brandId, targetPages: rawTargetPages, content: rawContent, action, scheduleTime, force, imageUrl, funnel } = await req.json();
     // 發出去之前最後一道保險：舊草稿裡殘留的破折號也一併清掉
-    const content = typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)) : rawContent;
+    const enforced = typeof rawContent === "string" ? enforceCopyRules(stripDashes(stripDiagramBlocks(rawContent)), "facebook") : null;
+    const content = enforced ? enforced.text : rawContent;
 
     if (!brandId || !content) {
       return NextResponse.json(
         { error: "Missing brandId or content" },
         { status: 400 }
       );
+    }
+    if (enforced?.blockers.length) {
+      return NextResponse.json({ error: `品管關卡擋下：${gateMessage(enforced.blockers)}`, gateBlocked: true, blockers: enforced.blockers }, { status: 422 });
     }
 
     // 2026-09 階段 0：n8n 發文流程目前不讀取 scheduleTime，收到「排程」請求會立刻發文，
