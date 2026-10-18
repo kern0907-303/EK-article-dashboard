@@ -26,7 +26,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 async function main() {
   const { applyDecision } = await import("../src/lib/experiment-server");
   const { addDays, taipeiDate } = await import("../src/lib/experiment-arms");
-  const tomorrow = addDays(taipeiDate(new Date()), 1);
+  const { isControlDay } = await import("../src/lib/calibration");
+  // 對照日不寫入參數（見 calibration.ts），測試改挑明天起三天內 nas 不是對照日的第一天，避免依星期幾而不穩定
+  const tomorrow = [1, 2, 3].map((n) => addDays(taipeiDate(new Date()), n)).find((date) => !isControlDay("nas", date)) as string;
 
   const result = await applyDecision({
     summary: "開始新實驗並排好明天的臂",

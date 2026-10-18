@@ -5,10 +5,14 @@ import type { NextRequest } from "next/server";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { getSocialMetrics, type SocialPost } from "@/lib/social-metrics-server";
 import {
+  VARIABLE_ORDER, brandName, brandTrendStatus, buildAlerts, controlVsTreated, isControlDay, nextCandidate, trendFor,
+  type BrandTrendStatus, type CalibrationAlert, type RewardPost,
+} from "@/lib/calibration";
+import {
   OTHER_TOPIC, allowedTopicsFor, scoreTopics, type TopicBrand, type TopicLabel, type TopicObservation,
 } from "@/lib/topic-feedback";
 import {
-  EXPERIMENT_BRANDS, GENRE_ARMS, GENRE_DEFAULT_ARM, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
+  EXPERIMENT_BRANDS, GENRE_ARMS, GENRE_DEFAULT_ARM, STRUCTURE_ARMS, MATURE_HOURS, MAX_AHEAD_DAYS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, WIN_PROBABILITY,
   addDays, armDirective, judgeExperiment, latestSyncTime, median, parseDecision, relativeReward, rewardOf, taipeiDate,
   type ExperimentBrand, type ExperimentVerdict, type ParsedDecision, type Platform,
 } from "@/lib/experiment-arms";
@@ -55,6 +59,8 @@ export async function resolveExperimentArm(brand: string, scheduledAtIso: string
   if (!isExperimentEnabled() || !(EXPERIMENT_BRANDS as string[]).includes(brand)) return null;
   try {
     const date = taipeiDate(scheduledAtIso);
+    // 對照日：這天不套用任何實驗指令，用原本流程發文，拿來量實驗指令整體有沒有幫助
+    if (isControlDay(brand as ExperimentBrand, date)) return null;
     const params = await pipelineDb<{ experiment_id: string; arm: string }[]>(
       "strategy_params", `brand=eq.${brand}&valid_date=eq.${date}&select=experiment_id,arm&limit=1`,
     );
@@ -129,12 +135,13 @@ export async function ingestSnapshots(now = new Date()): Promise<SnapshotSummary
 // ───────────── 報告 ─────────────
 
 interface MaturePost {
-  queueId: string; brand: ExperimentBrand; platform: Platform; experimentId: string | null; arm: string | null;
+  treated: boolean; queueId: string; brand: ExperimentBrand; platform: Platform; experimentId: string | null; arm: string | null;
   title: string; snippet: string; topic: string | null; publishedAt: string; ageHoursAtRead: number; reward: number; relative: number;
 }
 
+/** 載入近 45 天資料（校正需要三個 14 天窗口）；實驗與題材成效照舊只看近 30 天，由呼叫端過濾。 */
 async function loadState(now: Date) {
-  const since = new Date(now.getTime() - 30 * DAY_MS).toISOString();
+  const since = new Date(now.getTime() - 45 * DAY_MS).toISOString();
   const [experiments, queue, snaps, topicRows] = await Promise.all([
     pipelineDb<ExperimentRow[]>("experiments", "order=started_at.desc&limit=30&select=*"),
     pipelineDb<QueueRow[]>("social_publish_queue", `status=eq.sent&sent_at=gte.${encodeURIComponent(since)}&select=id,platform,brand,content,sent_at,experiment_json&limit=1000`),
@@ -164,7 +171,7 @@ async function loadState(now: Date) {
     base.set(key, [...(base.get(key) || []), reward]);
   }
   const mature: MaturePost[] = raw.map(({ snap, q, reward }) => ({
-    queueId: q.id, brand: snap.brand, platform: snap.platform, experimentId: q.experiment_json?.experiment_id || null, arm: q.experiment_json?.arm || null,
+    treated: !!q.experiment_json?.experiment_id, queueId: q.id, brand: snap.brand, platform: snap.platform, experimentId: q.experiment_json?.experiment_id || null, arm: q.experiment_json?.arm || null,
     title: String(q.content || "").split("\n")[0].replace(/^【|】$/g, "").slice(0, 40),
     snippet: String(q.content || "").replace(/\s+/g, " ").trim().slice(0, 160), topic: topicByQueue.get(q.id) || null, publishedAt: snap.published_at,
     ageHoursAtRead: Math.round((Date.parse(snap.source_synced_at) - Date.parse(snap.published_at)) / 3600000),
@@ -214,13 +221,83 @@ export async function buildReport(now = new Date()) {
     recent_finished: state.experiments.filter((e) => e.status !== "running").slice(0, 5).map((e) => ({ experiment_id: e.id, brand: e.brand, arm_a: e.arm_a, arm_b: e.arm_b, status: e.status, winner: e.winner, note: e.decision_note })),
     brands_without_running_experiment: EXPERIMENT_BRANDS.filter((brand) => !running.some((e) => e.brand === brand)),
     scheduled_params: params,
+    calibration: computeCalibration(state, now),
     allowed_topics: Object.fromEntries((["nas", "abl", "i8"] as TopicBrand[]).map((b) => [b, allowedTopicsFor(b)])),
     posts_needing_topic: state.mature.filter((m) => !m.topic).sort((x, y) => Date.parse(y.publishedAt) - Date.parse(x.publishedAt)).slice(0, 40)
       .map((m) => ({ queue_id: m.queueId, brand: m.brand, platform: m.platform, title: m.title, text_start: m.snippet })),
-    topic_scores: scoreTopics(state.mature.filter((m): m is MaturePost & { topic: string } => !!m.topic).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic, relative: m.relative }))),
+    topic_scores: scoreTopics(state.mature.filter((m): m is MaturePost & { topic: string } => !!m.topic && Date.parse(m.publishedAt) >= now.getTime() - 30 * DAY_MS).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic, relative: m.relative }))),
     data_quality: { sent_posts_30d: state.queue.length, never_read_by_sync: state.unreadQueue, tagged_posts_not_yet_mature: state.immature, mature_posts: state.mature.length },
     recent_mature_posts: state.mature.sort((x, y) => Date.parse(y.publishedAt) - Date.parse(x.publishedAt)).slice(0, 40).map((m) => ({ brand: m.brand, platform: m.platform, arm: m.arm, topic: m.topic, title: m.title, published_at: m.publishedAt, age_hours_at_read: m.ageHoursAtRead, reward: m.reward, relative_reward: Math.round(m.relative * 100) / 100 })),
   };
+}
+
+// ───────────── 第三層校正：基準線、對照組、下一個可測組合、警示 ─────────────
+
+const PLATFORMS: Platform[] = ["threads", "instagram"];
+
+function computeCalibration(state: Awaited<ReturnType<typeof loadState>>, now: Date) {
+  const posts: RewardPost[] = state.mature.map((m) => ({ brand: m.brand, platform: m.platform, publishedAt: m.publishedAt, reward: m.reward, relative: m.relative, treated: m.treated }));
+  const startedAts = state.experiments.map((e) => Date.parse(e.started_at)).filter((t) => Number.isFinite(t));
+  const epochMs = startedAts.length ? Math.min(...startedAts) : null;
+  const trend: Record<string, unknown>[] = [];
+  const brandStatus = {} as Record<ExperimentBrand, BrandTrendStatus>;
+  const candidates = {} as Record<ExperimentBrand, ReturnType<typeof nextCandidate>>;
+  const hasRunning = {} as Record<ExperimentBrand, boolean>;
+  const controlDays: Record<string, string[]> = {};
+  const armsMap = { structure: Object.keys(STRUCTURE_ARMS), genre: Object.keys(GENRE_ARMS) };
+  const today = taipeiDate(now);
+  for (const brand of EXPERIMENT_BRANDS) {
+    const results = PLATFORMS.map((platform) => ({ platform, result: trendFor(posts.filter((p) => p.brand === brand && p.platform === platform), now) }));
+    for (const { platform, result } of results) {
+      trend.push({ brand, platform, posts_per_window: result.windows.map((w) => w.n), median_per_window: result.windows.map((w) => (w.median === null ? null : Math.round(w.median))), lift_recent: result.liftRecent, lift_prior: result.liftPrior, status: result.status, stagnant: result.stagnant });
+    }
+    brandStatus[brand] = brandTrendStatus(results.map((r) => r.result));
+    hasRunning[brand] = state.experiments.some((e) => e.brand === brand && e.status === "running");
+    candidates[brand] = nextCandidate(brand, state.experiments, armsMap);
+    controlDays[brand] = [1, 2, 3].map((n) => addDays(today, n)).filter((date) => isControlDay(brand, date));
+  }
+  const cvt = controlVsTreated(posts, now, epochMs);
+  const alerts = buildAlerts({ brandStatus, controlBeatsTreated: cvt.controlBeatsTreated, candidates, hasRunning });
+  return {
+    note: "窗口 0 是最近 14 天，1 是再前 14 天，2 是再前一個。每窗口至少 6 篇才計算提升。資料從 2026-10-15 才開始累積，完整比較要等到約 11 月中。",
+    variable_order: VARIABLE_ORDER, trend, brand_status: brandStatus, next_candidate: candidates,
+    control_days_next_3: controlDays,
+    control_vs_treated: { windows: cvt.windows, control_beats_treated: cvt.controlBeatsTreated, rule: "各窗口對照與實驗各至少 12 篇，且連續兩個窗口對照組高出 10% 以上才成立" },
+    alerts,
+  };
+}
+
+const ALERT_COOLDOWN_DAYS = 7;
+
+async function sendTelegram(text: string): Promise<boolean> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return false;
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 3900) }),
+  });
+  return response.ok;
+}
+
+/** 每天快照後呼叫。同一種警示同一品牌 7 天內只通知一次。任何失敗只記錄，不影響快照。 */
+export async function sendCalibrationAlerts(now = new Date()): Promise<{ alerts: number; sent: number; skipped: number; note?: string }> {
+  try {
+    const state = await loadState(now);
+    const alerts: CalibrationAlert[] = computeCalibration(state, now).alerts;
+    let sent = 0; let skipped = 0;
+    for (const alert of alerts) {
+      const existing = await pipelineDb<{ sent_at: string }[]>("calibration_alerts", `code=eq.${alert.code}&brand=eq.${alert.brand}&select=sent_at&limit=1`);
+      if (existing[0] && now.getTime() - Date.parse(existing[0].sent_at) < ALERT_COOLDOWN_DAYS * DAY_MS) { skipped += 1; continue; }
+      const ok = await sendTelegram(`成效回流警示（${taipeiDate(now)}）\n${alert.message}`);
+      if (!ok) { skipped += 1; continue; }
+      await pipelineDb("calibration_alerts", "on_conflict=code,brand", { method: "POST", body: JSON.stringify([{ code: alert.code, brand: alert.brand, sent_at: now.toISOString() }]), headers: { Prefer: "resolution=merge-duplicates,return=representation" } });
+      sent += 1;
+    }
+    return { alerts: alerts.length, sent, skipped };
+  } catch (error) {
+    console.error("[experiment] sendCalibrationAlerts failed:", safeMessage(error));
+    return { alerts: 0, sent: 0, skipped: 0, note: "警示檢查失敗（已略過，不影響快照）" };
+  }
 }
 
 // ───────────── 套用分析員決策 ─────────────
@@ -319,7 +396,9 @@ export async function applyDecision(raw: unknown, now = new Date()): Promise<Dec
     }
     const runId = await logRun("accepted", raw, { applied });
     if (d.nextDays.some((n) => n.experimentId === "new") && !startedId) throw new Error("新實驗沒有取得編號，無法寫入參數");
-    const paramRows = d.nextDays.map((n) => ({ brand: n.brand, valid_date: n.date, experiment_id: n.experimentId === "new" ? startedId : n.experimentId, arm: n.arm, run_id: runId }));
+    const controlSkipped = d.nextDays.filter((n) => isControlDay(n.brand, n.date));
+    const paramRows = d.nextDays.filter((n) => !isControlDay(n.brand, n.date)).map((n) => ({ brand: n.brand, valid_date: n.date, experiment_id: n.experimentId === "new" ? startedId : n.experimentId, arm: n.arm, run_id: runId }));
+    if (controlSkipped.length) applied.push(`略過 ${controlSkipped.length} 筆落在對照日的排程（${controlSkipped.map((n) => `${brandName(n.brand)} ${n.date}`).join("、")}），當天不套用實驗指令`);
     if (paramRows.length) {
       await pipelineDb("strategy_params", "on_conflict=brand,valid_date", { method: "POST", body: JSON.stringify(paramRows), headers: { Prefer: "resolution=merge-duplicates,return=representation" } });
       applied.push(`寫入 ${paramRows.length} 筆未來幾天的參數`);
@@ -357,7 +436,7 @@ export async function getTopicLabels(now = new Date()): Promise<Record<string, P
   if (!isExperimentEnabled()) return {};
   try {
     const state = await loadState(now);
-    const observations: TopicObservation[] = state.mature.filter((m) => !!m.topic).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic as string, relative: m.relative }));
+    const observations: TopicObservation[] = state.mature.filter((m) => !!m.topic && Date.parse(m.publishedAt) >= now.getTime() - 30 * DAY_MS).map((m) => ({ brand: m.brand as TopicBrand, topic: m.topic as string, relative: m.relative }));
     const out: Record<string, Partial<Record<TopicBrand, TopicLabelEntry>>> = {};
     for (const score of scoreTopics(observations)) {
       (out[score.topic] = out[score.topic] || {})[score.brand] = { label: score.label, posts: score.posts };
