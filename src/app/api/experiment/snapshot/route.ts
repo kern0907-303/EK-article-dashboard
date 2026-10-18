@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingestSnapshots, isCronAuthorized, isExperimentEnabled } from "@/lib/experiment-server";
+import { ingestSnapshots, isCronAuthorized, isExperimentEnabled, sendCalibrationAlerts } from "@/lib/experiment-server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,10 @@ export async function POST(req: NextRequest) {
   if (!isExperimentEnabled()) return NextResponse.json({ error: "成效回流未啟用" }, { status: 404 });
   if (!isCronAuthorized(req)) return NextResponse.json({ error: "未授權" }, { status: 401 });
   try {
-    return NextResponse.json({ success: true, ...(await ingestSnapshots()) });
+    const snapshot = await ingestSnapshots();
+    // 校正警示（停滯、對照組勝出、組合用完）；失敗只記錄，不影響快照結果
+    const calibration = await sendCalibrationAlerts();
+    return NextResponse.json({ success: true, ...snapshot, calibration });
   } catch (error) {
     const message = error instanceof Error ? error.message : "快照失敗";
     console.error("[experiment] snapshot failed:", message);
