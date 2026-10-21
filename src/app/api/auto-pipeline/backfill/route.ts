@@ -38,6 +38,13 @@ export async function POST(req: NextRequest) {
       if (social.length) { skipped.push({ queueId: row.id, reason: "已有 Threads 或 IG 排程" }); continue; }
       todo.push({ row, job, brand });
     }
+    // 指定 queueId 時只處理那一則（多平台衍生頁的「補齊這篇」用）
+    const only = typeof body?.queueId === "string" ? body.queueId : null;
+    if (only) {
+      const picked = todo.filter((item) => String(item.row.id) === only);
+      todo.length = 0;
+      todo.push(...picked);
+    }
     if (dryRun) return NextResponse.json({ success: true, dryRun: true, pending: todo.length, queueIds: todo.map((t) => t.row.id), skipped });
 
     const done: Array<{ queueId: string; step: string; problems: string[] }> = [];
