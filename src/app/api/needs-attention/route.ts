@@ -21,6 +21,7 @@ export async function GET() {
  * 只提供兩種窄動作：
  * - mark_done：流水線任務標記已處理／已審（reviewed=true）
  * - retry：失敗的 Threads/IG 或 FB 排程改回 pending，約 6 分鐘後重新派發
+ * - dismiss：失敗且不想再發的排程改為 cancelled（記錄保留）
  * 修改文案與取消沿用既有的 /api/auto-pipeline、/api/social-queue、/api/publish-queue。
  */
 export async function POST(req: NextRequest) {
@@ -52,6 +53,18 @@ export async function POST(req: NextRequest) {
       const rows = await res.json();
       if (!Array.isArray(rows) || !rows.length) return NextResponse.json({ error: "這筆已不是失敗狀態，可能已被處理" }, { status: 409 });
       return NextResponse.json({ success: true, scheduledAt: body.scheduled_at });
+    }
+
+    if (action === "dismiss" && (source === "social_queue" || source === "fb_queue")) {
+      const table = source === "social_queue" ? "social_publish_queue" : "publish_queue";
+      const res = await fetch(`${env.url}/rest/v1/${table}?id=eq.${id}&status=eq.failed`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ status: "cancelled", updated_at: now }),
+      });
+      if (!res.ok) throw new Error(`放棄失敗（${res.status}）：${(await res.text()).slice(0, 160)}`);
+      const rows = await res.json();
+      if (!Array.isArray(rows) || !rows.length) return NextResponse.json({ error: "這筆已不是失敗狀態，可能已被處理" }, { status: 409 });
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: "不支援的操作" }, { status: 400 });

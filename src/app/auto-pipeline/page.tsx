@@ -9,6 +9,7 @@ import { buildGenrePrompt, GENRES, type BrandKey, type FunnelLevel, type GenreId
 import { DEFAULT_SCHEDULE_TIME } from "@/lib/schedule-time";
 import { useRouter } from "next/navigation";
 import SchedulePicker from "@/components/SchedulePicker";
+import PipelineTimeline from "@/components/PipelineTimeline";
 
 const BRANDS = [
   { id: "nas", name: "NAS" }, { id: "abl", name: "ABL" }, { id: "i8", name: "I8" }, { id: "erick", name: "Erick" },
@@ -178,6 +179,7 @@ export default function AutoPipelinePage() {
         <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">未審也會依排程發佈</span>
       </header>
       {notice && <div role="status" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm">{notice}</div>}
+      <PipelineTimeline />
       <section className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">建立批次預覽</h2><select value={source} onChange={(e) => { setSource(e.target.value as BatchSource); setResearch(e.target.value === "research"); }} className="rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm"><option value="manual">手動貼上</option><option value="file">檔案上傳</option><option value="research">品牌調研選題</option></select></div>

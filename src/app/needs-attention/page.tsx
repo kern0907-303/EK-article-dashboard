@@ -7,7 +7,7 @@ type Kind = "review" | "manual" | "failed" | "blocked";
 interface Item {
   key: string; kind: Kind; brand: string; platform: string; scheduledAt: string | null; reason: string; text: string; full: string; advice: string;
   source: "job" | "fb_queue" | "social_queue"; refId: string; jobId: string | null;
-  canEdit: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean;
+  canEdit: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean; canDismiss: boolean;
 }
 
 const KINDS: { id: Kind; label: string; hint: string; tone: string }[] = [
@@ -72,6 +72,10 @@ export default function NeedsAttentionPage() {
   const retry = (i: Item) => {
     if (i.retryRisk && !window.confirm(i.retryRisk)) return;
     return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, "已重新排入，約 6 分鐘後派發。");
+  };
+  const dismiss = (i: Item) => {
+    if (!window.confirm("放棄這則？它會標記為已取消，不會再發佈，記錄保留。")) return;
+    return call("/api/needs-attention", "POST", { action: "dismiss", source: i.source, id: i.refId }, "已放棄這則。");
   };
   const saveEdit = (i: Item) => call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "edit", content: draft }, "文案已儲存並通過品管。");
   const cancel = (i: Item) => {
@@ -166,6 +170,7 @@ export default function NeedsAttentionPage() {
                       {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
                       {selected.canEdit && <button disabled={busy} onClick={() => { setDraft(selected.full); setEditing(true); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">修改文案</button>}
                       {selected.full && <button onClick={() => { void navigator.clipboard?.writeText(selected.full); setNotice("已複製文案。"); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">複製文案</button>}
+                      {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">放棄這則</button>}
                       {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
                     </>
                   )}
