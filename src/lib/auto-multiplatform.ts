@@ -173,7 +173,7 @@ export interface MultiplatformResult {
 const safe = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[已遮蔽]").replace(/Bearer\s+\S+/gi, "Bearer [已遮蔽]").slice(0, 200);
 
 /** 官網文章：母稿改寫成文章，SEO / AEO 優化，上架，回傳 article_id。優化版含紅線詞時保留未優化版。 */
-async function publishWebsite(input: MultiplatformInput): Promise<{ articleId: string }> {
+async function publishWebsite(input: MultiplatformInput, forceArticleId?: string): Promise<{ articleId: string }> {
   const { env, brandShort, brandName, master, coverUrl } = input;
   const fullBrand = FULL_BRAND_IDS[brandShort];
   const provider = process.env.AI_PROVIDER;
@@ -212,11 +212,13 @@ async function publishWebsite(input: MultiplatformInput): Promise<{ articleId: s
   const title = titleLine.replace(/^#+\s*/, "").replace(/[#*_]/g, "").trim() || "未命名文章";
   const row = { brand_id: brandShort, title, content: article, aeo_schema: schemaText, aeo_faq: faqText ? stripMarkdown(faqText) : "", status: "published" };
 
-  let existingId: string | null = null;
-  try {
-    const existing = await fetch(existingArticleQuery(env.url, brandShort, title), { headers: { apikey: env.key, Authorization: `Bearer ${env.key}` }, signal: AbortSignal.timeout(20_000) });
-    existingId = existing.ok ? pickExistingId(await existing.json()) : null;
-  } catch { existingId = null; }
+  let existingId: string | null = forceArticleId || null;
+  if (!forceArticleId) {
+    try {
+      const existing = await fetch(existingArticleQuery(env.url, brandShort, title), { headers: { apikey: env.key, Authorization: `Bearer ${env.key}` }, signal: AbortSignal.timeout(20_000) });
+      existingId = existing.ok ? pickExistingId(await existing.json()) : null;
+    } catch { existingId = null; }
+  }
   const res = await fetch(existingId ? articleUpdateUrl(env.url, existingId) : `${env.url}/rest/v1/insights_articles`, {
     method: existingId ? "PATCH" : "POST", headers: authHeaders(env), body: JSON.stringify(row), signal: AbortSignal.timeout(30_000),
   });
@@ -225,6 +227,11 @@ async function publishWebsite(input: MultiplatformInput): Promise<{ articleId: s
   const id = Array.isArray(data) ? data[0]?.id : data?.id;
   if (id === undefined || id === null) throw new Error("官網已寫入但沒有取得文章編號");
   return { articleId: String(id) };
+}
+
+/** 用新規則重寫既有官網文章（同一個 article_id，網址與 FB 留言連結不變）。失敗時舊文章保持原樣。 */
+export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env" | "brandShort" | "brandName" | "master" | "coverUrl"> & { articleId: string }): Promise<{ articleId: string }> {
+  return publishWebsite({ ...input, jobId: "", fbScheduledAt: "", fbQueueId: "" }, input.articleId);
 }
 
 /** 把官網文章編號寫回 FB 排程，讓 FB 首則留言帶官網連結。 */
