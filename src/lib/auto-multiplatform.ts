@@ -15,7 +15,7 @@ import { withCoverImage } from "@/lib/article-image.mjs";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
-import { applyMechanicalFixes, gateBlockers, gateMessage, runQualityGate } from "@/lib/quality-gate";
+import { applyMechanicalFixes, BRAND_AS_SUBJECT, gateBlockers, gateMessage, runQualityGate } from "@/lib/quality-gate";
 
 export const THREADS_MAX = 500;
 export const INSTAGRAM_MAX = 2200;
@@ -172,13 +172,27 @@ export interface MultiplatformResult {
 
 const safe = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[已遮蔽]").replace(/Bearer\s+\S+/gi, "Bearer [已遮蔽]").slice(0, 200);
 
+/** 找出品牌名稱當主詞的句子（最多 3 句、每句截 60 字），給重寫要求用。 */
+function brandVoiceSentences(article: string): string[] {
+  return String(article || "").split(/(?<=[。！？\n])/).map((line) => line.trim()).filter((line) => line && BRAND_AS_SUBJECT.test(line)).slice(0, 3).map((line) => line.slice(0, 60));
+}
+
 /** 官網文章：母稿改寫成文章，SEO / AEO 優化，上架，回傳 article_id。優化版含紅線詞時保留未優化版。 */
 async function publishWebsite(input: MultiplatformInput, forceArticleId?: string): Promise<{ articleId: string }> {
   const { env, brandShort, brandName, master, coverUrl } = input;
   const fullBrand = FULL_BRAND_IDS[brandShort];
   const provider = process.env.AI_PROVIDER;
-  const written = await callWebArticle(master, brandName, [], undefined, provider);
+  let written = await callWebArticle(master, brandName, [], undefined, provider);
   if (written.is_local_check) throw new Error("AI 服務未啟用，無法產生官網文章");
+  // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試兩次
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const offending = brandVoiceSentences(written.article);
+    if (!offending.length) break;
+    written = await callWebArticle(
+      `${master}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
+      brandName, [], undefined, provider,
+    );
+  }
   let article = clean(written.article);
   if (article.length < 120) throw new Error("官網文章內容太短");
   let faqText = "";
@@ -192,7 +206,7 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
       ...checkText(optimizedText, context).violatedWords,
       ...checkText(faq.map((item) => `${item.q}${item.a}`).join("\n"), context).violatedWords,
     ];
-    if (optimizedText.length >= 120 && hits.length === 0) {
+    if (optimizedText.length >= 120 && hits.length === 0 && !BRAND_AS_SUBJECT.test(optimizedText)) {
       article = optimizedText;
       // FAQ 與結構化資料只用「這一篇」優化結果組出，避免沿用上一篇的內容
       faqText = faq.length ? faqToPlainText(faq) : "";
