@@ -29,6 +29,8 @@ const TRAILING_BAD = /[，、：；,:;（(「『“]\s*$/;
 const DISCLAIMER = /(故事)?情境(僅)?為示意|以上(故事|內容|情境)?(皆|均)?為虛構|純屬虛構|僅為示意|虛構情境|情境為虛構/;
 // 對外品牌名稱一律用全名，不寫縮寫。前面是英數字或 # 的不處理（例如主題標籤）。
 const BRAND_ABBREV = /(?<![A-Za-z0-9#])(ABL|NAS|I8)(?![A-Za-z0-9])/g;
+// 品牌名稱當主詞發言（例如「平衡空間認為」「艾伯林量子調頻陪你」）：文章應由人說話，不是品牌。
+const BRAND_AS_SUBJECT = /(平衡空間|艾伯林量子調頻|初八企業顧問)(認為|相信|陪伴著?你|陪著你|陪你|想要|想讓|想陪|主張|堅持|看見|看重|提供|幫你|帶你|讓你|協助|覺得|始終|一直|專注|致力|深信|認同|重視|關注|站在|希望|在乎|守護|願意|要的是)/;
 const BRAND_FULL: Record<string, string> = { ABL: "艾伯林量子調頻", NAS: "平衡空間", I8: "初八企業顧問" };
 
 /**
@@ -97,6 +99,8 @@ export function checkFormat(text: string, platform: GatePlatform): GateIssue[] {
   BRAND_ABBREV.lastIndex = 0;
   if (BRAND_ABBREV.test(body)) issues.push({ level: "warn", code: "brand_abbrev", message: "出現品牌縮寫（ABL、NAS、I8），對外請用全名" });
   BRAND_ABBREV.lastIndex = 0;
+  const voice = body.match(BRAND_AS_SUBJECT);
+  if (voice) issues.push({ level: "block", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0]}」），請改成艾瑞克的第一人稱或客觀陳述` });
   if (MARKDOWN.test(body)) issues.push({ level: "block", code: "markdown", message: "含有 Markdown 符號，社群平台不支援" });
   if (body.length > limit) issues.push({ level: "block", code: "too_long", message: `超過 ${platform} 字數上限 ${limit}（目前 ${body.length}）` });
   return issues;
