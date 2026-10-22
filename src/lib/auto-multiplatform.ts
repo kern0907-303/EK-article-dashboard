@@ -187,9 +187,10 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試兩次
   for (let attempt = 0; attempt < 2; attempt++) {
     const offending = brandVoiceSentences(written.article);
-    if (!offending.length) break;
+    const redlines = inspectForPublish(clean(written.article), fullBrand, "warm").violatedWords;
+    if (!offending.length && !redlines.length) break;
     written = await callWebArticle(
-      `${master}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
+      `${master}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${redlines.length ? `上一版出現這個品牌不可使用的詞：${redlines.slice(0, 5).join("、")}。請全文重寫，完全不要出現這些詞，改用其他說法（例如次數、頻頻、常常）。` : ""}`,
       brandName, [], undefined, provider,
     );
   }

@@ -133,10 +133,11 @@ export async function POST(req: NextRequest) {
       // 品牌名稱不可當主詞發言：發現就帶著問題句子重新生成，最多再試兩次，仍不過才交給品管擋下
       for (let attempt = 0; attempt < 2; attempt++) {
         const offending = brandVoiceSentences(draft);
-        if (!offending.length) break;
+        const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION }, "facebook", job.brand_id)).map((issue) => issue.message.slice(0, 80));
+        if (!offending.length && !hardHits.length) break;
         const revised = await retryOnce(async () => {
           const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
+            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}`,
             iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
           }, undefined, undefined, "facebook");
           const text = result.dispatchData?.social_copy;
