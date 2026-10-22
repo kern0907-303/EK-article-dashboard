@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { callErickCOO, callSeoOptimizer } from "@/lib/ai-provider";
-import { stripDashes, stripMarkdown } from "@/lib/plain-text";
+import { stripDashes, stripDiagramBlocks, stripMarkdown } from "@/lib/plain-text";
 import { splitPostReminders } from "@/lib/post-reminders";
 import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
@@ -84,6 +84,9 @@ async function sendBatchNotice(batchId: string) {
   });
 }
 
+/** 流水線生成 FB 主稿的說話聲音規則（編輯器的文體提示詞才有這條，流水線路徑要自己帶） */
+const VOICE_DIRECTIVE = "【說話的人】文章是人在說話，不是品牌在說話。只能用艾瑞克的第一人稱（我），或不指名的客觀第三方陳述。品牌名稱不可以當主詞去認為、相信、陪伴、提供、協助、看見、想要，也不可以用「我們」替品牌發言；標題不要讓品牌名稱當主詞，品牌名稱全文最多出現一次且只當地點或服務名稱。只輸出社群貼文純文字，不要附流程圖、圖表或任何程式碼區塊。";
+
 export async function POST(req: NextRequest) {
   if (!AUTO_PIPELINE_ENABLED) return NextResponse.json({ error: "自動流水線未啟用" }, { status: 404 });
   if (!authorized(req)) return NextResponse.json({ error: "未授權" }, { status: 401 });
@@ -106,7 +109,7 @@ export async function POST(req: NextRequest) {
       experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await retryOnce(async () => {
         const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-          maya: experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt,
+          maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}`,
           iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
         }, undefined, undefined, "facebook");
         const text = result.dispatchData?.social_copy;
@@ -133,12 +136,12 @@ export async function POST(req: NextRequest) {
         if (!offending.length) break;
         const revised = await retryOnce(async () => {
           const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
+            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
             iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
           }, undefined, undefined, "facebook");
           const text = result.dispatchData?.social_copy;
           if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
-          return splitPostReminders(stripDashes(stripMarkdown(text)), result.dispatchData?.post_reminders).body;
+          return splitPostReminders(stripDashes(stripMarkdown(stripDiagramBlocks(text))), result.dispatchData?.post_reminders).body;
         });
         mechanical = applyMechanicalFixes(revised);
         draft = mechanical.text;
