@@ -173,7 +173,7 @@ export interface MultiplatformResult {
 const safe = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[已遮蔽]").replace(/Bearer\s+\S+/gi, "Bearer [已遮蔽]").slice(0, 200);
 
 /** 找出品牌名稱當主詞的句子（最多 3 句、每句截 60 字），給重寫要求用。 */
-function brandVoiceSentences(article: string): string[] {
+export function brandVoiceSentences(article: string): string[] {
   return String(article || "").split(/(?<=[。！？\n])/).map((line) => line.trim()).filter((line) => line && BRAND_AS_SUBJECT.test(line)).slice(0, 3).map((line) => line.slice(0, 60));
 }
 

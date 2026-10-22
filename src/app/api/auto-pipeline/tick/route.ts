@@ -13,7 +13,7 @@ import { cardHeadline } from "@/lib/article-image.mjs";
 import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { uploadPublicJpeg } from "@/lib/social-image-server";
-import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
+import { brandVoiceSentences, isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
 import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
 
@@ -125,8 +125,24 @@ export async function POST(req: NextRequest) {
         return stripDashes(stripMarkdown(result.optimized_content));
       });
       draft = optimized;
-      const mechanical = applyMechanicalFixes(draft);
+      let mechanical = applyMechanicalFixes(draft);
       draft = mechanical.text;
+      // 品牌名稱不可當主詞發言：發現就帶著問題句子重新生成，最多再試兩次，仍不過才交給品管擋下
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const offending = brandVoiceSentences(draft);
+        if (!offending.length) break;
+        const revised = await retryOnce(async () => {
+          const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
+            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n【修改要求，不是原文】上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。`,
+            iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
+          }, undefined, undefined, "facebook");
+          const text = result.dispatchData?.social_copy;
+          if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
+          return splitPostReminders(stripDashes(stripMarkdown(text)), result.dispatchData?.post_reminders).body;
+        });
+        mechanical = applyMechanicalFixes(revised);
+        draft = mechanical.text;
+      }
       const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };
       const issues = checkGenreText(draft, meta, "facebook", job.brand_id);
       const blocks = blockingIssues(issues);
