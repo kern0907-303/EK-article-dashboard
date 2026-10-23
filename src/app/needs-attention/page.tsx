@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import FindableTextarea from "@/components/FindableTextarea";
+import { extractRedlineWords } from "@/lib/text-find";
 
 type Kind = "review" | "manual" | "failed" | "blocked";
 interface Item {
   key: string; kind: Kind; brand: string; platform: string; scheduledAt: string | null; reason: string; text: string; full: string; advice: string;
   source: "job" | "fb_queue" | "social_queue"; refId: string; jobId: string | null;
-  canEdit: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean; canDismiss: boolean;
+  canEdit: boolean; queued?: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean; canDismiss: boolean;
 }
 
 const KINDS: { id: Kind; label: string; hint: string; tone: string }[] = [
@@ -39,6 +41,11 @@ export default function NeedsAttentionPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [whenLocal, setWhenLocal] = useState("");
+  const [alsoOthers, setAlsoOthers] = useState(true);
+  const [force, setForce] = useState(false);
+  const [problems, setProblems] = useState<string[]>([]);
+  const [serverWords, setServerWords] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -77,7 +84,43 @@ export default function NeedsAttentionPage() {
     if (!window.confirm("放棄這則？它會標記為已取消，不會再發佈，記錄保留。")) return;
     return call("/api/needs-attention", "POST", { action: "dismiss", source: i.source, id: i.refId }, "已放棄這則。");
   };
-  const saveEdit = (i: Item) => call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "edit", content: draft }, "文案已儲存並通過品管。");
+  const toLocalInput = (iso: string | null) => {
+    const base = iso && new Date(iso).getTime() > Date.now() + 35 * 60 * 1000 ? new Date(iso).getTime() : Date.now() + 60 * 60 * 1000;
+    return new Date(base + 8 * 3600 * 1000).toISOString().slice(0, 16);
+  };
+  const select = (i: Item) => {
+    setSelectedKey(i.key); setEditing(i.canEdit); setDraft(i.full); setWhenLocal(toLocalInput(i.scheduledAt));
+    setProblems([]); setServerWords([]); setForce(false); setNotice("");
+  };
+  /** 儲存文案。schedule 為 true 時，同一個動作把還沒排程的任務排進發佈佇列。 */
+  const saveEdit = async (i: Item, schedule: boolean) => {
+    setBusy(true); setNotice(""); setProblems([]);
+    try {
+      const body: Record<string, unknown> = { id: i.refId, action: "edit", content: draft, force };
+      if (schedule) { body.schedule = true; body.scheduledAt = new Date(`${whenLocal}:00+08:00`).toISOString(); }
+      const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const violations: string[] = Array.isArray(data.violations) ? data.violations : [];
+        setProblems(violations.length ? violations : [data.error || "儲存失敗"]);
+        setServerWords(extractRedlineWords([...violations, String(data.error || "")]));
+        throw new Error(violations.length ? "還有要修改的地方，已列在上方" : data.error || "儲存失敗");
+      }
+      if (schedule && data.scheduled) {
+        if (alsoOthers) {
+          setNotice("FB 已排程。正在生成官網文章、IG 輪播與 Threads，約 2 分鐘，請不要關閉這個頁面…");
+          try {
+            const other = await fetch("/api/auto-pipeline/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 1, queueId: data.queueId }) });
+            const otherData = await other.json().catch(() => ({}));
+            setNotice(other.ok ? `已儲存並排程發佈。${otherData.processed ? `其他平台：${otherData.done?.[0]?.step || "完成"}` : "其他平台之後可到「多平台衍生」頁補生成。"}` : `FB 已排程，但其他平台沒生成成功（${otherData.error || other.status}），可到「多平台衍生」頁按「生成」。`);
+          } catch { setNotice("FB 已排程，但其他平台沒生成成功，可到「多平台衍生」頁按「生成」。"); }
+        } else setNotice("已儲存並排程發佈。");
+      } else setNotice(schedule ? "已儲存。" : "文案已儲存並通過品管。");
+      setEditing(false); setSelectedKey(null);
+      await load();
+    } catch (e) { setNotice(e instanceof Error ? e.message : "儲存失敗"); }
+    finally { setBusy(false); }
+  };
   const cancel = (i: Item) => {
     if (!window.confirm("確定取消這則排程？")) return;
     return call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "cancel" }, "已取消。");
@@ -125,7 +168,7 @@ export default function NeedsAttentionPage() {
             {visible.map((i) => {
               const tone = KINDS.find((k) => k.id === i.kind)!;
               return (
-                <button key={i.key} onClick={() => { setSelectedKey(i.key); setEditing(false); }}
+                <button key={i.key} onClick={() => select(i)}
                   className={`flex w-full items-center justify-between gap-4 rounded-xl border bg-white/5 p-4 text-left ${selected?.key === i.key ? "border-sky-400" : "border-white/10 hover:border-white/30"}`}>
                   <span className="flex min-w-0 flex-col gap-1.5">
                     <span className="flex flex-wrap items-center gap-2 text-xs font-bold">
@@ -152,28 +195,37 @@ export default function NeedsAttentionPage() {
                   <span className="text-slate-400">預定 {whenText(selected.scheduledAt)}</span>
                 </div>
                 <h2 className="text-lg font-bold leading-snug">{selected.reason}</h2>
-                {editing ? (
-                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={14} className="w-full rounded-lg border border-white/20 bg-slate-900 p-3 text-sm leading-7 text-slate-100" />
+                {selected.canEdit ? (
+                  <FindableTextarea value={draft} onChange={setDraft} words={[...new Set([...extractRedlineWords([selected.reason]), ...serverWords])]} rows={16} disabled={busy} />
                 ) : (
                   <div className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-slate-900 p-3 text-sm leading-7">{selected.full || "（沒有內容）"}</div>
                 )}
+                {problems.length > 0 && (
+                  <div className="rounded-lg border border-rose-400/40 bg-rose-400/10 p-3 text-sm text-rose-100">
+                    <b>還要改這些才能儲存：</b>
+                    <ul className="mt-1 list-inside list-disc space-y-1">{problems.map((p, n) => <li key={n}>{p}</li>)}</ul>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-rose-100"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />這些詞我確認可以用，略過可略過的提醒詞（醫療宣稱類不能略過）</label>
+                  </div>
+                )}
                 <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-6 text-amber-100">建議做法：{selected.advice}</div>
+                {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-slate-900/60 p-3 text-sm">
+                    <label className="flex flex-wrap items-center gap-2">發佈時間（台北時間）<input type="datetime-local" value={whenLocal} onChange={(e) => setWhenLocal(e.target.value)} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100" /></label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={alsoOthers} onChange={(e) => setAlsoOthers(e.target.checked)} />排程後同時生成官網文章、IG 輪播、Threads（約 2 分鐘）</label>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  {editing ? (
-                    <>
-                      <button disabled={busy} onClick={() => void saveEdit(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">儲存並重跑品管</button>
-                      <button disabled={busy} onClick={() => setEditing(false)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">放棄修改</button>
-                    </>
-                  ) : (
-                    <>
-                      {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
-                      {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
-                      {selected.canEdit && <button disabled={busy} onClick={() => { setDraft(selected.full); setEditing(true); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">修改文案</button>}
-                      {selected.full && <button onClick={() => { void navigator.clipboard?.writeText(selected.full); setNotice("已複製文案。"); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">複製文案</button>}
-                      {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">放棄這則</button>}
-                      {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
-                    </>
+                  {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
+                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並排程發佈"}</button>
                   )}
+                  {selected.canEdit && (
+                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>
+                  )}
+                  {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
+                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
+                  {selected.full && <button onClick={() => { void navigator.clipboard?.writeText(draft || selected.full); setNotice("已複製文案。"); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">複製文案</button>}
+                  {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">放棄這則</button>}
+                  {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
                 </div>
               </>
             )}

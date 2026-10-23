@@ -153,8 +153,8 @@ export async function POST(req: NextRequest) {
 /** 取消排程：只有還在 pending 的可以取消（已進入 sending 就來不及了） */
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, action } = await req.json();
-    if (action !== "cancel") {
+    const { id, action, content: rawContent } = await req.json();
+    if (action !== "cancel" && action !== "edit") {
       return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
     }
     if (typeof id !== "string" || !UUID_RE.test(id)) {
@@ -163,6 +163,28 @@ export async function PATCH(req: NextRequest) {
     const env = getSupabaseEnv();
     if (!env) {
       return NextResponse.json({ error: "後台未設定 Supabase 連線資訊" }, { status: 500 });
+    }
+    if (action === "edit") {
+      // 只改還在 pending 的文字，時間、圖片、狀態都不動
+      const current = await fetch(`${env.url}/rest/v1/social_publish_queue?id=eq.${id}&select=platform,brand,status&limit=1`, { headers: supabaseHeaders(env.key), cache: "no-store" });
+      if (!current.ok) throw new Error(`讀取排程失敗（${current.status}）`);
+      const rows0 = await current.json();
+      const row0 = Array.isArray(rows0) ? rows0[0] : null;
+      if (!row0 || row0.status !== "pending") return NextResponse.json({ error: "這筆排程已不是待發狀態，無法修改" }, { status: 409 });
+      const platform0 = row0.platform === "instagram" ? "instagram" : "threads";
+      const enforced = enforceCopyRules(typeof rawContent === "string" ? stripDashes(stripDiagramBlocks(rawContent)).trim() : "", platform0);
+      if (!enforced.text) return NextResponse.json({ error: "文案不可空白" }, { status: 400 });
+      if (enforced.blockers.length) return NextResponse.json({ error: `品管關卡擋下：${gateMessage(enforced.blockers)}`, violations: enforced.blockers.map((item) => item.message) }, { status: 422 });
+      const guard = inspectForPublish(enforced.text, brandKeyFromId(String(row0.brand)) === "erick" ? "personal_brand" : ({ nas: "brand_b_nas", abl: "brand_c_abl", i8: "brand_a_i8" } as Record<string, string>)[String(row0.brand)] || "personal_brand", "warm");
+      if (!guard.passed) return NextResponse.json({ error: `未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`, violations: guard.violatedWords }, { status: 422 });
+      const res0 = await fetch(`${env.url}/rest/v1/social_publish_queue?id=eq.${id}&status=eq.pending`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ content: enforced.text, updated_at: new Date().toISOString() }),
+      });
+      if (!res0.ok) throw new Error(`修改失敗（${res0.status}）：${(await res0.text()).slice(0, 200)}`);
+      const rows1 = await res0.json();
+      if (!Array.isArray(rows1) || rows1.length === 0) return NextResponse.json({ error: "這筆排程已不是待發狀態，無法修改" }, { status: 409 });
+      return NextResponse.json({ success: true, data: rows1[0], text: enforced.text });
     }
     const res = await fetch(`${env.url}/rest/v1/social_publish_queue?id=eq.${id}&status=eq.pending`, {
       method: "PATCH",

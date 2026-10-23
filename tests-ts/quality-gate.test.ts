@@ -76,4 +76,13 @@ assert.equal(failing.blockers.length, 0);
 assert.ok(failing.text.includes("Joanna"));
 assert.equal(enforceCopyRules(good, "facebook").blockers.length, 0);
 
+// 次要問題只提醒、不擋稿：品牌當主詞、重複段落、母稿沒有的數字、普通的【】
+const levelOf = (issues: { code: string; level: string }[], code: string) => issues.find((issue) => issue.code === code)?.level;
+assert.equal(levelOf(checkFormat("艾伯林量子調頻陪你走過每一天。" + good, "facebook"), "brand_voice"), "warn");
+assert.equal(levelOf(checkGarbled(good + "\n" + good), "duplicate_line"), "warn");
+assert.equal(levelOf(checkConsistency(master, "客戶做了28年的生意，每天忙到凌晨。"), "new_numbers"), "warn");
+assert.ok(!codes(checkGarbled(good + "【小提醒】")).includes("placeholder"));
+assert.ok(codes(checkGarbled(good + "【需補：案例】")).includes("placeholder"));
+assert.equal(enforceCopyRules("艾伯林量子調頻陪你走過每一天。" + good, "facebook").blockers.length, 0);
+
 console.log("quality-gate tests passed");

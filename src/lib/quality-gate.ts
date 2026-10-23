@@ -20,7 +20,7 @@ const MOJIBAKE = new RegExp(`[ÃÂäåæçèéïâ][${MOJIBAKE_SET}]{2}|Ã[${MOJ
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const AI_PREFIX = /^\s*(以下是|以下為|好的[，,。]\s*(以下|我|這)|當然[，,。]\s*(以下|我|這)|(很)?抱歉[，,]\s*我(無法|不能)(提供|協助|生成|撰寫|完成)|我無法(提供|協助|生成|撰寫|完成)|作為.{0,8}(AI|助理|模型)|Here is|Here's|Sure[,!]|Certainly[,!])/i;
 const AI_ANYWHERE = /(as an ai language model|作為一個?(AI|人工智慧)|我是(AI|人工智慧)|以上是(改寫|重寫|整理)|希望(這|以上)(篇|份|個)?(內容|版本)(對你|能幫))/i;
-const PLACEHOLDER = /【[^】]{0,30}】|\{\{[^}]*\}\}|\bTODO\b|\blorem ipsum\b|\bundefined\b|\bnull\b|\[待補\]|XXX/i;
+const PLACEHOLDER = /【[^】]{0,30}(?:需補|待補|待確認|請補|補上|填入|範例|示例|XX)[^】]{0,30}】|\{\{[^}]*\}\}|\bTODO\b|\blorem ipsum\b|\bundefined\b|\bnull\b|\[待補\]|XXX/i;
 const DASHES = /[—–─―]|--/;
 const MARKDOWN = /^\s{0,3}#{1,6}\s|\*\*[^*]+\*\*|^\s*[-*]\s+\S|`{3}/m;
 const TRAILING_BAD = /[，、：；,:;（(「『“]\s*$/;
@@ -77,7 +77,7 @@ export function checkGarbled(text: string): GateIssue[] {
   const lines = body.split(/\n+/).map((line) => line.trim()).filter((line) => line.length >= 12);
   const seen = new Set<string>();
   for (const line of lines) {
-    if (seen.has(line)) { add("block", "duplicate_line", "同一段文字重複出現"); break; }
+    if (seen.has(line)) { add("warn", "duplicate_line", "同一段文字重複出現，確認不是生成重複"); break; }
     seen.add(line);
   }
   const simplified = new Set(body.split("").filter((ch) => SIMPLIFIED_SET.has(ch)));
@@ -100,7 +100,7 @@ export function checkFormat(text: string, platform: GatePlatform): GateIssue[] {
   if (BRAND_ABBREV.test(body)) issues.push({ level: "warn", code: "brand_abbrev", message: "出現品牌縮寫（ABL、NAS、I8），對外請用全名" });
   BRAND_ABBREV.lastIndex = 0;
   const voice = body.match(BRAND_AS_SUBJECT);
-  if (voice) issues.push({ level: "block", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0]}」），請改成艾瑞克的第一人稱或客觀陳述` });
+  if (voice) issues.push({ level: "warn", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0]}」），請改成艾瑞克的第一人稱或客觀陳述` });
   if (MARKDOWN.test(body)) issues.push({ level: "block", code: "markdown", message: "含有 Markdown 符號，社群平台不支援" });
   if (body.length > limit) issues.push({ level: "block", code: "too_long", message: `超過 ${platform} 字數上限 ${limit}（目前 ${body.length}）` });
   return issues;
@@ -118,7 +118,7 @@ export function checkConsistency(master: string, derived: string): GateIssue[] {
   const issues: GateIssue[] = [];
   const masterNumbers = new Set(master.match(/\d{2,}/g) || []);
   const invented = [...new Set(derived.match(/\d{2,}/g) || [])].filter((n) => !masterNumbers.has(n));
-  if (invented.length) issues.push({ level: "block", code: "new_numbers", message: `出現母稿沒有的數字：${invented.slice(0, 5).join("、")}，可能是編造` });
+  if (invented.length) issues.push({ level: "warn", code: "new_numbers", message: `出現母稿沒有的數字：${invented.slice(0, 5).join("、")}，可能是編造` });
   const CN_AMOUNT = /[一二兩三四五六七八九十百千萬]+(?:年|歲|個月|倍|成|萬|元|人|次|天|週)/g;
   const masterAmounts = new Set(master.match(CN_AMOUNT) || []);
   const inventedAmounts = [...new Set(derived.match(CN_AMOUNT) || [])].filter((n) => !masterAmounts.has(n));

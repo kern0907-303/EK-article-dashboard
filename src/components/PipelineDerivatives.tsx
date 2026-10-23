@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import FindableTextarea from "@/components/FindableTextarea";
+import { extractRedlineWords } from "@/lib/text-find";
 
 interface Row { id: string; brand: string; title: string; scheduledAt: string | null; jobStatus: string; fb: { state: string }; website: { state: string }; instagram: { state: string }; threads: { state: string }; }
 interface Plat { exists: boolean; status: string; title?: string; text: string; scheduledAt: string | null; slides?: number; error?: string | null; limit?: number; queueRowId?: string }
@@ -26,6 +28,10 @@ export default function PipelineDerivatives() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<null | "fb" | "instagram" | "threads">(null);
+  const [draft, setDraft] = useState("");
+  const [problems, setProblems] = useState<string[]>([]);
+  const [problemWords, setProblemWords] = useState<string[]>([]);
 
   const loadRows = useCallback(async () => {
     try {
@@ -39,7 +45,7 @@ export default function PipelineDerivatives() {
   useEffect(() => { void loadRows(); }, [loadRows]);
 
   const loadDetail = useCallback(async (id: string) => {
-    setSelected(id); setDetailLoading(true); setDetail(null);
+    setSelected(id); setDetailLoading(true); setDetail(null); setEditing(null); setProblems([]);
     try {
       const res = await fetch(`/api/pipeline-timeline/detail?id=${encodeURIComponent(id)}`, { cache: "no-store" });
       const data = await res.json();
@@ -65,6 +71,43 @@ export default function PipelineDerivatives() {
     } catch (e) { setNotice(e instanceof Error ? e.message : "補齊失敗"); }
     finally { setBusy(false); }
   };
+  const generate = async (platform: "website" | "instagram" | "threads", label: string) => {
+    if (!detail?.fbQueueId) return;
+    setBusy(true); setNotice(`正在生成${label}，約 1 到 2 分鐘，請不要關閉這個頁面…`);
+    try {
+      const res = await fetch("/api/auto-pipeline/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 1, queueId: detail.fbQueueId, platforms: [platform] }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "生成失敗");
+      const outcome = data.done?.[0]?.outcomes?.[platform];
+      setNotice(data.message || (outcome && outcome.ok === false ? `${label}沒有生成成功：${outcome.error || "未知原因"}。內容會顯示在欄位裡，可以再按一次重試。` : `${label}已生成並排程。`));
+      await loadDetail(detail.jobId); await loadRows();
+    } catch (e) { setNotice(e instanceof Error ? e.message : "生成失敗"); }
+    finally { setBusy(false); }
+  };
+  const startEdit = (which: "fb" | "instagram" | "threads") => {
+    if (!detail) return;
+    setEditing(which); setDraft(detail[which].text); setProblems([]); setProblemWords([]); setNotice("");
+  };
+  const saveEdit = async () => {
+    if (!detail || !editing) return;
+    setBusy(true); setProblems([]);
+    try {
+      const plat = detail[editing];
+      const res = editing === "fb"
+        ? await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: detail.jobId, action: "edit", content: draft }) })
+        : await fetch("/api/social-queue", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: plat.queueRowId, action: "edit", content: draft }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const violations: string[] = Array.isArray(data.violations) ? data.violations : [];
+        setProblems(violations.length ? violations : [data.error || "儲存失敗"]);
+        setProblemWords(extractRedlineWords([...violations, String(data.error || "")]));
+        throw new Error("還有要修改的地方，已列在編輯框上方");
+      }
+      setNotice("已儲存，排程中的文案已同步更新。"); setEditing(null);
+      await loadDetail(detail.jobId); await loadRows();
+    } catch (e) { setNotice(e instanceof Error ? e.message : "儲存失敗"); }
+    finally { setBusy(false); }
+  };
   const cancelSocial = async (plat: Plat) => {
     if (!plat.queueRowId || !window.confirm("確定取消這個平台的排程？")) return;
     setBusy(true);
@@ -77,7 +120,7 @@ export default function PipelineDerivatives() {
     finally { setBusy(false); }
   };
 
-  const col = (name: string, plat: Plat, canCancel: boolean) => {
+  const col = (name: string, plat: Plat, canCancel: boolean, key: "fb" | "website" | "instagram" | "threads") => {
     const over = plat.limit && plat.text.length > plat.limit;
     const tone = !plat.exists ? "border-dashed border-white/30" : plat.status === "failed" || over ? "border-2 border-rose-400" : plat.status === "sent" || plat.status === "published" ? "border-emerald-400/50" : "border-white/20";
     return (
@@ -90,9 +133,19 @@ export default function PipelineDerivatives() {
             <div className="text-xs text-slate-400">{when(plat.scheduledAt)}　{plat.text.length} 字{plat.limit ? ` / 上限 ${plat.limit}` : ""}{plat.slides ? `　${plat.slides} 張圖` : ""}</div>
             {over && <div className="text-xs font-bold text-rose-300">超過字數上限</div>}
             {plat.error && <div className="text-xs font-semibold text-rose-300">{plat.error}</div>}
+            {key !== "website" && plat.status === "pending" && <button disabled={busy} onClick={() => startEdit(key)} className="min-h-[44px] rounded-lg border border-sky-400/50 text-sm font-semibold text-sky-200 disabled:opacity-50">編輯這個平台的文案</button>}
             {canCancel && plat.status === "pending" && <button disabled={busy} onClick={() => void cancelSocial(plat)} className="min-h-[44px] rounded-lg border border-rose-400/40 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這個平台</button>}
           </>
-        ) : <div className="text-sm text-slate-400">還沒有這個平台的草稿。</div>}
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="text-sm text-slate-400">還沒有這個平台的草稿。</div>
+            {plat.error && <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-2 text-xs leading-5 text-amber-100">上次沒生成成功的原因：{plat.error}</div>}
+            {key !== "fb" && (
+              <button disabled={busy || !detail?.fbQueueId} onClick={() => void generate(key, name)} className="min-h-[44px] rounded-lg bg-sky-500 px-3 text-sm font-semibold text-white disabled:opacity-50">生成{name}</button>
+            )}
+            {key !== "fb" && !detail?.fbQueueId && <div className="text-xs text-slate-400">FB 還沒排程，先把 FB 排程後才能生成。</div>}
+          </div>
+        )}
       </div>
     );
   };
@@ -133,16 +186,33 @@ export default function PipelineDerivatives() {
           {detail && (
             <>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {col("FB 主稿", detail.fb, false)}
-                {col("官網文章", detail.website, false)}
-                {col("IG 輪播", detail.instagram, true)}
-                {col("Threads", detail.threads, true)}
+                {col("FB 主稿", detail.fb, false, "fb")}
+                {col("官網文章", detail.website, false, "website")}
+                {col("IG 輪播", detail.instagram, true, "instagram")}
+                {col("Threads", detail.threads, true, "threads")}
               </div>
+              {editing && (
+                <div className="flex flex-col gap-3 rounded-xl border-2 border-sky-400/60 bg-slate-900 p-4">
+                  <div className="text-base font-bold">正在編輯：{editing === "fb" ? "FB 主稿" : editing === "instagram" ? "IG 說明文字" : "Threads"}</div>
+                  <p className="text-xs text-slate-400">改完按「儲存並更新排程」，排程裡的文案會跟著換，發佈時間不變。IG 的圖卡文字不在這裡改。</p>
+                  {problems.length > 0 && (
+                    <div className="rounded-lg border border-rose-400/40 bg-rose-400/10 p-3 text-sm text-rose-100">
+                      <b>還要改這些才能儲存：</b>
+                      <ul className="mt-1 list-inside list-disc space-y-1">{problems.map((p, n) => <li key={n}>{p}</li>)}</ul>
+                    </div>
+                  )}
+                  <FindableTextarea value={draft} onChange={setDraft} words={problemWords} rows={14} disabled={busy} />
+                  <div className="flex flex-wrap gap-2">
+                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit()} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並更新排程"}</button>
+                    <button disabled={busy} onClick={() => setEditing(null)} className="min-h-[48px] rounded-lg border border-white/20 px-4 text-sm font-semibold">不改了</button>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="text-sm text-slate-300">排程時間：FB {when(detail.fb.scheduledAt)}，官網 與 FB 同步，IG {when(detail.instagram.scheduledAt)}，Threads {when(detail.threads.scheduledAt)}。</div>
                 {needFill && detail.fbQueueId && <button disabled={busy} onClick={() => void fillMissing()} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">補齊缺的草稿</button>}
               </div>
-              {needFill && <p className="text-xs text-slate-400">「補齊缺的草稿」只適用 FB 已排程、而且官網、IG、Threads 都還沒有的主稿；只缺其中一個的，請用下方進階區手動處理。</p>}
+              {needFill && <p className="text-xs text-slate-400">「補齊缺的草稿」只適用 FB 已排程、而且官網、IG、Threads 都還沒有的主稿；只缺其中一個的，直接按那一欄的「生成」按鈕。</p>}
             </>
           )}
         </div>

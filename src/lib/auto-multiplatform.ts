@@ -86,11 +86,12 @@ function parseDerived(raw: string): { threads: string; instagram: string; slides
 }
 
 /** 從母稿改寫 Threads、IG 與輪播文字。AI 失敗時退回機械式截斷與切段，仍然來自同一份母稿。 */
-export async function deriveVersions(master: string): Promise<DerivedVersions> {
+export async function deriveVersions(master: string, avoidWords: string[] = []): Promise<DerivedVersions> {
   let lastError = "";
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000), 3000);
+      const note = avoidWords.length ? `\n\n【修改要求，不是原文】上一版出現了不可使用的詞：${avoidWords.slice(0, 8).join("、")}。三個版本都不可出現這些詞，也不可用同義的說法硬帶過，請換個角度表達同一個意思。` : "";
+      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + note, 3000);
       const parsed = parseDerived(raw);
       if (!parsed) { lastError = "AI 回傳格式無法解析"; continue; }
       const threads = trimAtBoundary(clean(parsed.threads), THREADS_MAX - 20);
@@ -159,6 +160,10 @@ export interface MultiplatformInput {
   fbScheduledAt: string;
   fbQueueId: string;
   coverUrl: string | null;
+  /** 只做指定平台（補單一平台用）。不給就是三個平台全做。 */
+  only?: Array<"website" | "instagram" | "threads">;
+  /** 只做 IG 或 Threads 時，已存在的官網文章編號，讓社群排程仍能連到官網。 */
+  existingArticleId?: string;
   /** 成效回流實驗標籤：寫進 Threads / IG 排程列，之後成效才能對回是哪個結構臂 */
   experiment?: { experiment_id: string; variable: string; arm: string };
 }
@@ -272,19 +277,34 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
     instagram: { ok: false }, threads: { ok: false }, website: { ok: false },
   };
 
-  let articleId: string | undefined;
-  try {
-    const site = await publishWebsite(input);
-    articleId = site.articleId;
-    await linkArticleToFacebookQueue(env, input.fbQueueId, articleId);
-    result.website = { ok: true, articleId, id: articleId };
-  } catch (error) {
-    result.website = { ok: false, error: safe(error), ...(articleId ? { articleId } : {}) };
+  const want = (platform: "website" | "instagram" | "threads") => !input.only || input.only.includes(platform);
+  let articleId: string | undefined = input.existingArticleId;
+  if (want("website")) {
+    articleId = undefined;
+    try {
+      const site = await publishWebsite(input);
+      articleId = site.articleId;
+      await linkArticleToFacebookQueue(env, input.fbQueueId, articleId);
+      result.website = { ok: true, articleId, id: articleId };
+    } catch (error) {
+      result.website = { ok: false, error: safe(error), ...(articleId ? { articleId } : {}) };
+    }
   }
+  if (!want("instagram") && !want("threads")) return result;
 
   let derived: DerivedVersions | null = null;
   try {
     derived = await deriveVersions(master);
+    // 品牌紅線擋到時，帶著被擋的詞請 AI 換個說法再改寫一次，不直接放棄這個平台
+    const fullBrandId = FULL_BRAND_IDS[brandShort];
+    const blockedWords = [...new Set([
+      ...(want("instagram") ? inspectForPublish(derived.instagram, fullBrandId, "warm").violatedWords : []),
+      ...(want("threads") ? inspectForPublish(derived.threads, fullBrandId, "warm").violatedWords : []),
+    ])];
+    if (blockedWords.length) {
+      const retried = await deriveVersions(master, blockedWords);
+      if (retried.source === "ai") derived = retried;
+    }
     result.derived = { source: derived.source, note: derived.note };
   } catch (error) {
     const message = safe(error);
@@ -304,7 +324,7 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
   }
 
   // Instagram：一定要有圖，圖卡失敗就不發（不發沒有圖的 IG）
-  try {
+  if (want("instagram")) try {
     if (imageUrls.length < 2) throw new Error(`輪播圖卡失敗：${imageError || "張數不足"}`);
     const content = derived.instagram;
     if (content.length > INSTAGRAM_MAX) throw new Error("IG 說明超過 2200 字");
@@ -323,7 +343,7 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
   }
 
   // Threads：有輪播就帶輪播，圖卡失敗時退回純文字（Threads 允許純文字）
-  try {
+  if (want("threads")) try {
     const content = derived.threads;
     if (content.length > THREADS_MAX) throw new Error("Threads 超過 500 字");
     const guard = inspectForPublish(content, fullBrand, "warm");

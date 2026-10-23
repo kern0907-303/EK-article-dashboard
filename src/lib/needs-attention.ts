@@ -18,6 +18,8 @@ export interface AttentionItem {
   refId: string;
   jobId: string | null;
   canEdit: boolean;
+  /** 流水線任務是否已經排進 FB 佇列（沒排的改完要一併排程發佈） */
+  queued?: boolean;
   canRetry: boolean;
   /** 重試前需要再確認的風險說明（例如結果不明，重試可能重複發文） */
   retryRisk: string | null;
@@ -74,7 +76,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
         : kind === "blocked" ? "修改文案後儲存，系統會重新跑品管，通過才算處理完。"
         : brand === "erick" ? "個人帳號無法排程，複製文案自己發，發完按「我已處理」。"
         : "確認內容與時間沒問題後，到自動流水線頁面排程，或標記已處理。",
-      canEdit: kind !== "failed" && !!job.draft_content, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: false, canDismiss: false,
+      canEdit: kind !== "failed" && !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: false, canDismiss: false,
     });
   }
   for (const job of unreviewedJobs) {
@@ -83,7 +85,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       reason: "兩天內要發佈，還沒有審稿",
       text: snippet(job.draft_content || job.prompt), full: String(job.draft_content || job.prompt || ""), source: "job", refId: job.id, jobId: job.id,
       advice: "讀過內容沒問題就標記已審，需要調整就先修改。官網、IG、Threads 衍生稿跟著這一則。",
-      canEdit: !!job.draft_content, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: true, canDismiss: false,
+      canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: true, canDismiss: false,
     });
   }
 

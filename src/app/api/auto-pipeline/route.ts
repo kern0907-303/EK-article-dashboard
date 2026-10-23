@@ -4,6 +4,8 @@ import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 import { makeBatchRow, makeJobRow, pipelineDb } from "@/lib/auto-pipeline-server";
 import { blockingIssues, checkGenreText } from "@/lib/genre-check";
 import { PROMPT_VERSION } from "@/data/skills/genres";
+import { scheduleManualJob } from "@/lib/auto-pipeline-schedule";
+import { enforceCopyRules } from "@/lib/quality-gate";
 
 function disabled() {
   return NextResponse.json({ error: "自動流水線尚未啟用。設定 AUTO_PIPELINE_ENABLED=true 後才會啟用。", enabled: false }, { status: 404 });
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   if (!AUTO_PIPELINE_ENABLED) return disabled();
   try {
-    const { id, batchId, action, content } = await req.json();
+    const { id, batchId, action, content, schedule, scheduledAt, force } = await req.json();
     if (typeof id !== "string" && typeof batchId !== "string") return NextResponse.json({ error: "缺少任務或批次 ID" }, { status: 400 });
     const env = getSupabaseEnv();
     if (!env) return NextResponse.json({ error: "後台未設定 Supabase 連線資訊" }, { status: 500 });
@@ -73,13 +75,14 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: true, job: jobs[0] });
     }
     if (action === "edit" && typeof id === "string") {
-      const updatedContent = typeof content === "string" ? content : "";
+      let updatedContent = typeof content === "string" ? content : "";
       if (!updatedContent.trim()) return NextResponse.json({ error: "文案不可空白" }, { status: 400 });
       const currentRows = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}&select=*`);
       const current = currentRows[0];
       if (!current || !["scheduled", "manual"].includes(current.status)) return NextResponse.json({ error: "此狀態不可編輯" }, { status: 409 });
       const checked = checkGenreText(updatedContent, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", current.brand_id);
-      const issues = blockingIssues(checked);
+      // force：你確認可以用的詞（可強制的命中）放行；醫療宣稱等不可強制的永遠擋
+      const issues = blockingIssues(checked).filter((issue) => !(force === true && issue.forceable === true));
       const warnings = checked.filter((item) => item.level === "warn").map((item) => item.message);
       const negatedHits = checked.guardrailHits.filter((hit) => hit.negated);
       if (negatedHits.length) {
@@ -95,10 +98,21 @@ export async function PATCH(req: NextRequest) {
         const queueRows = await queueRes.json();
         if (!Array.isArray(queueRows) || !queueRows.length) return NextResponse.json({ error: "排程已進入派發或完成，無法再修改" }, { status: 409 });
       }
+      // 手動待處理的任務：改完要直接排程發佈（一個動作完成，不再停在已儲存）
+      let scheduledNow: { queueId: string; cardNote: string } | null = null;
+      if (schedule === true && !current.queue_id) {
+        if (current.status !== "manual") return NextResponse.json({ error: "只有「待人工處理」的任務可以直接排程" }, { status: 409 });
+        const gate = enforceCopyRules(updatedContent, "facebook");
+        if (gate.blockers.length) return NextResponse.json({ error: "文案仍有品管阻擋項目，修正後再排程。", violations: gate.blockers.map((item) => item.message), warnings, guardrailHits: checked.guardrailHits }, { status: 422 });
+        const outcome = await scheduleManualJob(current, gate.text, typeof scheduledAt === "string" && scheduledAt ? scheduledAt : null);
+        if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
+        scheduledNow = { queueId: outcome.queueId, cardNote: outcome.cardNote };
+        updatedContent = gate.text;
+      }
       const priorWarnings = Array.isArray(current.warnings) ? current.warnings.filter((warning: unknown) => typeof warning === "string" && warning.startsWith("發文前提醒（不在文章裡）：")) : [];
       const nextWarnings = [...new Set([...priorWarnings, ...warnings])];
       const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: true, updated_at: new Date().toISOString() }) });
-      return NextResponse.json({ success: true, job: updated[0], warnings, guardrailHits: checked.guardrailHits });
+      return NextResponse.json({ success: true, job: updated[0], warnings, guardrailHits: checked.guardrailHits, ...(scheduledNow ? { scheduled: true, queueId: scheduledNow.queueId, cardNote: scheduledNow.cardNote } : {}) });
     }
     if (action !== "cancel") return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
     const filter = typeof id === "string" ? `id=eq.${encodeURIComponent(id)}` : `batch_id=eq.${encodeURIComponent(batchId)}`;

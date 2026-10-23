@@ -24,6 +24,39 @@ export async function POST(req: NextRequest) {
     if (!env) return NextResponse.json({ error: "後台未設定 Supabase 連線資訊" }, { status: 500 });
 
     const nowIso = new Date(Date.now() + 35 * 60 * 1000).toISOString();
+
+    // 指定平台模式（多平台衍生頁每個空欄位的「生成」按鈕）：只補選到的平台，已經有的略過，其他不動
+    const wanted = Array.isArray(body?.platforms) ? (body.platforms as unknown[]).filter((item): item is "website" | "instagram" | "threads" => item === "website" || item === "instagram" || item === "threads") : [];
+    if (wanted.length && typeof body?.queueId === "string") {
+      const queueRows = await pipelineDb<any[]>("publish_queue", `id=eq.${encodeURIComponent(body.queueId)}&status=eq.pending&source=eq.auto_pipeline&select=id,content,image_url,scheduled_at,target_pages,article_id&limit=1`);
+      const row = queueRows[0];
+      if (!row) return NextResponse.json({ error: "這一篇的 FB 排程已不是待發狀態，無法補做其他平台" }, { status: 409 });
+      if (new Date(row.scheduled_at).getTime() < Date.now() + 35 * 60 * 1000) return NextResponse.json({ error: "FB 發佈時間不到 35 分鐘，來不及補做其他平台。請先改 FB 的排程時間。" }, { status: 409 });
+      const brand = BRAND_BY_PAGE[Array.isArray(row.target_pages) ? String(row.target_pages[0] || "") : ""];
+      if (!brand) return NextResponse.json({ error: "不是 NAS、ABL、I8 的粉專" }, { status: 409 });
+      const jobs = await pipelineDb<any[]>("auto_pipeline_jobs", `queue_id=eq.${encodeURIComponent(row.id)}&select=id,social_results&limit=1`);
+      const job = jobs[0];
+      if (!job) return NextResponse.json({ error: "找不到對應的流水線任務" }, { status: 409 });
+      const social = await pipelineDb<any[]>("social_publish_queue", `job_id=eq.${encodeURIComponent(job.id)}&status=neq.cancelled&select=platform`);
+      const have = new Set(social.map((item) => String(item.platform)));
+      const todoPlatforms = wanted.filter((platform) => platform === "website" ? !row.article_id : !have.has(platform));
+      if (!todoPlatforms.length) return NextResponse.json({ success: true, processed: 0, done: [], message: "選到的平台都已經有草稿了" });
+      const multi = await runMultiplatform({
+        env, jobId: job.id, brandShort: brand, brandName: BRAND_NAME[brand], master: String(row.content || ""),
+        fbScheduledAt: row.scheduled_at, fbQueueId: String(row.id), coverUrl: row.image_url || null,
+        only: todoPlatforms, ...(row.article_id ? { existingArticleId: String(row.article_id) } : {}),
+      });
+      const NAME = { website: "官網", instagram: "IG", threads: "Threads" } as const;
+      const problems = todoPlatforms.flatMap((platform) => { const o = multi[platform]; return !o.ok ? [`${NAME[platform]}：${o.error || "失敗"}`] : o.error ? [`${NAME[platform]}：${o.error}`] : []; });
+      const previous = job.social_results && typeof job.social_results === "object" ? job.social_results : {};
+      const merged = { ...previous, ...Object.fromEntries(todoPlatforms.map((platform) => [platform, multi[platform]])) };
+      try {
+        await pipelineDb("auto_pipeline_jobs", `id=eq.${encodeURIComponent(job.id)}`, { method: "PATCH", body: JSON.stringify({ social_results: merged, updated_at: new Date().toISOString() }) });
+      } catch { /* social_results 欄位不存在時略過 */ }
+      const outcomes = Object.fromEntries(todoPlatforms.map((platform) => [platform, multi[platform]]));
+      return NextResponse.json({ success: true, processed: 1, done: [{ queueId: row.id, step: problems.length ? "有平台失敗" : "已排程", problems, outcomes }] });
+    }
+
     const rows = await pipelineDb<any[]>("publish_queue", `status=eq.pending&source=eq.auto_pipeline&article_id=is.null&scheduled_at=gt.${encodeURIComponent(nowIso)}&order=scheduled_at.asc&limit=200&select=id,content,image_url,scheduled_at,target_pages`);
     const todo: Array<{ row: any; job: any; brand: "nas" | "abl" | "i8" }> = [];
     const skipped: Array<{ queueId: string; reason: string }> = [];
