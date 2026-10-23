@@ -6,7 +6,7 @@ import { extractRedlineWords } from "@/lib/text-find";
 
 interface Row { id: string; brand: string; title: string; scheduledAt: string | null; jobStatus: string; fb: { state: string }; website: { state: string }; instagram: { state: string }; threads: { state: string }; }
 interface Plat { exists: boolean; status: string; title?: string; text: string; scheduledAt: string | null; slides?: number; error?: string | null; limit?: number; queueRowId?: string }
-interface Detail { jobId: string; brand: string; scheduledAt: string | null; fbQueueId: string | null; fb: Plat; website: Plat; instagram: Plat; threads: Plat }
+interface Detail { jobId: string; brand: string; scheduledAt: string | null; jobStatus: string; jobError: string | null; fbQueueId: string | null; fb: Plat; website: Plat; instagram: Plat; threads: Plat }
 
 const BRAND_NAME: Record<string, string> = { nas: "NAS", abl: "ABL", i8: "I8", erick: "Erick" };
 const STATUS_TEXT: Record<string, string> = { pending: "排程中", sending: "發送中", sent: "已發佈", failed: "失敗", published: "已上線", draft: "草稿", none: "尚無草稿", partial: "部分失敗" };
@@ -15,6 +15,11 @@ function when(iso: string | null) {
   if (!iso) return "未排時間";
   const d = new Date(new Date(iso).getTime() + TAIPEI);
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+function scheduleInputValue(iso: string | null) {
+  const planned = iso ? new Date(iso).getTime() : NaN;
+  const time = Number.isFinite(planned) && planned > Date.now() + 40 * 60_000 ? planned : Date.now() + 60 * 60_000;
+  return new Date(time + TAIPEI).toISOString().slice(0, 16);
 }
 
 /** 多平台衍生：從自動流水線直接選 FB 主稿，四個平台並排看。不依賴 LocalStorage 匯入。 */
@@ -32,6 +37,8 @@ export default function PipelineDerivatives() {
   const [draft, setDraft] = useState("");
   const [problems, setProblems] = useState<string[]>([]);
   const [problemWords, setProblemWords] = useState<string[]>([]);
+  const [scheduleLocal, setScheduleLocal] = useState("");
+  const [scheduleOthers, setScheduleOthers] = useState(true);
 
   const loadRows = useCallback(async () => {
     try {
@@ -51,6 +58,7 @@ export default function PipelineDerivatives() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "讀取失敗");
       setDetail(data.detail);
+      setScheduleLocal(scheduleInputValue(data.detail?.scheduledAt || null));
     } catch (e) { setNotice(e instanceof Error ? e.message : "讀取失敗"); }
     finally { setDetailLoading(false); }
   }, []);
@@ -84,6 +92,41 @@ export default function PipelineDerivatives() {
     } catch (e) { setNotice(e instanceof Error ? e.message : "生成失敗"); }
     finally { setBusy(false); }
   };
+  const scheduleFb = async () => {
+    if (!detail || detail.fbQueueId || detail.jobStatus !== "manual") return;
+    const scheduledAt = new Date(`${scheduleLocal}:00+08:00`);
+    if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now() + 40 * 60_000) {
+      setNotice("請選至少 40 分鐘後的 FB 發佈時間，才能接著生成其他平台。");
+      return;
+    }
+    if (!window.confirm(`確定把 FB 主稿排到 ${scheduleLocal.replace("T", " ")} 發佈${scheduleOthers ? "，並接著生成官網、IG 與 Threads" : ""}嗎？`)) return;
+    setBusy(true); setNotice("正在檢查文案並建立 FB 排程…"); setProblems([]);
+    try {
+      const content = editing === "fb" ? draft : detail.fb.text;
+      const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: detail.jobId, action: "edit", content, schedule: true, scheduledAt: scheduledAt.toISOString() }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const violations: string[] = Array.isArray(data.violations) ? data.violations : [];
+        setProblems(violations.length ? violations : [data.error || "FB 排程失敗"]);
+        setProblemWords(extractRedlineWords([...violations, String(data.error || "")]));
+        setDraft(content); setEditing("fb");
+        throw new Error(violations.length ? "FB 文案仍有阻擋項目，請在下方編輯框修正後再排程。" : data.error || "FB 排程失敗");
+      }
+      if (!data.scheduled || !data.queueId) throw new Error("FB 狀態已變更，請重新整理後確認是否已排程；本次不會重複送出。");
+      setEditing(null);
+      setNotice("FB 已排程。" + (scheduleOthers ? "正在生成官網、IG 與 Threads，請不要關閉頁面…" : "現在可按各平台的生成按鈕。"));
+      await loadDetail(detail.jobId); await loadRows();
+      if (scheduleOthers) {
+        try {
+          const other = await fetch("/api/auto-pipeline/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 1, queueId: data.queueId }) });
+          const result = await other.json().catch(() => ({}));
+          setNotice(other.ok && result.processed ? `FB 已排程；其他平台：${result.done?.[0]?.step || "已處理"}` : `FB 已排程，但其他平台尚未完成：${result.error || "請按各欄的生成按鈕重試"}`);
+          await loadDetail(detail.jobId); await loadRows();
+        } catch { setNotice("FB 已排程，但其他平台未完成；請按各欄的生成按鈕重試。"); }
+      }
+    } catch (e) { setNotice(e instanceof Error ? e.message : "FB 排程失敗"); }
+    finally { setBusy(false); }
+  };
   const startEdit = (which: "fb" | "instagram" | "threads") => {
     if (!detail) return;
     setEditing(which); setDraft(detail[which].text); setProblems([]); setProblemWords([]); setNotice("");
@@ -103,7 +146,7 @@ export default function PipelineDerivatives() {
         setProblemWords(extractRedlineWords([...violations, String(data.error || "")]));
         throw new Error("還有要修改的地方，已列在編輯框上方");
       }
-      setNotice("已儲存，排程中的文案已同步更新。"); setEditing(null);
+      setNotice(editing === "fb" && !detail.fbQueueId ? "FB 草稿已儲存，但尚未排程；請按上方的排程按鈕。" : "已儲存，排程中的文案已同步更新。"); setEditing(null);
       await loadDetail(detail.jobId); await loadRows();
     } catch (e) { setNotice(e instanceof Error ? e.message : "儲存失敗"); }
     finally { setBusy(false); }
@@ -130,10 +173,10 @@ export default function PipelineDerivatives() {
         {plat.exists ? (
           <>
             <div className="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-2 text-xs leading-6 text-slate-200">{plat.text || "（沒有內容）"}</div>
-            <div className="text-xs text-slate-400">{when(plat.scheduledAt)}　{plat.text.length} 字{plat.limit ? ` / 上限 ${plat.limit}` : ""}{plat.slides ? `　${plat.slides} 張圖` : ""}</div>
+            <div className="text-xs text-slate-400">{key === "fb" && !detail?.fbQueueId ? `預定 ${when(detail?.scheduledAt || null)}，尚未排程` : when(plat.scheduledAt)}　{plat.text.length} 字{plat.limit ? ` / 上限 ${plat.limit}` : ""}{plat.slides ? `　${plat.slides} 張圖` : ""}</div>
             {over && <div className="text-xs font-bold text-rose-300">超過字數上限</div>}
             {plat.error && <div className="text-xs font-semibold text-rose-300">{plat.error}</div>}
-            {key !== "website" && plat.status === "pending" && <button disabled={busy} onClick={() => startEdit(key)} className="min-h-[44px] rounded-lg border border-sky-400/50 text-sm font-semibold text-sky-200 disabled:opacity-50">編輯這個平台的文案</button>}
+            {key !== "website" && (plat.status === "pending" || (key === "fb" && plat.status === "draft" && detail?.jobStatus === "manual")) && <button disabled={busy} onClick={() => startEdit(key)} className="min-h-[44px] rounded-lg border border-sky-400/50 text-sm font-semibold text-sky-200 disabled:opacity-50">編輯這個平台的文案</button>}
             {canCancel && plat.status === "pending" && <button disabled={busy} onClick={() => void cancelSocial(plat)} className="min-h-[44px] rounded-lg border border-rose-400/40 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這個平台</button>}
           </>
         ) : (
@@ -172,7 +215,7 @@ export default function PipelineDerivatives() {
           <div className="flex max-h-[560px] flex-col gap-2 overflow-auto pr-1">
             {visible.map((row) => (
               <button key={row.id} onClick={() => void loadDetail(row.id)} className={`flex flex-col gap-1 rounded-xl border bg-white/5 p-3 text-left ${selected === row.id ? "border-sky-400" : "border-white/10 hover:border-white/30"}`}>
-                <span className="flex items-center gap-2 text-xs"><span className="rounded bg-white px-2 py-0.5 font-bold text-slate-950">{BRAND_NAME[row.brand] || row.brand}</span><span className="text-slate-400">{when(row.scheduledAt)}</span></span>
+                <span className="flex items-center gap-2 text-xs"><span className="rounded bg-white px-2 py-0.5 font-bold text-slate-950">{BRAND_NAME[row.brand] || row.brand}</span><span className="text-slate-400">{row.jobStatus === "scheduled" ? "排程" : "預定"} {when(row.scheduledAt)}</span></span>
                 <span className="text-sm font-semibold">{row.title}</span>
                 {missing(row) ? <span className="text-xs font-semibold text-amber-300">缺：{[row.website.state === "none" && "官網", row.instagram.state === "none" && "IG", row.threads.state === "none" && "Threads"].filter(Boolean).join("、")}</span> : <span className="text-xs font-semibold text-emerald-300">四個平台齊全</span>}
               </button>
@@ -185,6 +228,20 @@ export default function PipelineDerivatives() {
           {detailLoading && <p className="p-6 text-center text-sm text-slate-400">讀取中…</p>}
           {detail && (
             <>
+              {!detail.fbQueueId && (
+                <div className="space-y-3 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
+                  <p className="font-bold">FB 目前只有草稿，尚未進入發佈佇列。{detail.scheduledAt ? `原預定時間為 ${when(detail.scheduledAt)}。` : ""}</p>
+                  {detail.jobError && <p>上次停下的原因：{detail.jobError}</p>}
+                  {detail.jobStatus === "manual" && detail.fb.exists ? (
+                    <>
+                      <p>確認 FB 文案與時間後，這裡就能排程 FB，並接著生成其他平台。若品管擋下，會在下方顯示要修改的內容。</p>
+                      <label className="flex flex-wrap items-center gap-2">FB 發佈時間（台北時間）<input type="datetime-local" value={scheduleLocal} onChange={(event) => setScheduleLocal(event.target.value)} className="min-h-[44px] rounded-lg border border-amber-400/40 bg-slate-900 px-3 text-white" /></label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={scheduleOthers} onChange={(event) => setScheduleOthers(event.target.checked)} />排程 FB 後，同時生成官網、IG 輪播與 Threads</label>
+                      <button disabled={busy} onClick={() => void scheduleFb()} className="min-h-[48px] rounded-lg bg-amber-400 px-5 font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : scheduleOthers ? "排程 FB 並生成其他平台" : "只排程 FB"}</button>
+                    </>
+                  ) : <p>目前任務狀態為「{detail.jobStatus || "未知"}」，還不能排程；請先到自動流水線確認生成結果。</p>}
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {col("FB 主稿", detail.fb, false, "fb")}
                 {col("官網文章", detail.website, false, "website")}
@@ -194,7 +251,8 @@ export default function PipelineDerivatives() {
               {editing && (
                 <div className="flex flex-col gap-3 rounded-xl border-2 border-sky-400/60 bg-slate-900 p-4">
                   <div className="text-base font-bold">正在編輯：{editing === "fb" ? "FB 主稿" : editing === "instagram" ? "IG 說明文字" : "Threads"}</div>
-                  <p className="text-xs text-slate-400">改完按「儲存並更新排程」，排程裡的文案會跟著換，發佈時間不變。IG 的圖卡文字不在這裡改。</p>
+                  {editing === "fb" && !detail.fbQueueId && <p className="text-sm text-amber-200">修正後可直接按上方「排程 FB 並生成其他平台」，不必先儲存一次。</p>}
+                  <p className="text-xs text-slate-400">{editing === "fb" && !detail.fbQueueId ? "若只想先保留修改，可按「只儲存 FB 草稿」；這不會建立排程。" : "改完按「儲存並更新排程」，排程裡的文案會跟著換，發佈時間不變。IG 的圖卡文字不在這裡改。"}</p>
                   {problems.length > 0 && (
                     <div className="rounded-lg border border-rose-400/40 bg-rose-400/10 p-3 text-sm text-rose-100">
                       <b>還要改這些才能儲存：</b>
@@ -203,13 +261,13 @@ export default function PipelineDerivatives() {
                   )}
                   <FindableTextarea value={draft} onChange={setDraft} words={problemWords} rows={14} disabled={busy} />
                   <div className="flex flex-wrap gap-2">
-                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit()} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並更新排程"}</button>
+                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit()} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : editing === "fb" && !detail.fbQueueId ? "只儲存 FB 草稿" : "儲存並更新排程"}</button>
                     <button disabled={busy} onClick={() => setEditing(null)} className="min-h-[48px] rounded-lg border border-white/20 px-4 text-sm font-semibold">不改了</button>
                   </div>
                 </div>
               )}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
-                <div className="text-sm text-slate-300">排程時間：FB {when(detail.fb.scheduledAt)}，官網 與 FB 同步，IG {when(detail.instagram.scheduledAt)}，Threads {when(detail.threads.scheduledAt)}。</div>
+                  <div className="text-sm text-slate-300">{detail.fbQueueId ? `排程時間：FB ${when(detail.fb.scheduledAt)}，官網與 FB 同步，IG ${when(detail.instagram.scheduledAt)}，Threads ${when(detail.threads.scheduledAt)}。` : `FB 尚未排程（原預定 ${when(detail.scheduledAt)}），因此其他平台尚不能從這篇生成。`}</div>
                 {needFill && detail.fbQueueId && <button disabled={busy} onClick={() => void fillMissing()} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">補齊缺的草稿</button>}
               </div>
               {needFill && <p className="text-xs text-slate-400">「補齊缺的草稿」只適用 FB 已排程、而且官網、IG、Threads 都還沒有的主稿；只缺其中一個的，直接按那一欄的「生成」按鈕。</p>}

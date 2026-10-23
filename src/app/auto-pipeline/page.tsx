@@ -164,7 +164,7 @@ export default function AutoPipelinePage() {
   const saveDraft = async (id: string) => {
     const res = await fetch("/api/auto-pipeline", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "edit", content: draftChanges[id] }) });
     const data = await res.json();
-    if (!res.ok) setNotice(data.error || "文案儲存失敗"); else { setNotice("文案已更新並標記為已審；若仍在待發，排程列也已同步更新。"); setDraftChanges((all) => { const next = { ...all }; delete next[id]; return next; }); await fetchOverview(); }
+    if (!res.ok) setNotice(data.error || "文案儲存失敗"); else { setNotice(jobs.find((job) => job.id === id)?.queue_id ? "文案已更新並標記為已審，排程列也已同步更新。" : "草稿已儲存，但 FB 尚未排程；請到多平台衍生頁完成排程。"); setDraftChanges((all) => { const next = { ...all }; delete next[id]; return next; }); await fetchOverview(); }
   };
   const toggleWeekday = (day: number) => setWeekdays((current) => current.includes(day) ? current.filter((x) => x !== day) : [...current, day].sort());
 

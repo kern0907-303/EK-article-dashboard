@@ -15,6 +15,8 @@ export interface PipelineDetail {
   jobId: string;
   brand: string;
   scheduledAt: string | null;
+  jobStatus: string;
+  jobError: string | null;
   fbQueueId: string | null;
   fb: PlatformDetail;
   website: PlatformDetail;
@@ -29,7 +31,7 @@ async function safe<T>(table: string, query: string): Promise<T[]> {
 
 /** 只讀：單一流水線任務在四個平台的完整內容與狀態。 */
 export async function collectDetail(jobId: string): Promise<PipelineDetail | null> {
-  const jobs = await safe<any>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(jobId)}&select=id,brand_id,scheduled_at,queue_id,draft_content,prompt&limit=1`);
+  const jobs = await safe<any>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(jobId)}&select=id,brand_id,scheduled_at,status,error_reason,queue_id,draft_content,prompt&limit=1`);
   const job = jobs[0];
   if (!job) return null;
   const fbRows = job.queue_id ? await safe<any>("publish_queue", `id=eq.${encodeURIComponent(job.queue_id)}&select=id,status,scheduled_at,article_id,content,error&limit=1`) : [];
@@ -53,9 +55,10 @@ export async function collectDetail(jobId: string): Promise<PipelineDetail | nul
     };
   };
   return {
-    jobId, brand: String(job.brand_id), scheduledAt: job.scheduled_at, fbQueueId: job.queue_id || null,
+    jobId, brand: String(job.brand_id), scheduledAt: job.scheduled_at, jobStatus: String(job.status || ""),
+    jobError: job.error_reason ? String(job.error_reason) : null, fbQueueId: fbRow?.id || null,
     fb: fbRow ? { exists: true, status: fbRow.status, text: String(fbRow.content || job.draft_content || ""), scheduledAt: fbRow.scheduled_at, error: fbRow.error || null, queueRowId: fbRow.id }
-      : { exists: !!job.draft_content, status: "draft", text: String(job.draft_content || ""), scheduledAt: job.scheduled_at },
+      : { exists: !!job.draft_content, status: job.draft_content ? "draft" : "none", text: String(job.draft_content || ""), scheduledAt: null },
     website: article ? { exists: true, status: article.status, title: article.title, text: String(article.content || ""), scheduledAt: fbRow?.scheduled_at || null } : emptyWith("website"),
     instagram: fromSocial("instagram", 2200),
     threads: fromSocial("threads", 500),

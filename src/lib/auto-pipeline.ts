@@ -13,6 +13,11 @@ export const AUTO_PIPELINE_ENABLED = process.env.AUTO_PIPELINE_ENABLED === "true
 export const PIPELINE_MAX_BATCH_SIZE = 21;
 export const PIPELINE_MIN_LEAD_MS = 30 * 60 * 1000;
 
+/** 儲存未排程的草稿不算審完；只有已在佇列或本次確實排入佇列才標記已審。 */
+export function reviewedAfterPipelineEdit(queueId: string | null, scheduledNow: boolean): boolean {
+  return !!queueId || scheduledNow;
+}
+
 const BRAND_ALIASES: Record<string, PipelineBrand> = {
   nas: "nas", "生命數字": "nas", "平衡空間": "nas",
   abl: "abl", "艾伯林量子調頻": "abl", "信息場調和": "abl", "量子調頻": "abl",

@@ -11,6 +11,7 @@ import {
   executorPlan,
   cancelOwnedPipelineRows,
   isAutoPipelineEnabled,
+  reviewedAfterPipelineEdit,
 } from "../src/lib/auto-pipeline";
 
 let pass = 0, fail = 0;
@@ -33,6 +34,8 @@ t("AUTO_PIPELINE_ENABLED 預設 false", !isAutoPipelineEnabled(undefined));
 t("流水線可沒有 articleId", scheduleContractAllowed("auto_pipeline", null));
 t("測試排程不進派發", !shouldDispatchQueueRow({ status: "pending", is_test: true }) && shouldDispatchQueueRow({ status: "pending", is_test: false }));
 t("取消只允許流水線待發列", shouldCancelQueueRow({ source: "auto_pipeline", status: "pending" }) && !shouldCancelQueueRow({ source: "manual", status: "pending" }));
+t("未排程草稿即使再次儲存也不會被標為已審並從待處理隱藏", !reviewedAfterPipelineEdit(null, false));
+t("已有佇列或本次成功排程才標為已審", reviewedAfterPipelineEdit("queue-1", false) && reviewedAfterPipelineEdit(null, true));
 
 const run = async () => {
   const order: string[] = [];
