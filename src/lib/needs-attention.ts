@@ -17,6 +17,7 @@ export interface AttentionItem {
   source: AttentionSource;
   refId: string;
   jobId: string | null;
+  derivativePlatform?: "website" | "instagram" | "threads";
   canEdit: boolean;
   /** 流水線任務是否已經排進 FB 佇列（沒排的改完要一併排程發佈） */
   queued?: boolean;
@@ -96,13 +97,14 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
     if (!results || typeof results !== "object") continue;
     for (const platform of ["website", "instagram", "threads"]) {
       const outcome = (results as Record<string, any>)[platform];
-      if (outcome && outcome.ok === false && outcome.error) {
+      if (outcome && outcome.ok === false && outcome.error && outcome.dismissed !== true) {
         items.push({
           key: `multi:${job.id}:${platform}`, kind: "failed", brand: brandOf(job.brand_id), platform: PLATFORM_LABEL[platform], scheduledAt: job.scheduled_at,
           reason: `${PLATFORM_LABEL[platform]} 衍生草稿沒做成：${snippet(outcome.error, 80)}`,
           text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
-          advice: "這一則 FB 不受影響。可請工程端用補齊草稿功能重跑這則，或自己在多平台衍生頁手動做。",
-          canEdit: false, canRetry: false, retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: false,
+          derivativePlatform: platform as "website" | "instagram" | "threads",
+          advice: platform === "website" ? "官網文章沒生成成功，還沒有可修改的官網草稿。這一則 FB 不受影響；到多平台衍生頁重新生成，或只移除這項失敗提醒。" : "這一則 FB 不受影響。到多平台衍生頁重試；也可以只移除這項失敗提醒，原紀錄會保留。",
+          canEdit: false, canRetry: false, retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: true,
         });
       }
     }

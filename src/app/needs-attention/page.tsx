@@ -9,6 +9,7 @@ type Kind = "review" | "manual" | "failed" | "blocked";
 interface Item {
   key: string; kind: Kind; brand: string; platform: string; scheduledAt: string | null; reason: string; text: string; full: string; advice: string;
   source: "job" | "fb_queue" | "social_queue"; refId: string; jobId: string | null;
+  derivativePlatform?: "website" | "instagram" | "threads";
   canEdit: boolean; queued?: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean; canDismiss: boolean;
 }
 
@@ -81,6 +82,10 @@ export default function NeedsAttentionPage() {
     return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, "已重新排入，約 6 分鐘後派發。");
   };
   const dismiss = (i: Item) => {
+    if (i.derivativePlatform) {
+      if (!window.confirm("移除這項失敗提醒？只會隱藏提醒，原錯誤紀錄與 FB 貼文都會保留。")) return;
+      return call("/api/needs-attention", "POST", { action: "dismiss_derived", source: "job", id: i.refId, platform: i.derivativePlatform }, "已移除這項提醒，原錯誤紀錄保留。");
+    }
     if (!window.confirm("放棄這則？它會標記為已取消，不會再發佈，記錄保留。")) return;
     return call("/api/needs-attention", "POST", { action: "dismiss", source: i.source, id: i.refId }, "已放棄這則。");
   };
@@ -195,6 +200,18 @@ export default function NeedsAttentionPage() {
                   <span className="text-slate-400">預定 {whenText(selected.scheduledAt)}</span>
                 </div>
                 <h2 className="text-lg font-bold leading-snug">{selected.reason}</h2>
+                <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-slate-900/70 p-2" aria-label="這則的操作">
+                  {selected.derivativePlatform && selected.jobId && <Link href={`/derivatives?jobId=${encodeURIComponent(selected.jobId)}`} className="inline-flex min-h-[44px] items-center rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white">前往衍生頁處理{selected.platform}</Link>}
+                  {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
+                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並排程發佈"}</button>
+                  )}
+                  {selected.canEdit && <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>}
+                  {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
+                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
+                  {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
+                  {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
+                </div>
+                {selected.canEdit && <h3 className="text-sm font-semibold text-sky-200">修改文案</h3>}
                 {selected.canEdit ? (
                   <FindableTextarea value={draft} onChange={setDraft} words={[...new Set([...extractRedlineWords([selected.reason]), ...serverWords])]} rows={16} disabled={busy} />
                 ) : (
@@ -214,19 +231,7 @@ export default function NeedsAttentionPage() {
                     <label className="flex items-center gap-2"><input type="checkbox" checked={alsoOthers} onChange={(e) => setAlsoOthers(e.target.checked)} />排程後同時生成官網文章、IG 輪播、Threads（約 2 分鐘）</label>
                   </div>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
-                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並排程發佈"}</button>
-                  )}
-                  {selected.canEdit && (
-                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>
-                  )}
-                  {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
-                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
-                  {selected.full && <button onClick={() => { void navigator.clipboard?.writeText(draft || selected.full); setNotice("已複製文案。"); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">複製文案</button>}
-                  {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">放棄這則</button>}
-                  {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
-                </div>
+                {selected.full && <button onClick={() => { void navigator.clipboard?.writeText(draft || selected.full); setNotice("已複製文案。"); }} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold">複製文案</button>}
               </>
             )}
           </aside>

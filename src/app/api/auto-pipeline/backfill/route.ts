@@ -26,12 +26,14 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date(Date.now() + 35 * 60 * 1000).toISOString();
 
     // 指定平台模式（多平台衍生頁每個空欄位的「生成」按鈕）：只補選到的平台，已經有的略過，其他不動
-    const wanted = Array.isArray(body?.platforms) ? (body.platforms as unknown[]).filter((item): item is "website" | "instagram" | "threads" => item === "website" || item === "instagram" || item === "threads") : [];
+    const wanted = Array.isArray(body?.platforms) ? [...new Set((body.platforms as unknown[]).filter((item): item is "website" | "instagram" | "threads" => item === "website" || item === "instagram" || item === "threads"))] : [];
     if (wanted.length && typeof body?.queueId === "string") {
-      const queueRows = await pipelineDb<any[]>("publish_queue", `id=eq.${encodeURIComponent(body.queueId)}&status=eq.pending&source=eq.auto_pipeline&select=id,content,image_url,scheduled_at,target_pages,article_id&limit=1`);
+      // 已發佈的 FB 母稿仍能補官網文章；IG / Threads 不可用過去的排程時間補發。
+      const websiteOnly = wanted.length === 1 && wanted[0] === "website";
+      const queueRows = await pipelineDb<any[]>("publish_queue", `id=eq.${encodeURIComponent(body.queueId)}&status=${websiteOnly ? "in.(pending,sent)" : "eq.pending"}&source=eq.auto_pipeline&select=id,content,image_url,scheduled_at,target_pages,article_id&limit=1`);
       const row = queueRows[0];
-      if (!row) return NextResponse.json({ error: "這一篇的 FB 排程已不是待發狀態，無法補做其他平台" }, { status: 409 });
-      if (new Date(row.scheduled_at).getTime() < Date.now() + 35 * 60 * 1000) return NextResponse.json({ error: "FB 發佈時間不到 35 分鐘，來不及補做其他平台。請先改 FB 的排程時間。" }, { status: 409 });
+      if (!row) return NextResponse.json({ error: websiteOnly ? "找不到可用的 FB 母稿；必須是待發或已發佈。" : "這一篇的 FB 排程已不是待發狀態，無法補做社群平台。" }, { status: 409 });
+      if (!websiteOnly && new Date(row.scheduled_at).getTime() < Date.now() + 35 * 60 * 1000) return NextResponse.json({ error: "FB 發佈時間不到 35 分鐘，來不及補做其他平台。請先改 FB 的排程時間。" }, { status: 409 });
       const brand = BRAND_BY_PAGE[Array.isArray(row.target_pages) ? String(row.target_pages[0] || "") : ""];
       if (!brand) return NextResponse.json({ error: "不是 NAS、ABL、I8 的粉專" }, { status: 409 });
       const jobs = await pipelineDb<any[]>("auto_pipeline_jobs", `queue_id=eq.${encodeURIComponent(row.id)}&select=id,social_results&limit=1`);

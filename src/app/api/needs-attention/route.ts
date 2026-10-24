@@ -18,19 +18,39 @@ export async function GET() {
 }
 
 /**
- * 只提供兩種窄動作：
+ * 只提供窄範圍的待處理動作：
  * - mark_done：流水線任務標記已處理／已審（reviewed=true）
  * - retry：失敗的 Threads/IG 或 FB 排程改回 pending，約 6 分鐘後重新派發
  * - dismiss：失敗且不想再發的排程改為 cancelled（記錄保留）
+ * - dismiss_derived：只隱藏一個衍生平台的失敗提醒（錯誤紀錄保留）
  * 修改文案與取消沿用既有的 /api/auto-pipeline、/api/social-queue、/api/publish-queue。
  */
 export async function POST(req: NextRequest) {
   try {
-    const { action, source, id } = await req.json();
+    const { action, source, id, platform } = await req.json();
     if (typeof id !== "string" || !UUID_RE.test(id)) return NextResponse.json({ error: "id 格式不正確" }, { status: 400 });
     const env = getSupabaseEnv();
     if (!env) return NextResponse.json({ error: "後台未設定 Supabase 連線資訊" }, { status: 500 });
     const now = new Date().toISOString();
+
+    if (action === "dismiss_derived" && source === "job") {
+      if (!["website", "instagram", "threads"].includes(platform)) return NextResponse.json({ error: "平台不支援" }, { status: 400 });
+      const currentRes = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=eq.scheduled&select=id,social_results&limit=1`, {
+        headers: supabaseHeaders(env.key), cache: "no-store",
+      });
+      if (!currentRes.ok) throw new Error(`讀取失敗提醒失敗（${currentRes.status}）`);
+      const current = (await currentRes.json())[0];
+      const results = current?.social_results;
+      const outcome = results && typeof results === "object" ? results[platform] : null;
+      if (!outcome || outcome.ok !== false || !outcome.error || outcome.dismissed === true) return NextResponse.json({ error: "這項失敗提醒已不存在或已處理" }, { status: 409 });
+      const res = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=eq.scheduled`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ social_results: { ...results, [platform]: { ...outcome, dismissed: true } }, updated_at: now }),
+      });
+      if (!res.ok) throw new Error(`移除失敗提醒失敗（${res.status}）`);
+      if (!(await res.json()).length) return NextResponse.json({ error: "任務狀態已改變" }, { status: 409 });
+      return NextResponse.json({ success: true });
+    }
 
     if (action === "mark_done" && source === "job") {
       const res = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=in.(manual,failed,scheduled)`, {

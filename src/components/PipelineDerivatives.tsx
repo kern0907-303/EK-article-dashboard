@@ -62,6 +62,10 @@ export default function PipelineDerivatives() {
     } catch (e) { setNotice(e instanceof Error ? e.message : "讀取失敗"); }
     finally { setDetailLoading(false); }
   }, []);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("jobId");
+    if (id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) void loadDetail(id);
+  }, [loadDetail]);
 
   const missing = (row: Row) => [row.website, row.instagram, row.threads].some((cell) => cell.state === "none");
   const visible = useMemo(() => rows.filter((row) => !onlyMissing || missing(row)), [rows, onlyMissing]);
@@ -81,6 +85,12 @@ export default function PipelineDerivatives() {
   };
   const generate = async (platform: "website" | "instagram" | "threads", label: string) => {
     if (!detail?.fbQueueId) return;
+    const website = platform === "website";
+    if (website ? !["pending", "sent"].includes(detail.fb.status) : detail.fb.status !== "pending") {
+      setNotice(website ? "FB 排程已取消或失敗，無法從這篇生成官網文章。" : "FB 已非待發狀態，不能沿用過去的時間建立社群排程。");
+      return;
+    }
+    if (website && detail.fb.status === "sent" && !window.confirm("將用這篇已發佈的 FB 主稿生成官網文章，通過品管後會立即上架。確定繼續？")) return;
     setBusy(true); setNotice(`正在生成${label}，約 1 到 2 分鐘，請不要關閉這個頁面…`);
     try {
       const res = await fetch("/api/auto-pipeline/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 1, queueId: detail.fbQueueId, platforms: [platform] }) });
@@ -165,6 +175,7 @@ export default function PipelineDerivatives() {
 
   const col = (name: string, plat: Plat, canCancel: boolean, key: "fb" | "website" | "instagram" | "threads") => {
     const over = plat.limit && plat.text.length > plat.limit;
+    const canGenerate = !!detail?.fbQueueId && (key === "website" ? ["pending", "sent"].includes(detail.fb.status) : detail?.fb.status === "pending");
     const tone = !plat.exists ? "border-dashed border-white/30" : plat.status === "failed" || over ? "border-2 border-rose-400" : plat.status === "sent" || plat.status === "published" ? "border-emerald-400/50" : "border-white/20";
     return (
       <div className={`flex min-w-0 flex-col gap-2 rounded-xl border bg-white/5 p-3 ${tone}`}>
@@ -184,9 +195,11 @@ export default function PipelineDerivatives() {
             <div className="text-sm text-slate-400">還沒有這個平台的草稿。</div>
             {plat.error && <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-2 text-xs leading-5 text-amber-100">上次沒生成成功的原因：{plat.error}</div>}
             {key !== "fb" && (
-              <button disabled={busy || !detail?.fbQueueId} onClick={() => void generate(key, name)} className="min-h-[44px] rounded-lg bg-sky-500 px-3 text-sm font-semibold text-white disabled:opacity-50">生成{name}</button>
+              <button disabled={busy || !canGenerate} onClick={() => void generate(key, name)} className="min-h-[44px] rounded-lg bg-sky-500 px-3 text-sm font-semibold text-white disabled:opacity-50">生成{name}</button>
             )}
             {key !== "fb" && !detail?.fbQueueId && <div className="text-xs text-slate-400">FB 還沒排程，先把 FB 排程後才能生成。</div>}
+            {key !== "fb" && !!detail?.fbQueueId && !canGenerate && <div className="text-xs text-slate-400">{key === "website" ? "FB 排程已取消或失敗，不能生成官網文章。" : "FB 已非待發狀態，不能再沿用原時間建立社群排程。"}</div>}
+            {key === "website" && detail?.fb.status === "sent" && canGenerate && <div className="text-xs text-amber-200">這篇 FB 已發佈；官網文章通過品管後會立即上架。</div>}
           </div>
         )}
       </div>
