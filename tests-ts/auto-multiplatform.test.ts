@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { deriveVersions, isMultiplatformEnabled, platformTimes, summarize, trimAtBoundary } from "../src/lib/auto-multiplatform";
+import { deriveVersions, isMultiplatformEnabled, linkArticleToFacebookQueue, platformTimes, summarize, trimAtBoundary } from "../src/lib/auto-multiplatform";
 
 async function main() {
 
@@ -45,6 +45,23 @@ async function main() {
   assert.equal(summarize({ derived: { source: "ai", note: "" }, instagram: ok, threads: ok, website: ok }).problems.length, 0);
   const partial = summarize({ derived: { source: "ai", note: "" }, instagram: { ok: false, error: "圖卡失敗" }, threads: ok, website: ok });
   assert.ok(partial.step.includes("IG失敗") && partial.problems.some((p) => p.includes("圖卡失敗")));
+
+  // FB 已送出後補官網，仍應把文章 ID 記回佇列，不可誤報官網生成失敗。
+  const originalFetch = globalThis.fetch;
+  let linkedUrl = "";
+  let linkedBody: Record<string, unknown> = {};
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      linkedUrl = String(input);
+      linkedBody = JSON.parse(String(init?.body));
+      return Response.json([{ id: "queue-1" }]);
+    }) as typeof fetch;
+    await linkArticleToFacebookQueue({ url: "https://example.supabase.co", key: "test-only" }, "queue-1", "article-1");
+    assert.ok(linkedUrl.includes("status=in.(pending,sent)"));
+    assert.equal(linkedBody.article_id, "article-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   console.log("auto-multiplatform tests passed");
 

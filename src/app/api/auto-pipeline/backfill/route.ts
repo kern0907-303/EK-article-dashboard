@@ -3,6 +3,7 @@ import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv } from "@/lib/publish-queue";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
+import { publishedWebsiteBrands, websiteArticleId } from "@/lib/pipeline-website-status";
 
 // 補齊舊排程：對「FB 已排好、但還沒有官網文章與 IG、Threads 排程」的流水線貼文，
 // 以排好的 FB 文案為母稿，補做官網、IG 輪播、Threads。
@@ -39,14 +40,17 @@ export async function POST(req: NextRequest) {
       const jobs = await pipelineDb<any[]>("auto_pipeline_jobs", `queue_id=eq.${encodeURIComponent(row.id)}&select=id,social_results&limit=1`);
       const job = jobs[0];
       if (!job) return NextResponse.json({ error: "找不到對應的流水線任務" }, { status: 409 });
+      const previousArticleId = websiteArticleId(job.social_results?.website);
+      const published = previousArticleId ? await publishedWebsiteBrands([previousArticleId]) : new Map<string, string>();
+      const existingArticleId = row.article_id || (previousArticleId && published.get(previousArticleId) === brand ? previousArticleId : null);
       const social = await pipelineDb<any[]>("social_publish_queue", `job_id=eq.${encodeURIComponent(job.id)}&status=neq.cancelled&select=platform`);
       const have = new Set(social.map((item) => String(item.platform)));
-      const todoPlatforms = wanted.filter((platform) => platform === "website" ? !row.article_id : !have.has(platform));
+      const todoPlatforms = wanted.filter((platform) => platform === "website" ? !existingArticleId : !have.has(platform));
       if (!todoPlatforms.length) return NextResponse.json({ success: true, processed: 0, done: [], message: "選到的平台都已經有草稿了" });
       const multi = await runMultiplatform({
         env, jobId: job.id, brandShort: brand, brandName: BRAND_NAME[brand], master: String(row.content || ""),
         fbScheduledAt: row.scheduled_at, fbQueueId: String(row.id), coverUrl: row.image_url || null,
-        only: todoPlatforms, ...(row.article_id ? { existingArticleId: String(row.article_id) } : {}),
+        only: todoPlatforms, ...(existingArticleId ? { existingArticleId: String(existingArticleId) } : {}),
       });
       const NAME = { website: "官網", instagram: "IG", threads: "Threads" } as const;
       const problems = todoPlatforms.flatMap((platform) => { const o = multi[platform]; return !o.ok ? [`${NAME[platform]}：${o.error || "失敗"}`] : o.error ? [`${NAME[platform]}：${o.error}`] : []; });

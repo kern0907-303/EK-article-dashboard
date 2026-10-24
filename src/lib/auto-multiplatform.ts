@@ -254,14 +254,14 @@ export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env
   return publishWebsite({ ...input, jobId: "", fbScheduledAt: "", fbQueueId: "" }, input.articleId);
 }
 
-/** 把官網文章編號寫回 FB 排程，讓 FB 首則留言帶官網連結。 */
-async function linkArticleToFacebookQueue(env: SupabaseEnv, queueId: string, articleId: string): Promise<void> {
-  const res = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(queueId)}&status=eq.pending`, {
+/** 記錄官網文章編號；FB 待發時供首則留言使用，已發佈時只補齊關聯。 */
+export async function linkArticleToFacebookQueue(env: SupabaseEnv, queueId: string, articleId: string): Promise<void> {
+  const res = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(queueId)}&status=in.(pending,sent)`, {
     method: "PATCH", headers: authHeaders(env), body: JSON.stringify({ article_id: articleId, updated_at: new Date().toISOString() }), signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`官網連結寫回 FB 排程失敗（${res.status}）`);
   const rows = await res.json();
-  if (!Array.isArray(rows) || rows.length === 0) throw new Error("FB 排程已不是待發狀態，沒有寫入官網連結");
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error("FB 排程已取消或失敗，沒有寫入官網關聯");
 }
 
 /**

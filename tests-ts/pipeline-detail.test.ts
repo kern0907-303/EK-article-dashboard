@@ -13,14 +13,15 @@ function test(name: string, ok: boolean) {
   console.log(`${ok ? "✓" : "✗"} ${name}`);
 }
 
-async function detailFor(job: Record<string, unknown>, queue: Record<string, unknown> | null) {
+async function detailFor(job: Record<string, unknown>, queue: Record<string, unknown> | null, websiteResult: Record<string, unknown> = {}) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/auto_pipeline_jobs")) {
-      return Response.json(url.searchParams.get("select") === "social_results" ? [{ social_results: {} }] : [job]);
+      return Response.json(url.searchParams.get("select") === "social_results" ? [{ social_results: { website: websiteResult } }] : [job]);
     }
     if (url.pathname.endsWith("/publish_queue")) return Response.json(queue ? [queue] : []);
     if (url.pathname.endsWith("/social_publish_queue")) return Response.json([]);
+    if (url.pathname.endsWith("/insights_articles")) return Response.json([{ id: "22222222-2222-4222-8222-222222222222", title: "官網文章", content: "已發佈全文", status: "published" }]);
     return Response.json([]);
   }) as typeof fetch;
   return collectDetail("8489b299-71eb-4f09-9e1d-2f20ee0fde74");
@@ -36,6 +37,9 @@ async function run() {
     const actual = "2026-10-24T12:20:00Z";
     const scheduled = await detailFor({ ...base, status: "scheduled", error_reason: null, queue_id: "queue-1" }, { id: "queue-1", status: "pending", scheduled_at: actual, content: "已排程 FB", article_id: null });
     test("有 FB 佇列時才顯示實際排程時間與佇列編號", !!scheduled && scheduled.fbQueueId === "queue-1" && scheduled.fb.status === "pending" && scheduled.fb.scheduledAt === actual && scheduled.fb.text === "已排程 FB");
+
+    const published = await detailFor({ ...base, status: "scheduled", queue_id: "queue-1" }, { id: "queue-1", status: "sent", scheduled_at: actual, content: "已發佈 FB", article_id: null }, { ok: false, error: "FB 已送出，沒有寫入官網連結", articleId: "22222222-2222-4222-8222-222222222222" });
+    test("FB 關聯缺失但生成結果留有文章 ID 時仍顯示已上線官網文章", !!published && published.website.exists && published.website.status === "published" && published.website.title === "官網文章");
 
     const empty = await detailFor({ ...base, status: "manual", error_reason: null, queue_id: null, draft_content: null }, null);
     test("尚未有 FB 草稿時不誤顯示草稿狀態", !!empty && !empty.fb.exists && empty.fb.status === "none" && empty.fb.scheduledAt === null);

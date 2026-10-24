@@ -13,6 +13,8 @@ process.env.AUTO_PIPELINE_ENABLED = "true";
 process.env.AUTO_MULTIPLATFORM_ENABLED = "true";
 
 const queueId = "11111111-1111-4111-8111-111111111111";
+const publishedId = "22222222-2222-4222-8222-222222222222";
+let queueArticleId: string | null = "existing-article";
 let passed = 0, failed = 0;
 function test(name: string, ok: boolean) {
   if (ok) passed++; else failed++;
@@ -23,11 +25,12 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = new URL(String(input));
   if (url.pathname.endsWith("/publish_queue")) {
     return Response.json(url.searchParams.get("status") === "in.(pending,sent)"
-      ? [{ id: queueId, status: "sent", scheduled_at: "2026-10-01T12:00:00Z", target_pages: ["fb_nas"], article_id: "existing-article", content: "FB 主稿" }]
+      ? [{ id: queueId, status: "sent", scheduled_at: "2026-10-01T12:00:00Z", target_pages: ["fb_nas"], article_id: queueArticleId, content: "FB 主稿" }]
       : []);
   }
-  if (url.pathname.endsWith("/auto_pipeline_jobs")) return Response.json([{ id: "job-1", social_results: {} }]);
+  if (url.pathname.endsWith("/auto_pipeline_jobs")) return Response.json([{ id: "job-1", social_results: { website: { ok: false, error: "舊的 FB 關聯錯誤", articleId: publishedId } } }]);
   if (url.pathname.endsWith("/social_publish_queue")) return Response.json([]);
+  if (url.pathname.endsWith("/insights_articles")) return Response.json([{ id: publishedId, brand_id: "nas" }]);
   return Response.json([]);
 }) as typeof fetch;
 
@@ -40,6 +43,11 @@ async function run() {
     const website = await POST(request("website"));
     const websiteBody = await website.json();
     test("已發佈且排程時間已過的 FB 母稿可進入官網補做流程", website.status === 200 && websiteBody.message === "選到的平台都已經有草稿了");
+
+    queueArticleId = null;
+    const stale = await POST(request("website"));
+    const staleBody = await stale.json();
+    test("官網已上線但 FB 關聯缺失時，不會重複生成文章", stale.status === 200 && staleBody.processed === 0 && staleBody.message === "選到的平台都已經有草稿了");
 
     const social = await POST(request("instagram"));
     test("已發佈 FB 不能沿用過去時間新增 IG 排程", social.status === 409);

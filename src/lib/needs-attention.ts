@@ -1,4 +1,5 @@
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { publishedWebsiteBrands, websiteArticleId } from "@/lib/pipeline-website-status";
 
 export type AttentionKind = "review" | "manual" | "failed" | "blocked";
 export type AttentionSource = "job" | "fb_queue" | "social_queue";
@@ -91,13 +92,26 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
   }
 
   // 2. 流水線的衍生平台失敗（官網、IG、Threads）
-  const multi = await safeQuery<any>("auto_pipeline_jobs", `status=eq.scheduled&scheduled_at=gte.${iso(now - DAY)}&order=scheduled_at.asc&limit=100&select=id,brand_id,scheduled_at,social_results,draft_content`);
+  const multi = await safeQuery<any>("auto_pipeline_jobs", `status=eq.scheduled&scheduled_at=gte.${iso(now - DAY)}&order=scheduled_at.asc&limit=100&select=id,brand_id,scheduled_at,queue_id,social_results,draft_content`);
+  const websiteFailures = multi.filter((job) => job.social_results?.website?.ok === false);
+  const queueIds = [...new Set(websiteFailures.map((job) => job.queue_id).filter(Boolean))];
+  const fbLinks = queueIds.length
+    ? await safeQuery<{ id: string; article_id: string | null }>("publish_queue", `id=in.(${queueIds.join(",")})&select=id,article_id`)
+    : [];
+  const linkedArticleByQueue = new Map(fbLinks.map((row) => [row.id, row.article_id]));
+  const publishedArticles = await publishedWebsiteBrands(websiteFailures.flatMap((job) => [
+    websiteArticleId(job.social_results.website), linkedArticleByQueue.get(job.queue_id),
+  ].filter((id): id is string => typeof id === "string")));
   for (const job of multi) {
     const results = job.social_results;
     if (!results || typeof results !== "object") continue;
     for (const platform of ["website", "instagram", "threads"]) {
       const outcome = (results as Record<string, any>)[platform];
       if (outcome && outcome.ok === false && outcome.error && outcome.dismissed !== true) {
+        if (platform === "website") {
+          const articleIds = [websiteArticleId(outcome), linkedArticleByQueue.get(job.queue_id)];
+          if (articleIds.some((id) => id && brandOf(publishedArticles.get(id)) === brandOf(job.brand_id))) continue;
+        }
         items.push({
           key: `multi:${job.id}:${platform}`, kind: "failed", brand: brandOf(job.brand_id), platform: PLATFORM_LABEL[platform], scheduledAt: job.scheduled_at,
           reason: `${PLATFORM_LABEL[platform]} 衍生草稿沒做成：${snippet(outcome.error, 80)}`,

@@ -1,4 +1,5 @@
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { publishedWebsiteBrands, websiteArticleId } from "@/lib/pipeline-website-status";
 
 export type CellState = "sent" | "pending" | "failed" | "none" | "cancelled" | "na";
 export interface TimelineCell { state: CellState; label: string; at: string | null }
@@ -57,6 +58,7 @@ export async function collectTimeline(): Promise<TimelineRow[]> {
     safe<any>("social_publish_queue", `job_id=in.(${jobIds.join(",")})&status=neq.cancelled&select=id,job_id,platform,status,scheduled_at,error`),
   ]);
   const fbById = new Map<string, any>(fbRows.map((row: any) => [row.id, row]));
+  const publishedWebsites = await publishedWebsiteBrands(jobs.map((job: any) => websiteArticleId(job.social_results?.website)).filter((id: string | null): id is string => !!id));
   const socialByJob = new Map<string, any[]>();
   for (const row of socialRows) socialByJob.set(row.job_id, [...(socialByJob.get(row.job_id) || []), row]);
 
@@ -76,7 +78,7 @@ export async function collectTimeline(): Promise<TimelineRow[]> {
 
     let website: TimelineCell;
     if (brand === "erick") website = { state: "na", label: "不適用", at: null };
-    else if (fbRow?.article_id || results.website?.ok) website = { state: "sent", label: "已上線", at: null };
+    else if (fbRow?.article_id || results.website?.ok || (websiteArticleId(results.website) && brandOf(publishedWebsites.get(websiteArticleId(results.website)!)) === brand)) website = { state: "sent", label: "已上線", at: null };
     else if (results.website?.ok === false) website = { state: "failed", label: "失敗", at: null };
     else website = { state: "none", label: "尚無草稿", at: null };
 

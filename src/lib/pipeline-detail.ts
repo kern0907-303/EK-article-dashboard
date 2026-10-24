@@ -37,12 +37,13 @@ export async function collectDetail(jobId: string): Promise<PipelineDetail | nul
   const fbRows = job.queue_id ? await safe<any>("publish_queue", `id=eq.${encodeURIComponent(job.queue_id)}&select=id,status,scheduled_at,article_id,content,error&limit=1`) : [];
   const fbRow = fbRows[0];
   const social = await safe<any>("social_publish_queue", `job_id=eq.${encodeURIComponent(jobId)}&status=neq.cancelled&select=id,platform,status,content,image_urls,scheduled_at,error&order=scheduled_at.desc`);
-  const articles = fbRow?.article_id ? await safe<any>("insights_articles", `id=eq.${encodeURIComponent(String(fbRow.article_id))}&select=id,title,content,status&limit=1`) : [];
-  const article = articles[0];
-
   // 上次生成失敗的原因（social_results 欄位不存在或沒有紀錄就略過）
   const resultRows = await safe<any>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(jobId)}&select=social_results&limit=1`);
   const results = resultRows[0]?.social_results && typeof resultRows[0].social_results === "object" ? resultRows[0].social_results : {};
+  // FB 已發佈後補官網時，舊版未能把 article_id 寫回 FB；仍可由生成結果找到實際文章。
+  const articleId = fbRow?.article_id || results.website?.articleId;
+  const articles = articleId ? await safe<any>("insights_articles", `id=eq.${encodeURIComponent(String(articleId))}&select=id,title,content,status&limit=1`) : [];
+  const article = articles[0];
   const lastError = (key: string): string | null => (results[key] && results[key].ok === false && results[key].error ? String(results[key].error) : null);
   const emptyWith = (key: string, limit?: number): PlatformDetail => ({ ...empty(limit), error: lastError(key) });
 

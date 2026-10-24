@@ -49,6 +49,7 @@ export default function NeedsAttentionPage() {
   const [serverWords, setServerWords] = useState<string[]>([]);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await fetch("/api/needs-attention", { cache: "no-store" });
       const data = await res.json();
@@ -140,7 +141,7 @@ export default function NeedsAttentionPage() {
             <p className="mt-1 text-sm text-slate-400">不分品牌、不分平台，所有需要你點頭或動手的貼文集中在這裡。</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void load()} className="min-h-[44px] rounded-lg border border-white/20 bg-white/5 px-4 text-sm font-semibold hover:bg-white/10">重新整理</button>
+            <button onClick={() => void load()} disabled={loading} className="min-h-[44px] rounded-lg border border-white/20 bg-white/5 px-4 text-sm font-semibold hover:bg-white/10 disabled:opacity-50">{loading ? "核對中…" : "重新整理"}</button>
             <Link href="/auto-pipeline" className="inline-flex min-h-[44px] items-center rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100">自動流水線</Link>
             <Link href="/" className="inline-flex min-h-[44px] items-center rounded-lg border border-white/20 bg-white/5 px-4 text-sm font-semibold">回主工作區</Link>
           </div>
