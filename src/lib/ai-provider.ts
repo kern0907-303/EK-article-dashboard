@@ -2431,7 +2431,9 @@ export async function callSeoOptimizer(
   content: string,
   brandName: string,
   keywords: Array<{ keyword: string }>,
-  overrideProvider?: string
+  overrideProvider?: string,
+  /** 社群長文與官網文章的優化重點不同：官網要被搜尋與 AI 引用，社群要維持往下讀的動力 */
+  channel: "facebook" | "website" = "website",
 ): Promise<Omit<import("@/lib/seo-optimizer").SeoOptimization, "guardrail_violations">> {
   const config = getAIConfig();
   const provider = resolveProvider(config, overrideProvider);
@@ -2477,12 +2479,19 @@ export async function callSeoOptimizer(
 5. 不得使用誇大、保證、療效或命定性的說法。
 6. 標題句型不可以改變。原標題是短斷言就維持短斷言，是問句就維持問句，是原話引用就維持原話引用，不可以改寫成「不是A，是B」或其他句型。只能在同一個句型內換用字。短標題不要為了湊長度硬加字。${/【保留區塊\d+】/.test(content) ? "\n6. 原文中形如【保留區塊1】的單獨一行，是圖表或圖片的佔位標記。必須原樣保留在原本的位置，一字不改，不可刪除、改寫、合併或加上說明。" : ""}
 
-【GEO 重點】讓 ChatGPT、Gemini、Perplexity 等 AI 搜尋容易引用：
+${channel === "facebook" ? `【社群長文重點】這是要貼到 Facebook 的文章，不是官網文章，讀者是一路往下滑的人：
+- 標題的下一句必須是能讓人想讀第三句的鉤子。絕對不可以在標題後面加摘要段、總結段、「這篇文章說明…」「本文由艾瑞克整理」這類開場白。原文第一句是什麼調性就保留什麼調性。
+- 不要加「什麼是某某」這種定義段，除非原文本來就有。
+- 不要加 FAQ 段落到正文裡。faq 欄位回傳空陣列。
+- 小標是視覺節奏，每 200 到 300 字一個，全文 3 到 5 個，每個 8 到 16 字，不必把整段結論講完。不可以每個小標都是問句。
+- 關鍵字自然融入即可，不要為了關鍵字改變語氣或加段落。` : `【GEO 重點】讓 ChatGPT、Gemini、Perplexity 等 AI 搜尋容易引用：
 - 開頭 2 到 3 句直接回答文章核心問題
 - 重要名詞給出一句話定義
 - 每段主張清楚、可獨立被擷取
+- 全文至少 2 個問句小標，問句小標底下第一到第二句就直接回答，答案 15 到 25 字
+- 各小標不重疊也不遺漏，重要的字放最前面
 - 品牌與作者名稱以一致寫法出現
-- 只列原文確實存在的資訊，不得自創來源
+- 只列原文確實存在的資訊，不得自創來源`}
 
 【原文】
 """
