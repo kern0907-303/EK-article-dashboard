@@ -4,7 +4,7 @@ import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { rewriteSocialPost, rewriteWebsiteArticle } from "@/lib/auto-multiplatform";
 import {
-  brandNameOf, firstLine, generateFacebookDraft, isCurrentRules, makeCardUrl,
+  amplifierNote, brandNameOf, firstLine, generateFacebookDraft, isCurrentRules, makeCardUrl,
   recentStyleHistory, RULES_VERSION, RULES_VERSION_PREFIX, rulesVersionNote,
 } from "@/lib/auto-generate";
 
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
             method: "PATCH",
             body: JSON.stringify({
               draft_content: generated.draft,
-              warnings: [rulesVersionNote(), ...priorReminders, ...generated.postReminders, ...notes],
+              warnings: [rulesVersionNote(), amplifierNote(generated.amplifier), ...priorReminders, ...generated.postReminders, ...notes],
               current_step: `已用 ${RULES_VERSION} 重新優化主稿`,
               social_results: previous, reviewed: false, updated_at: new Date().toISOString(),
             }),

@@ -6,7 +6,7 @@ import { getSupabaseEnv, isQueueEnabled, supabaseHeaders } from "@/lib/publish-q
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
-import { brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
+import { amplifierNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.AUTO_PIPELINE_CRON_SECRET || "";
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       if (negatedHits.length) {
         console.info("[auto-pipeline] guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
       }
-      const warnings = [rulesVersionNote(), ...generated.styleNotes, ...postReminders, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`)];
+      const warnings = [rulesVersionNote(), amplifierNote(generated.amplifier), ...generated.styleNotes, ...postReminders, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`)];
       const blockedReason = generated.blockedReason;
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });

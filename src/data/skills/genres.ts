@@ -3,6 +3,7 @@
 // 文章存入官網時會一併記錄版本，之後可以回頭比較哪一版寫得比較好。
 
 import { buildEntryBridgePrompt } from "./entry-bridge";
+import { src, type RuleSource } from "./rule-source";
 
 export const PROMPT_VERSION = "genre-v4";
 
@@ -40,6 +41,8 @@ export interface GenreDef {
   materialRequired: boolean;
   materialHint: string;
   skeleton: string;
+  /** 這個文體哪裡來的 */
+  source?: RuleSource;
 }
 
 export const FUNNEL_LABEL: Record<FunnelLevel, string> = {
@@ -202,6 +205,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialLabel: "個案摘要",
     materialRequired: true,
     materialHint: "貼上個案摘要，口述逐字稿也可以，不用先整理。系統不會代寫沒有的情節。",
+    source: src("erickGenres", "案例文骨架"),
     skeleton: `【本篇文體：案例文】
 
 你會拿到一段個案素材。先做三件事再動筆：
@@ -257,6 +261,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialLabel: "要拆的誤解與使用的框架",
     materialRequired: true,
     materialHint: "寫出讀者會說的那句原話，並指定框架（四層／領域／隱態顯態／內外一致）。",
+    source: src("erickGenres", "拆解文骨架"),
     skeleton: `【本篇文體：拆解文】
 
 骨架：
@@ -306,6 +311,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialLabel: "口述逐字稿",
     materialRequired: true,
     materialHint: "把你想對老客人說的話直接口述或貼上來，亂一點沒關係，不用整理。系統只用你講過的內容，不會補沒有的情節。",
+    source: src("erickGenres", "寵粉文骨架"),
     skeleton: `【本篇文體：寵粉文】
 
 你會拿到一段口述逐字稿。讀者是老客人，不是陌生人，也不是來評估的人。
@@ -361,6 +367,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialLabel: "讀者原話",
     materialRequired: true,
     materialHint: "逐字貼上，不要修飾。",
+    source: src("erickGenres", "回應文骨架"),
     skeleton: `【本篇文體：回應文】
 
 骨架：
@@ -402,6 +409,7 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialLabel: "導向的網址、對方會得到什麼、邀請對象",
     materialRequired: true,
     materialHint: "寫清楚三件事：導向哪裡（網址）、點下去會得到什麼（具體可驗證）、邀請的對象是誰（不要寫「所有人」）。",
+    source: src("erickGenres", "邀請文骨架"),
     skeleton: `【本篇文體：邀請文】
 
 骨架：

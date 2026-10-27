@@ -11,7 +11,7 @@ assert.equal(new Set(OPENING_STYLE_IDS.map((id) => OPENING_STYLES[id].name)).siz
 for (const id of OPENING_STYLE_IDS) {
   assert.ok(OPENING_STYLES[id].rule.length > 10, id);
   assert.ok(OPENING_STYLES[id].examples.length >= 1, id);
-  assert.ok(OPENING_STYLES[id].source.includes("Caples"), id);
+  assert.equal(OPENING_STYLES[id].source.author, "John Caples", id);
 }
 // 需要真實素材的兩型
 assert.deepEqual(OPENING_STYLE_IDS.filter((id) => OPENING_STYLES[id].requiresMaterial), ["authority", "witness"]);

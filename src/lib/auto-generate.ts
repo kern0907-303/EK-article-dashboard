@@ -16,6 +16,7 @@ import {
   pickOpeningStyle, readOpeningStyleFromPrompt, repeatedOpeningWarning, type OpeningStyleId,
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
+import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
 import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
 import { brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
@@ -28,7 +29,7 @@ import { uploadPublicJpeg } from "@/lib/social-image-server";
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
  * 會寫進任務的 warnings，用來分辨哪些已排程的文章還是用舊規則寫的。
  */
-export const RULES_VERSION = "rules-2026-10-27";
+export const RULES_VERSION = "rules-2026-10-27b";
 export const RULES_VERSION_PREFIX = "規則版本：";
 export const rulesVersionNote = (version = RULES_VERSION): string => `${RULES_VERSION_PREFIX}${version}`;
 
@@ -67,21 +68,35 @@ export async function makeCardUrl(brandId: string, content: string): Promise<{ u
   }
 }
 
-export interface StyleHistory { titles: Array<TitleStyleId | null>; openings: Array<OpeningStyleId | null> }
+export const AMPLIFIER_PREFIX = "標題強化：";
+export const amplifierNote = (id: AmplifierId): string => `${AMPLIFIER_PREFIX}${TITLE_AMPLIFIERS[id].name}`;
+/** 從任務的 warnings 讀回上一次用了哪個強化手法 */
+export function readAmplifierNote(warnings: unknown): AmplifierId | null {
+  const list = Array.isArray(warnings) ? warnings : [];
+  const hit = list.find((item) => typeof item === "string" && item.startsWith(AMPLIFIER_PREFIX));
+  return typeof hit === "string" ? amplifierFromText(hit.slice(AMPLIFIER_PREFIX.length)) : null;
+}
+
+export interface StyleHistory {
+  titles: Array<TitleStyleId | null>;
+  openings: Array<OpeningStyleId | null>;
+  amplifiers: Array<AmplifierId | null>;
+}
 
 /** 同品牌最近幾篇的標題與開場句型，由近到遠。讀不到就當作沒有，不影響生成。 */
 export async function recentStyleHistory(brandId: string, excludeJobId?: string): Promise<StyleHistory> {
   try {
     const exclude = excludeJobId ? `&id=neq.${encodeURIComponent(excludeJobId)}` : "";
-    const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled${exclude}&order=scheduled_at.desc&limit=6&select=draft_content`);
+    const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled${exclude}&order=scheduled_at.desc&limit=6&select=draft_content,warnings`);
     return {
       titles: rows.map((row) => detectTitleStyle(firstLine(row.draft_content))),
       openings: rows.map((row) => detectOpeningStyle(firstParagraph(row.draft_content))),
+      amplifiers: rows.map((row) => readAmplifierNote(row.warnings)),
     };
-  } catch { return { titles: [], openings: [] }; }
+  } catch { return { titles: [], openings: [], amplifiers: [] }; }
 }
 
-export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; directive: string }
+export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; directive: string }
 
 /** 決定這一篇用哪個標題型與開場型，並組出附加指令。題目階段指定的優先。 */
 export function planStyles(prompt: string, seed: string, history: StyleHistory): StylePlan {
@@ -90,11 +105,13 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory):
   // 「素材」兩個字太泛（「沒有附素材」也會中），只認明確的字樣，而且前面不能是否定詞。
   const hasMaterial = /(?<!(沒有|未|不|無|缺))(逐字稿|口述|原話|客戶說|學員說)/.test(String(prompt || ""));
   const openingStyle = readOpeningStyleFromPrompt(prompt) || pickOpeningStyle(history.openings, seed, hasMaterial);
+  // 標題強化手法：Schwartz 的 38 種挑出 14 種，疊在標題型上面加力道，一次只用一個
+  const amplifier = readAmplifierFromPrompt(prompt) || pickAmplifier(history.amplifiers, seed, titleStyle);
   const genre = readGenreFromPrompt(prompt);
   return {
-    titleStyle, openingStyle,
+    titleStyle, openingStyle, amplifier,
     directive: [
-      buildTitleDirective(titleStyle),
+      buildTitleDirective(titleStyle, amplifier),
       buildOpeningDirective(openingStyle, titleStyle),
       buildSubheadDirective("facebook"),
       genre ? buildGenreDirective(genre) : "",
@@ -124,6 +141,7 @@ export interface GenerateResult {
   blockedReason: string;
   titleStyle: TitleStyleId;
   openingStyle: OpeningStyleId;
+  amplifier: AmplifierId;
   guardrailHits: ReturnType<typeof checkGenreText>["guardrailHits"];
   cancelled?: true;
 }
@@ -155,7 +173,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   if (onFirstDraft && !await onFirstDraft(draft)) {
     return {
       draft, postReminders, styleNotes: [], fixes: [], warnNotes: [], blockedReason: "",
-      titleStyle: plan.titleStyle, openingStyle: plan.openingStyle,
+      titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier,
       guardrailHits: checkGenreText("", { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }).guardrailHits,
       cancelled: true,
     };
@@ -213,7 +231,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     draft, postReminders, styleNotes,
     fixes: mechanical.fixes,
     warnNotes: [...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message)],
-    blockedReason, titleStyle: plan.titleStyle, openingStyle: plan.openingStyle,
+    blockedReason, titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier,
     guardrailHits: issues.guardrailHits,
   };
 }

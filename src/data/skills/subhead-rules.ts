@@ -13,6 +13,8 @@
 // 提示詞裡。10/20 之後 53 篇裡 26% 一個小標都沒有，問句小標 0 篇。
 // 純資料與純函式。
 
+import { src, type RuleSource } from "./rule-source";
+
 export type SubheadChannel = "facebook" | "website";
 
 export interface SubheadRule {
@@ -23,7 +25,7 @@ export interface SubheadRule {
   length: [number, number];
   /** 寫進提示詞的完整規則 */
   rule: string;
-  source: string;
+  source: RuleSource;
 }
 
 export const SUBHEAD_RULES: Record<SubheadChannel, SubheadRule> = {
@@ -39,7 +41,7 @@ export const SUBHEAD_RULES: Record<SubheadChannel, SubheadRule> = {
       "不可以連續兩個小標用同一個句型，也不可以每個小標都是問句。",
       "整篇是一個連續故事時（文體是案例文而且開場型是說故事），可以只放 0 到 2 個小標，不要硬切。",
     ].join("\n"),
-    source: "Sugarman《文案訓練手冊》段落小標",
+    source: src("adweekHandbook", "第 4 章與第 18 章 Paragraph Headings"),
   },
   website: {
     channel: "website",
@@ -55,7 +57,7 @@ export const SUBHEAD_RULES: Record<SubheadChannel, SubheadRule> = {
       "檢查法：把小標和它底下第一句單獨抽出來看，如果不能回答那個小標，就重寫。",
       "小標寫成單獨一行的純文字，行首不加任何符號。",
     ].join("\n"),
-    source: "Nielsen Norman Group 層蛋糕掃描研究＋AEO 問句小標規則",
+    source: src("nngroup", "層蛋糕掃描模式，另加 AEO 問句小標規則"),
   },
 };
 

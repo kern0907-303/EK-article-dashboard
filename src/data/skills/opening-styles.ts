@@ -5,6 +5,8 @@
 // 因為提示詞有兩個地方叫它「沒有素材時用很多人這類泛稱」，模型把它當成了開場公式。
 // 純資料與純函式，不連資料庫、不呼叫網路。
 
+import { src, type RuleSource } from "./rule-source";
+
 export type OpeningStyleId =
   | "continue" | "authority" | "challenge" | "firstperson"
   | "freeinfo" | "witness" | "editorial" | "you" | "story";
@@ -20,10 +22,9 @@ export interface OpeningStyle {
   /** 需要真實素材才能用，沒有素材時不可以被自動挑中（避免編造） */
   requiresMaterial?: boolean;
   /** 出處，方便日後回查 */
-  source: string;
+  source: RuleSource;
 }
 
-const CAPLES = "Caples《Making Ads Pay》開場十法";
 
 export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
   continue: {
@@ -32,7 +33,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "標題已經丟出一個夠強的概念，第一段直接把它放大。",
     rule: "第一段把標題講的那件事再往下推一層，不要換主題，也不要先交代背景。標題說了什麼，第一句就接著說什麼。",
     examples: ["（標題講授權失敗）第一句：失敗的點幾乎都不在那個被授權的人身上。"],
-    source: `${CAPLES}之一`,
+    source: src("makingAdsPay", "開場十法之一"),
   },
   authority: {
     id: "authority",
@@ -41,7 +42,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     rule: "第一句就是那句引用，寫出是誰說的或出自哪本書。沒有真實出處就不可以用這一型，不可以寫成「有專家說」。",
     examples: ["心理學家丹尼爾．卡尼曼在《快思慢想》裡說過一句話，很多人聽了會不舒服。"],
     requiresMaterial: true,
-    source: `${CAPLES}之二`,
+    source: src("makingAdsPay", "開場十法之二"),
   },
   challenge: {
     id: "challenge",
@@ -49,7 +50,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "想先篩掉不對的人，讓對的人覺得被點名。I8 特別適合。",
     rule: "第一句反過來說這篇不是寫給誰看的，或先設一個門檻。語氣是平的，不是挑釁，也不可以貶低任何人。",
     examples: ["已經把問題想清楚的人，這一篇可以跳過。", "這篇不適合還在找一個標準答案的人。"],
-    source: `${CAPLES}之三`,
+    source: src("makingAdsPay", "開場十法之三"),
   },
   firstperson: {
     id: "firstperson",
@@ -57,7 +58,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "想用艾瑞克自己的觀察或立場開場。",
     rule: "第一句用我開頭，說自己看到什麼、做過什麼、怎麼想。只能寫真的發生過的事，不編造經歷與數字。",
     examples: ["我看了二十年，最常被弄錯的就是這一件事。"],
-    source: `${CAPLES}之四`,
+    source: src("makingAdsPay", "開場十法之四"),
   },
   freeinfo: {
     id: "freeinfo",
@@ -65,7 +66,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "這篇有一個具體可做的方法或判準。",
     rule: "第一段就把一個有用的東西直接給出去，不鋪陳、不預告。給完再談為什麼。",
     examples: ["判斷自己是不是真的累了，只要看一件事：醒來的第一個念頭是誰的事。"],
-    source: `${CAPLES}之五`,
+    source: src("makingAdsPay", "開場十法之五"),
   },
   witness: {
     id: "witness",
@@ -74,7 +75,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     rule: "第一句就是那句原話，用「」包住，後面接一句你的反應。素材裡沒有原話就不可以用這一型，不可以自己編一句話再說是客戶說的。",
     examples: ["「我只是想休息一下。」她說完這句，停了幾秒。"],
     requiresMaterial: true,
-    source: `${CAPLES}之六`,
+    source: src("makingAdsPay", "開場十法之六"),
   },
   editorial: {
     id: "editorial",
@@ -82,7 +83,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "主題夠大，可以從一個普世的觀察切入。",
     rule: "第一句寫一個大多數人都會同意的觀察，不提你、不提我、不提品牌。第二段才落到讀者身上。",
     examples: ["每一個要負責的位置，都有一段沒有人教的空白期。"],
-    source: `${CAPLES}之八`,
+    source: src("makingAdsPay", "開場十法之八"),
   },
   you: {
     id: "you",
@@ -90,7 +91,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "讀者的處境本身就夠具體。",
     rule: "第一句直接描述讀者此刻的處境，用你。描述狀態或動作，不要用你有沒有、你是不是這種讀者能一秒回答的問句。",
     examples: ["你已經把能調的都調過一遍了，行程、睡眠、工作量，然後還是這樣。"],
-    source: `${CAPLES}之九`,
+    source: src("makingAdsPay", "開場十法之九"),
   },
   story: {
     id: "story",
@@ -98,7 +99,7 @@ export const OPENING_STYLES: Record<OpeningStyleId, OpeningStyle> = {
     when: "有一個具體場景可以把讀者帶進去。",
     rule: "第一句就進場景，有時間、有人、有動作。人物可以虛構並取名，但不可以說成真實客戶，也不可以編造數字與成效。前三句內要讓讀者知道這跟他有關。",
     examples: ["那天她把看護送到門口，回頭看了一眼客廳，沒有人抬頭。"],
-    source: `${CAPLES}之十`,
+    source: src("makingAdsPay", "開場十法之十"),
   },
 };
 
