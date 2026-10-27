@@ -33,6 +33,50 @@ const BRAND_FULL: Record<string, string> = { ABL: "艾伯林量子調頻", NAS: 
 export const BRAND_NAMES: readonly string[] = ["平衡空間", "艾伯林量子調頻", "初八企業顧問"];
 
 /**
+ * 書籍引用的查證。
+ *
+ * 艾瑞克的寫作規則：引經據典只能用他自己的知識庫，先確認書與作者、讀過全文再引用，不憑記憶。
+ * 2026-10-27 發現自動流水線完全沒有實作這條，15 篇已排程的 ABL 文章引了 15 本書，
+ * 其中 12 本根本不在知識庫裡，等於模型憑記憶寫的。
+ *
+ * 這裡只負責「抓出文章引了哪些書」與「比對是不是允許的那一本」，
+ * 挑書與查證由 chooseKnowledgeSource 負責。
+ */
+const BOOK_TITLE = /《([^》]{1,60})》/g;
+
+/** 文章裡出現的所有書名，去重 */
+export function citedBookTitles(text: string): string[] {
+  const body = String(text || "");
+  const found = new Set<string>();
+  BOOK_TITLE.lastIndex = 0;
+  let hit: RegExpExecArray | null;
+  while ((hit = BOOK_TITLE.exec(body)) !== null) {
+    const title = hit[1].trim();
+    if (title) found.add(title);
+  }
+  BOOK_TITLE.lastIndex = 0;
+  return [...found];
+}
+
+/**
+ * 未經查證的引用。allowed 傳 null 代表這篇沒有拿到任何經過查證的出處，
+ * 此時文章裡任何一本書都是違規。
+ */
+export function unverifiedCitations(text: string, allowed: { title: string } | null): string[] {
+  const titles = citedBookTitles(text);
+  if (!allowed?.title) return titles;
+  return titles.filter((title) => title !== allowed.title);
+}
+
+/** 沒有指名出處的研究宣稱。不擋稿，只提醒，因為有時是在轉述常識。 */
+const VAGUE_RESEARCH = /(研究(顯示|指出|發現|證實)|根據研究|科學家(發現|指出)|專家(表示|指出)|有(一項)?研究)/;
+
+export function vagueResearchClaim(text: string): string {
+  const hit = String(text || "").match(VAGUE_RESEARCH);
+  return hit ? hit[0] : "";
+}
+
+/**
  * 品牌名稱當主詞發言的偵測。
  *
  * 舊版列出「認為、相信、陪你…」這些動詞當黑名單，中文動詞列不完，實際漏掉非常多

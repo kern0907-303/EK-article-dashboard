@@ -17,7 +17,9 @@ import {
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
-import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rewriteBrandSubject, runQualityGate } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
+import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
+import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { cardHeadline } from "@/lib/article-image.mjs";
@@ -29,7 +31,7 @@ import { uploadPublicJpeg } from "@/lib/social-image-server";
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
  * 會寫進任務的 warnings，用來分辨哪些已排程的文章還是用舊規則寫的。
  */
-export const RULES_VERSION = "rules-2026-10-27c";
+export const RULES_VERSION = "rules-2026-10-27d";
 export const RULES_VERSION_PREFIX = "規則版本：";
 export const rulesVersionNote = (version = RULES_VERSION): string => `${RULES_VERSION_PREFIX}${version}`;
 
@@ -55,6 +57,16 @@ export const VOICE_DIRECTIVE = [
 ].join("\n");
 
 export const BRAND_NAMES = { nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "Erick 個人品牌" } as const;
+/** 取查證過的出處。知識庫暫時不可用時回 null，該篇就不准引用，不會因此失敗。 */
+export async function loadCitationSource(topic: string): Promise<{ citation: VerifiedCitation | null; content: string }> {
+  try {
+    const source = await chooseKnowledgeSource(topic, process.env.AI_PROVIDER);
+    return { citation: source.citation, content: source.content };
+  } catch {
+    return { citation: null, content: "" };
+  }
+}
+
 export const brandNameOf = (brandId: string): string =>
   BRAND_NAMES[brandId as keyof typeof BRAND_NAMES] || "Erick 個人品牌";
 
@@ -169,10 +181,13 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   const plan = planStyles(prompt, seed, history);
   const base = experimentDirective ? `${prompt}\n\n${experimentDirective}` : prompt;
   const irisPrompt = `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${prompt}`;
+  // 引經據典只能用知識庫。拿不到出處就整篇禁止引用，不讓模型憑記憶補一本書上去。
+  const source = await loadCitationSource(prompt);
+  const citationDirective = buildCitationDirective(source.citation, source.content);
 
   const generated = await retry(async () => {
     const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-      maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}`,
+      maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n${citationDirective}`,
       iris: irisPrompt,
     }, undefined, undefined, "facebook");
     const text = result.dispatchData?.social_copy;
@@ -203,11 +218,12 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試三次，仍不過才做機械式修正
   for (let attempt = 0; attempt < 3; attempt++) {
     const offending = brandVoiceSentences(draft, brandId);
+    const badCites = unverifiedCitations(draft, source.citation);
     const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId)).map((issue) => issue.message.slice(0, 80));
-    if (!offending.length && !hardHits.length) break;
+    if (!offending.length && !hardHits.length && !badCites.length) break;
     const revised = await retry(async () => {
       const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-        maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}`,
+        maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}${badCites.length ? `上一版引用了不可以引用的書：${badCites.map((t) => `《${t}》`).join("、")}。這些書沒有經過查證，請全文重寫，完全拿掉這些引用與相關的文末出處。${source.citation ? `需要引用時只能引用《${source.citation.title}》。` : "這一篇不可以引用任何書籍。"}` : ""}`,
         iris: irisPrompt,
       }, undefined, undefined, "facebook");
       const text = result.dispatchData?.social_copy;
@@ -241,11 +257,17 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     repeatedOpeningWarning(finalOpening, history.openings),
     bannedOpeningWarning(firstParagraph(draft)),
     subheadWarning(draft, "facebook"),
+    vagueResearchClaim(draft) ? `出現沒有指名出處的說法「${vagueResearchClaim(draft)}」，確認是不是要改成具體來源或拿掉。` : "",
+    source.citation ? `本篇可引用的出處：《${source.citation.title}》，${source.citation.author}` : "本篇沒有取到知識庫出處，已禁止引用",
   ].filter(Boolean);
 
   const leftover = draft.match(/【需補[^】]*】/g);
+  // 引用沒查證過就不發。這是硬規則：寧可這一篇不出去，也不要掛一本沒讀過的書。
+  const uncited = unverifiedCitations(draft, source.citation);
   const blockedReason = leftover?.length
     ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
+    : uncited.length
+    ? `引用了未經查證的來源：${uncited.map((title) => `《${title}》`).join("、")}。引經據典只能用知識庫裡的書，請重新生成`
     : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`)].join("；");
 
   return {
