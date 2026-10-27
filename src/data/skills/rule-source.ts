@@ -17,6 +17,7 @@ export interface RuleSource {
 export const BOOKS = {
   makingAdsPay: { book: "Making Ads Pay", author: "John Caples" },
   advertisingMakeMoney: { book: "How to Make Your Advertising Make Money", author: "John Caples" },
+  testedAdvertising: { book: "Tested Advertising Methods", author: "John Caples" },
   breakthrough: { book: "Breakthrough Advertising", author: "Eugene Schwartz" },
   adweekHandbook: { book: "文案訓練手冊（The Adweek Copywriting Handbook）", author: "Joseph Sugarman" },
   erickGenres: { book: "文案文體提示詞骨架｜四種", author: "艾瑞克" },

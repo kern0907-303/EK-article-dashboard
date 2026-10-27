@@ -20,6 +20,8 @@ const PUBLIC_PATHS = [
   "/api/experiment",
   // 品管檢查：給編輯 AI（Paperclip）以 Bearer secret 呼叫，route handler 會驗證。
   "/api/quality-gate",
+  // 寫作規則唯讀：給 n8n 海巡批次以 Bearer secret 呼叫，route handler 會驗證。
+  "/api/rules",
   "/nas/quiz",
   "/abl/check",
   "/i8/diagnosis",

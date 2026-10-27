@@ -111,7 +111,13 @@ export const OPENING_STYLE_NAMES = OPENING_STYLE_IDS.map((id) => OPENING_STYLES[
  * 「很多人」本來是用來避免編造個案的泛稱，不是開場公式；「你有沒有」這種讀者一秒就能回答的問句
  * 挖不出任何缺口。兩者在文章後段仍然可以用。
  */
-export const BANNED_FIRST_SENTENCE = /^[\s「【（(]*(很多人|許多人|不少人|有些人|你有沒有|你是不是也|你是否|有沒有過)/;
+/**
+ * 第一句不可以這樣開頭。
+ * 前半段是泛稱開場（用得太多）；後半段是 Caples 指出的「空泛哲理開場」——
+ * 第一段談與標題無關的大道理，讀者會直接離開。
+ * 出處：Tested Advertising Methods，標題之後的第一段寫法。
+ */
+export const BANNED_FIRST_SENTENCE = /^[\s「【（(]*(很多人|許多人|不少人|有些人|你有沒有|你是不是也|你是否|有沒有過|人生就是|人生總是|人生是一場|人生這條路|這個世界|這個時代|生活總是|每個人都|我們總是|我們常常|世界上的人)/;
 
 export function openingStyleFromText(value: string): OpeningStyleId | null {
   const text = String(value || "").trim();
@@ -146,6 +152,7 @@ export function buildOpeningDirective(id: OpeningStyleId, titleStyleId?: string)
     `語感參考（不要照抄，也不要套用它們的主題）：${style.examples.join("｜")}`,
     "第一句絕對不可以用「很多人」「許多人」「不少人」「你有沒有」「你是不是也」開頭。沒有真實個案時仍然用泛稱情境，但不要把泛稱放在第一句。",
     "第一句不超過 30 字，前三句內要讓讀者知道這篇跟他有什麼關係。",
+    "第一段要延續標題承諾的那件事，直接說出讀者能得到什麼，不要引入與標題無關的新想法，也不要用空泛的哲理或一串形容詞開場。",
     collide ? "標題已經用了同一個手法，開場要換一個角度進入，不要把標題的句子再講一次。" : "",
   ].filter(Boolean).join("\n");
 }

@@ -12,8 +12,23 @@ export type TitleStyleId =
   | "contrast" | "blunt" | "question" | "scene"
   | "number" | "counter" | "target" | "quote";
 
+/**
+ * Caples 把成功標題分成三類，並指出自身利益最重要，好奇心單獨使用時效果最弱也最不穩定。
+ * 出處：Tested Advertising Methods，標題三分類。
+ */
+export type TitleCategory = "self" | "news" | "curiosity";
+
+/** 輪換時的權重。自身利益最常被挑中，好奇心最少。數字就是它在候選池裡出現幾次。 */
+export const CATEGORY_WEIGHT: Record<TitleCategory, number> = { self: 3, news: 2, curiosity: 1 };
+
+export const CATEGORY_NAME: Record<TitleCategory, string> = {
+  self: "自身利益", news: "新聞", curiosity: "好奇心",
+};
+
 export interface TitleStyle {
   id: TitleStyleId;
+  /** Caples 三分類。決定這一型在輪換時的權重。 */
+  category: TitleCategory;
   /** 給人看的名稱，n8n 與儀表板都用這個字串 */
   name: string;
   /** 什麼主題適合用這一型 */
@@ -29,6 +44,7 @@ export interface TitleStyle {
 export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   contrast: {
     id: "contrast",
+    category: "self",
     name: "否定對比",
     when: "讀者把原因歸到錯的地方，要先拆掉那個歸因時用。",
     rule: "用「不是A，是B」的句型。A 是讀者自己會先怪罪的東西，B 是真正的原因。全句不超過 26 字。",
@@ -37,6 +53,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   blunt: {
     id: "blunt",
+    category: "self",
     name: "直球短斷言",
     when: "主張本身夠硬、不需要鋪陳時用。這一型負責把整批標題的長度拉開。",
     rule: "一句話講完立場，14 字以內，全句不可以有逗號，不解釋原因，不加修飾語。",
@@ -45,6 +62,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   question: {
     id: "question",
+    category: "curiosity",
     name: "讀者心裡那句問句",
     when: "讀者心裡已經有一個反覆問自己的問題時用。",
     rule: "整個標題就是讀者會自己問出口的那一句問句，用讀者的口語，不要自問自答，不要在問號後面再補一句結論。20 字以內。",
@@ -53,6 +71,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   scene: {
     id: "scene",
+    category: "curiosity",
     name: "場景切片",
     when: "素材本身就有一個具體畫面時用。",
     rule: "只寫一個看得見的畫面或一個動作，不下任何結論，不出現「其實」「真正的」這類評論詞。人物用泛稱，不指名。",
@@ -61,6 +80,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   number: {
     id: "number",
+    category: "self",
     name: "數字清單",
     when: "內容本來就可以拆成兩到四個並列的點時用。",
     rule: "標題帶一個數字，數字必須對應文章裡真的寫出來的那幾點，不可以多也不可以少。18 字以內。",
@@ -69,6 +89,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   counter: {
     id: "counter",
+    category: "news",
     name: "反直覺",
     when: "有一句流傳很廣但不完全對的說法時用。",
     rule: "先寫出那句大家都在講的話，再用一個轉折把它頂回去。只頂說法，不頂人。不用「我認為」開頭。",
@@ -77,6 +98,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   target: {
     id: "target",
+    category: "self",
     name: "對象點名",
     when: "這篇只想讓某一種處境的人看見時用。",
     rule: "用「給那個…的人」或「習慣…的人」直接點名一種處境，不描述解法。22 字以內。",
@@ -85,6 +107,7 @@ export const TITLE_STYLES: Record<TitleStyleId, TitleStyle> = {
   },
   quote: {
     id: "quote",
+    category: "curiosity",
     name: "原話引用",
     when: "素材裡有一句很有代表性的原話時用。",
     rule: "用「」包住一句口語原話當標題主體，後面最多接一句短評。原話要改寫成泛稱，不指名任何人，不逐字抄別人的貼文。",
@@ -112,6 +135,18 @@ export function readTitleStyleFromPrompt(prompt: string): TitleStyleId | null {
 }
 
 /** 附在提示詞後面的指令。只管標題，不動內文結構與品牌規範。 */
+/**
+ * Caples 整理的失敗標題特徵。只放進提示詞提醒模型，不做成品管阻擋，
+ * 因為「過度聰明」「死板」沒有辦法用機器可靠判斷，硬擋只會誤殺。
+ * 出處：Tested Advertising Methods，應避免的標題寫法。
+ */
+export const TITLE_NEGATIVES = [
+  "標題要避開四種寫法：死板（像公司公告）、過度聰明（讀者要想一下才懂）、無意義（看完不知道在講什麼）、負面（只講壞處不給出路）。",
+  "負面角度要翻成正面角度再寫。",
+  "標題必須獨立看就能傳達訊息，因為只讀標題的人遠多於讀完全文的人。",
+  "標題裡出現具體數字會提高可信度，但數字必須是文章裡真的寫出來的，不可以為了標題編一個。",
+].join("\n");
+
 export function buildTitleDirective(id: TitleStyleId, amplifier?: AmplifierId): string {
   const style = TITLE_STYLES[id];
   return [
@@ -121,6 +156,7 @@ export function buildTitleDirective(id: TitleStyleId, amplifier?: AmplifierId): 
     `語感參考（不要照抄，也不要套用它們的主題）：${style.examples.join("｜")}`,
     amplifier ? buildAmplifierLine(amplifier) : "",
     `標題不要固定用「不是A，是B」這個句型，除非本篇指定的就是否定對比。`,
+    TITLE_NEGATIVES,
   ].filter(Boolean).join("\n");
 }
 
@@ -149,9 +185,16 @@ export function pickTitleStyle(recent: Array<TitleStyleId | null>, seed: string)
   const avoid = new Set(recent.slice(0, 3).filter(Boolean) as TitleStyleId[]);
   const pool = TITLE_STYLE_IDS.filter((id) => !avoid.has(id));
   const usable = pool.length ? pool : TITLE_STYLE_IDS;
+  // 依 Caples 三分類加權：自身利益型出現機會最高，好奇心型最低。
+  // 不是直接禁用好奇心型，它仍然會被挑到，只是比例低，用來維持句型變化。
+  const weighted: TitleStyleId[] = [];
+  for (const id of usable) {
+    const times = CATEGORY_WEIGHT[TITLE_STYLES[id].category];
+    for (let i = 0; i < times; i++) weighted.push(id);
+  }
   let hash = 0;
   for (const ch of String(seed || "x")) hash = (hash * 31 + ch.charCodeAt(0)) % 100000;
-  return usable[hash % usable.length];
+  return weighted[hash % weighted.length];
 }
 
 /** 最近幾篇是不是一直同一型。重複才回傳提醒文字，否則回傳空字串。 */
