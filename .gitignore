@@ -47,6 +47,10 @@ next-env.d.ts
 .turbo/
 *.log
 
+# 本機工具產生的暫存目錄，不進版控
+.playwright-cli/
+output/
+
 # Brand OS ignores
 __pycache__/
 *.pyc

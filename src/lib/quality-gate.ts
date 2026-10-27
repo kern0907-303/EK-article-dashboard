@@ -231,8 +231,27 @@ export const gateMessage = (issues: GateIssue[]): string => issues.map((issue) =
  * 先機械修正（免責聲明、品牌縮寫、破折號、Markdown），再跑品管關卡；
  * 還有 block 的就拒絕，不再依賴任何一個 AI 記得規範。
  */
-export function enforceCopyRules(text: string, platform: GatePlatform, master?: string): { text: string; fixes: string[]; blockers: GateIssue[]; warnings: GateIssue[] } {
+export function enforceCopyRules(text: string, platform: GatePlatform, master?: string): { text: string; fixes: string[]; blockers: GateIssue[]; warnings: GateIssue[]; voice: VoiceReport } {
   const fixed = applyMechanicalFixes(String(text || ""));
   const issues = runQualityGate(fixed.text, { platform, master });
-  return { text: fixed.text, fixes: fixed.fixes, blockers: gateBlockers(issues), warnings: gateWarnings(issues) };
+  return { text: fixed.text, fixes: fixed.fixes, blockers: gateBlockers(issues), warnings: gateWarnings(issues), voice: voiceReport(fixed.text) };
+}
+
+export interface VoiceReport {
+  /** 品牌當主詞的違規片段。空陣列代表說話的人沒問題。 */
+  hits: string[];
+  /** 機械式修正後的建議版本。沒有違規時等於原文。 */
+  suggestion: string;
+}
+
+/**
+ * 說話的人專用報告，給編輯 AI（Paperclip）與 n8n 用。
+ *
+ * 發布閘把 brand_voice 列為 warn，是為了不讓既有已排程的舊稿整批發不出去；
+ * 但審稿階段這條是必改項，所以另外給一份獨立報告，審稿端只要看 hits 是不是空的。
+ */
+export function voiceReport(text: string, brandId?: string): VoiceReport {
+  const body = String(text || "");
+  const hits = brandSubjectHits(body, brandId).map((hit) => hit.snippet);
+  return { hits, suggestion: hits.length ? rewriteBrandSubject(body, brandId).text : body };
 }

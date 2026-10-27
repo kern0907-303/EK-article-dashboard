@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { brandSubjectHits, brandSubjectSentences, rewriteBrandSubject, checkFormat } from "../src/lib/quality-gate";
+import { brandSubjectHits, brandSubjectSentences, rewriteBrandSubject, checkFormat, enforceCopyRules, voiceReport } from "../src/lib/quality-gate";
 
 const subjects = (text: string, brandId?: string) =>
   brandSubjectHits(text, brandId).filter((hit) => hit.reason === "subject");
@@ -61,5 +61,19 @@ const reported = checkFormat("平衡空間想在這裡停一下，問一個問�
 const voice = reported.find((issue) => issue.code === "brand_voice");
 assert.ok(voice, "品管要回報 brand_voice");
 assert.equal(voice!.level, "warn");
+
+// 審稿端點（Paperclip）：品牌當主詞要升級成必改項，所以 passed 會是 false
+const bad = enforceCopyRules("平衡空間想在這裡停一下，問一個問題。這一段是為了讓你看清楚自己現在卡在哪裡，而不是急著找方法。", "facebook");
+assert.deepEqual(bad.blockers, [], "不該變成發布閘的 blocker，否則既有排程會整批發不出去");
+assert.ok(bad.voice.hits.length > 0, "voice.hits 要抓到");
+assert.ok(!bad.voice.suggestion.includes("平衡空間想"), "suggestion 要是修好的版本");
+
+const okCopy = enforceCopyRules("我在平衡空間帶過一個案子，那個老闆什麼都做對了，結果還是卡住。問題不在方法，在狀態。", "facebook");
+assert.deepEqual(okCopy.voice.hits, []);
+assert.equal(okCopy.voice.suggestion, okCopy.text, "沒違規時建議版本等於原文");
+
+// voiceReport 單獨使用
+assert.deepEqual(voiceReport("我在平衡空間帶過一個案子。").hits, []);
+assert.ok(voiceReport("初八企業顧問談現金流", "i8").hits.length > 0);
 
 console.log("brand-subject 測試通過");
