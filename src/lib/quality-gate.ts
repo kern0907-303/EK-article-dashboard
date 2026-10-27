@@ -29,9 +29,87 @@ const TRAILING_BAD = /[，、：；,:;（(「『“]\s*$/;
 const DISCLAIMER = /(故事)?情境(僅)?為示意|以上(故事|內容|情境)?(皆|均)?為虛構|純屬虛構|僅為示意|虛構情境|情境為虛構/;
 // 對外品牌名稱一律用全名，不寫縮寫。前面是英數字或 # 的不處理（例如主題標籤）。
 const BRAND_ABBREV = /(?<![A-Za-z0-9#])(ABL|NAS|I8)(?![A-Za-z0-9])/g;
-// 品牌名稱當主詞發言（例如「平衡空間認為」「艾伯林量子調頻陪你」）：文章應由人說話，不是品牌。
-export const BRAND_AS_SUBJECT = /(平衡空間|艾伯林量子調頻|初八企業顧問)(認為|相信|陪伴著?你|陪著你|陪你|想要|想讓|想陪|主張|堅持|看見|看重|提供|幫你|帶你|讓你|協助|覺得|始終|一直|專注|致力|深信|認同|重視|關注|站在|希望|在乎|守護|願意|要的是)/;
 const BRAND_FULL: Record<string, string> = { ABL: "艾伯林量子調頻", NAS: "平衡空間", I8: "初八企業顧問" };
+export const BRAND_NAMES: readonly string[] = ["平衡空間", "艾伯林量子調頻", "初八企業顧問"];
+
+/**
+ * 品牌名稱當主詞發言的偵測。
+ *
+ * 舊版列出「認為、相信、陪你…」這些動詞當黑名單，中文動詞列不完，實際漏掉非常多
+ * （「平衡空間想在這裡停一下」「平衡空間邀請你」「初八企業顧問談現金流」都沒擋到）。
+ * 所以反過來寫：預設全部算違規，只放行兩種合法用法。
+ *
+ *   地點      前面緊接 在/到/來/去/找/是/進    「我在平衡空間帶過一個案子」
+ *   服務名稱  後面緊接 的                      「平衡空間的生命數字」
+ *
+ * 另外放行主題標籤（#平衡空間）與行尾、引號收尾，這些不是在發言。
+ * 合法用法本身也有上限：全文最多出現一次（主題標籤不計）。
+ */
+const BRAND_OK_BEFORE = /[在到來去找是進]$/;
+const BRAND_OK_AFTER = /^(的|」|』|）|\)|\n|$)/;
+
+export interface BrandSubjectHit {
+  /** 違規片段，用來顯示與回饋給 AI */
+  snippet: string;
+  /** subject 品牌當主詞發言；repeat 合法但出現太多次 */
+  reason: "subject" | "repeat";
+}
+
+/** 指定品牌就只檢查該品牌，沒指定就檢查三個品牌 */
+const namesFor = (brandId?: string): string[] => {
+  const key = String(brandId || "").toUpperCase();
+  return BRAND_FULL[key] ? [BRAND_FULL[key]] : [...BRAND_NAMES];
+};
+
+/** 找出文字裡品牌當主詞發言的地方。回傳空陣列代表這段文字的說話者沒問題。 */
+export function brandSubjectHits(text: string, brandId?: string): BrandSubjectHit[] {
+  const body = String(text || "");
+  const hits: BrandSubjectHit[] = [];
+  for (const name of namesFor(brandId)) {
+    let countable = 0;
+    for (let at = body.indexOf(name); at >= 0; at = body.indexOf(name, at + name.length)) {
+      const before = body.slice(Math.max(0, at - 1), at);
+      const after = body.slice(at + name.length, at + name.length + 1);
+      if (before === "#" || before === "＃") continue; // 主題標籤不是在發言
+      countable += 1;
+      if (BRAND_OK_BEFORE.test(before)) continue; // 當地點
+      if (BRAND_OK_AFTER.test(after)) continue; // 當服務名稱或句尾
+      hits.push({ reason: "subject", snippet: body.slice(at, at + name.length + 8).replace(/\s+/g, " ") });
+    }
+    if (countable > 1) hits.push({ reason: "repeat", snippet: `${name}（全文出現 ${countable} 次，規則是最多一次）` });
+  }
+  return hits;
+}
+
+/** 把違規的整句挑出來，帶給 AI 當重寫依據 */
+export function brandSubjectSentences(text: string, brandId?: string): string[] {
+  const body = String(text || "");
+  const bad = body
+    .split(/(?<=[。！？\n])/)
+    .map((line) => line.trim())
+    .filter((line) => line && brandSubjectHits(line, brandId).some((hit) => hit.reason === "subject"))
+    .slice(0, 4)
+    .map((line) => line.slice(0, 60));
+  const repeat = brandSubjectHits(body, brandId).filter((hit) => hit.reason === "repeat").map((hit) => hit.snippet);
+  return [...bad, ...repeat];
+}
+
+/**
+ * 機械式修正品牌當主詞：只處理「句首品牌名 + 動詞」這種文法上一定可以直接換成「我」的位置，
+ * 不碰句中的其他用法，避免改出不通的句子。AI 重寫失敗時當最後一道保險。
+ */
+export function rewriteBrandSubject(text: string, brandId?: string): { text: string; fixes: string[] } {
+  let out = String(text || "");
+  const fixes: string[] = [];
+  for (const name of namesFor(brandId)) {
+    const re = new RegExp(`(^|[\\n。！？，；：「『【（])${name}(?=[^的」』）\\n#＃])`, "g");
+    out = out.replace(re, (_match, lead: string) => {
+      if (!fixes.length) fixes.push(`「${name}」當主詞，已改成艾瑞克的第一人稱「我」`);
+      return `${lead}我`;
+    });
+  }
+  return { text: out, fixes };
+}
 
 /**
  * 機械式自動修正：不改變原意，只處理有明確規則的問題。回傳修正後文字與修正清單。
@@ -99,8 +177,8 @@ export function checkFormat(text: string, platform: GatePlatform): GateIssue[] {
   BRAND_ABBREV.lastIndex = 0;
   if (BRAND_ABBREV.test(body)) issues.push({ level: "warn", code: "brand_abbrev", message: "出現品牌縮寫（ABL、NAS、I8），對外請用全名" });
   BRAND_ABBREV.lastIndex = 0;
-  const voice = body.match(BRAND_AS_SUBJECT);
-  if (voice) issues.push({ level: "warn", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0]}」），請改成艾瑞克的第一人稱或客觀陳述` });
+  const voice = brandSubjectHits(body);
+  if (voice.length) issues.push({ level: "warn", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0].snippet}」），請改成艾瑞克的第一人稱或客觀陳述` });
   if (MARKDOWN.test(body)) issues.push({ level: "block", code: "markdown", message: "含有 Markdown 符號，社群平台不支援" });
   if (body.length > limit) issues.push({ level: "block", code: "too_long", message: `超過 ${platform} 字數上限 ${limit}（目前 ${body.length}）` });
   return issues;

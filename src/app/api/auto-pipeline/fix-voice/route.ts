@@ -3,7 +3,7 @@ import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv } from "@/lib/publish-queue";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { rewriteWebsiteArticle } from "@/lib/auto-multiplatform";
-import { BRAND_AS_SUBJECT } from "@/lib/quality-gate";
+import { brandSubjectHits } from "@/lib/quality-gate";
 
 // 修正「品牌當主詞發言」的官網文章（2026-10-20 之後建立的）：
 // 1. 有 FB 排程連到它的：用新規則在原文章位置重寫（article_id 與網址不變）。
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       }
       for (const article of articles) {
         if (article.status !== "published") continue;
-        if (!BRAND_AS_SUBJECT.test(`${article.title}\n${article.content}`)) continue;
+        if (!brandSubjectHits(`${article.title}\n${article.content}`).length) continue;
         const id = String(article.id);
         const linked = linkedIds.get(id);
         if (linked) { rewrite.push({ id, brand, title: article.title, master: String(linked.content || ""), cover: linked.image_url || null }); continue; }

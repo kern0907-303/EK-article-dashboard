@@ -17,7 +17,7 @@ import {
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
-import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rewriteBrandSubject, runQualityGate } from "@/lib/quality-gate";
 import { brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { cardHeadline } from "@/lib/article-image.mjs";
@@ -29,7 +29,7 @@ import { uploadPublicJpeg } from "@/lib/social-image-server";
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
  * 會寫進任務的 warnings，用來分辨哪些已排程的文章還是用舊規則寫的。
  */
-export const RULES_VERSION = "rules-2026-10-27b";
+export const RULES_VERSION = "rules-2026-10-27c";
 export const RULES_VERSION_PREFIX = "規則版本：";
 export const rulesVersionNote = (version = RULES_VERSION): string => `${RULES_VERSION_PREFIX}${version}`;
 
@@ -39,7 +39,20 @@ export function isCurrentRules(warnings: unknown): boolean {
   return list.some((item) => typeof item === "string" && item === rulesVersionNote());
 }
 
-export const VOICE_DIRECTIVE = "【說話的人】文章是人在說話，不是品牌在說話。只能用艾瑞克的第一人稱（我），或不指名的客觀第三方陳述。品牌名稱不可以當主詞去認為、相信、陪伴、提供、協助、看見、想要，也不可以用「我們」替品牌發言；標題不要讓品牌名稱當主詞，品牌名稱全文最多出現一次且只當地點或服務名稱。只輸出社群貼文純文字，不要附流程圖、圖表或任何程式碼區塊。";
+export const VOICE_DIRECTIVE = [
+  "【說話的人】這是整篇最重要的規則，違反就整篇作廢。",
+  "文章是艾瑞克這個人在說話，不是品牌在說話。全文只能用兩種人稱：艾瑞克的第一人稱（我），或不指名的客觀陳述。",
+  "品牌名稱只有兩種合法用法：當地點（「我在平衡空間帶過一個案子」），或當服務名稱（「平衡空間的生命數字」）。",
+  "品牌名稱後面不可以接任何動詞，不管是哪個動詞都不行。也不可以用「我們」替品牌發言。標題裡不要出現品牌名稱。",
+  "品牌名稱全文最多出現一次。",
+  "錯誤寫法與正確寫法對照：",
+  "「平衡空間想在這裡停一下，問一個問題」要寫成「我想在這裡停一下，問一個問題」",
+  "「平衡空間邀請你問自己一個問題」要寫成「你可以問自己一個問題」",
+  "「初八企業顧問談現金流分層管理」要寫成「現金流要分層管理」",
+  "「艾伯林量子調頻提醒你」要寫成「這裡要提醒你」",
+  "「平衡空間的生命數字，做的就是這件事」要寫成「生命數字做的就是這件事」",
+  "只輸出社群貼文純文字，不要附流程圖、圖表或任何程式碼區塊。",
+].join("\n");
 
 export const BRAND_NAMES = { nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "Erick 個人品牌" } as const;
 export const brandNameOf = (brandId: string): string =>
@@ -187,9 +200,9 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   let mechanical = applyMechanicalFixes(draft);
   draft = mechanical.text;
 
-  // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試兩次，仍不過才交給品管擋下
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const offending = brandVoiceSentences(draft);
+  // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試三次，仍不過才做機械式修正
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const offending = brandVoiceSentences(draft, brandId);
     const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId)).map((issue) => issue.message.slice(0, 80));
     if (!offending.length && !hardHits.length) break;
     const revised = await retry(async () => {
@@ -203,6 +216,14 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     });
     mechanical = applyMechanicalFixes(revised);
     draft = mechanical.text;
+  }
+
+  // 最後一道保險：AI 三次都沒改掉的話，句首品牌名直接換成第一人稱。
+  // 只動文法上一定可以換的位置，所以不會改出不通的句子，也保證排出去的稿不是品牌在說話。
+  if (brandSubjectHits(draft, brandId).length) {
+    const voiceFix = rewriteBrandSubject(draft, brandId);
+    draft = voiceFix.text;
+    mechanical = { text: draft, fixes: [...mechanical.fixes, ...voiceFix.fixes] };
   }
 
   const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };

@@ -11,7 +11,7 @@ const PLATFORMS: Array<{ id: Platform; label: string }> = [
 ];
 
 interface Item { jobId: string; brandName: string; scheduledAt: string; title: string; stale: boolean; blocked: string }
-interface DoneItem { jobId: string; brandName: string; scheduledAt: string; before: string; after: string; notes: string[] }
+interface DoneItem { jobId: string; brandName: string; scheduledAt: string; before: string; after: string; beforeFull: string; afterFull: string; notes: string[] }
 
 const TAIPEI = 8 * 3600 * 1000;
 function when(iso: string | null) {
@@ -34,6 +34,8 @@ export default function ReoptimizePanel() {
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [brand, setBrand] = useState("all");
   const [batch, setBatch] = useState(1);
+  /** 展開看全文的那幾篇 */
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   const label = PLATFORMS.find((p) => p.id === platform)!.label;
 
@@ -94,7 +96,7 @@ export default function ReoptimizePanel() {
         </label>
         <label className="flex items-center gap-2 text-sm">這次重寫幾篇
           <select value={batch} disabled={busy} onChange={(e) => setBatch(Number(e.target.value))} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100">
-            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <button disabled={busy} onClick={() => void call(true, platform)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">看看有幾篇要改</button>
@@ -115,6 +117,42 @@ export default function ReoptimizePanel() {
               <div className="mt-1 text-slate-400 line-through">{d.before}</div>
               <div className="font-semibold text-emerald-200">{d.after}</div>
               {d.notes.length > 0 && <div className="mt-1 text-xs text-amber-200">{d.notes.join("；")}</div>}
+              {(d.afterFull || d.beforeFull) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setOpened((prev) => ({ ...prev, [d.jobId]: !prev[d.jobId] }))}
+                    className="mt-2 min-h-[36px] rounded-lg border border-white/20 px-3 text-xs font-semibold"
+                  >
+                    {opened[d.jobId] ? "收起全文" : "看完整文章"}
+                  </button>
+                  {opened[d.jobId] && (
+                    <div className="mt-2 space-y-2">
+                      {d.afterFull && (
+                        <div>
+                          <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-emerald-200">
+                            新版（已存進排程）
+                            <button
+                              type="button"
+                              onClick={() => void navigator.clipboard?.writeText(d.afterFull)}
+                              className="min-h-[28px] rounded border border-white/20 px-2 font-normal text-slate-200"
+                            >
+                              複製
+                            </button>
+                          </div>
+                          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-400/30 bg-slate-950/70 p-3 text-xs leading-relaxed text-slate-100">{d.afterFull}</pre>
+                        </div>
+                      )}
+                      {d.beforeFull && (
+                        <div>
+                          <div className="mb-1 text-xs font-semibold text-slate-400">舊版（已被取代）</div>
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-slate-950/70 p-3 text-xs leading-relaxed text-slate-400">{d.beforeFull}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ))}
         </div>

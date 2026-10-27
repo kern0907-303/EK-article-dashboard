@@ -21,7 +21,7 @@ import {
  *    主稿還是舊的就先擋下，避免用舊主稿產生新衍生稿。
  * 4. 只處理排程列仍然是 pending 的；距離「該平台自己的發佈時間」不到 minLeadMinutes 分鐘的不碰。
  * 5. 新稿沒通過品管或品牌紅線就整則不採用，舊稿原樣保留，不會把排程換成壞的。
- * 6. 一次最多 limit 篇（1 到 5），避免單次請求過久與一次燒掉太多額度。
+ * 6. 一次最多 limit 篇（1 到 10），避免單次請求過久與一次燒掉太多額度。
  *
  * 需要登入（不在 proxy 的公開路徑清單裡）。
  */
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(body?.platform)) return NextResponse.json({ error: "一次只能重寫一個平台" }, { status: 400 });
     const platform: Platform = PLATFORMS.includes(body?.platform) ? body.platform : "facebook";
     const dryRun = body?.dryRun !== false;
-    const limit = Math.min(Math.max(Number(body?.limit) || 1, 1), 5);
+    const limit = Math.min(Math.max(Number(body?.limit) || 1, 1), 10);
     const minLeadMinutes = Math.min(Math.max(Number(body?.minLeadMinutes) || 60, 40), 24 * 60);
     const onlyJobId = typeof body?.jobId === "string" && UUID_RE.test(body.jobId) ? body.jobId : null;
     const brand = typeof body?.brand === "string" && ["nas", "abl", "i8"].includes(body.brand) ? body.brand : null;
@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const done: Array<{ jobId: string; brandName: string; scheduledAt: string; before: string; after: string; notes: string[] }> = [];
+    const done: Array<{ jobId: string; brandName: string; scheduledAt: string; before: string; after: string; beforeFull: string; afterFull: string; notes: string[] }> = [];
     const skipped: Array<{ jobId: string; reason: string }> = [];
     for (const item of (onlyJobId ? candidates.filter((c) => !c.blocked) : todo).slice(0, limit)) {
       const { row } = item;
@@ -202,13 +202,16 @@ export async function POST(req: NextRequest) {
           });
           done.push({
             jobId: row.id, brandName: brandNameOf(row.brand_id), scheduledAt: item.dueAt,
-            before: headline(item.current), after: headline(generated.draft), notes,
+            before: headline(item.current), after: headline(generated.draft),
+            beforeFull: item.current, afterFull: generated.draft, notes,
           });
           continue;
         }
 
         if (!item.master.trim()) { skipped.push({ jobId: row.id, reason: "找不到 FB 主稿，無法改寫" }); continue; }
         let after = "";
+        let afterFull = "";
+        let beforeFull = item.current;
         const notes: string[] = [];
         if (platform === "website") {
           const written = await rewriteWebsiteArticle({
@@ -216,12 +219,16 @@ export async function POST(req: NextRequest) {
             master: item.master, coverUrl: item.coverUrl || null, articleId: String(item.articleId),
           });
           after = `官網文章已重寫（編號 ${written.articleId}，網址不變）`;
+          afterFull = written.article;
+          // 官網的「目前內容」欄位放的是 FB 主稿，不是官網舊文，不要當成舊版顯示
+          beforeFull = "";
         } else {
           const result = await rewriteSocialPost({
             env, brandShort: row.brand_id as "nas" | "abl" | "i8", master: item.master,
             platform, rowId: String(item.socialRowId),
           });
           after = headline(result.text);
+          afterFull = result.text;
           if (result.note) notes.push(result.note);
           if (result.slides) notes.push(`輪播重做 ${result.slides} 張`);
         }
@@ -238,7 +245,7 @@ export async function POST(req: NextRequest) {
 
         done.push({
           jobId: row.id, brandName: brandNameOf(row.brand_id), scheduledAt: item.dueAt,
-          before: headline(item.current), after, notes,
+          before: headline(item.current), after, beforeFull, afterFull, notes,
         });
       } catch (error) {
         skipped.push({ jobId: row.id, reason: error instanceof Error ? error.message.slice(0, 200) : "重新優化失敗" });

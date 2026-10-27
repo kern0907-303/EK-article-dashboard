@@ -15,7 +15,7 @@ import { withCoverImage } from "@/lib/article-image.mjs";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
-import { applyMechanicalFixes, BRAND_AS_SUBJECT, gateBlockers, gateMessage, runQualityGate } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, brandSubjectSentences, gateBlockers, gateMessage, rewriteBrandSubject, runQualityGate } from "@/lib/quality-gate";
 
 export const THREADS_MAX = 500;
 export const INSTAGRAM_MAX = 2200;
@@ -178,20 +178,20 @@ export interface MultiplatformResult {
 const safe = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[已遮蔽]").replace(/Bearer\s+\S+/gi, "Bearer [已遮蔽]").slice(0, 200);
 
 /** 找出品牌名稱當主詞的句子（最多 3 句、每句截 60 字），給重寫要求用。 */
-export function brandVoiceSentences(article: string): string[] {
-  return String(article || "").split(/(?<=[。！？\n])/).map((line) => line.trim()).filter((line) => line && BRAND_AS_SUBJECT.test(line)).slice(0, 3).map((line) => line.slice(0, 60));
+export function brandVoiceSentences(article: string, brandId?: string): string[] {
+  return brandSubjectSentences(article, brandId);
 }
 
 /** 官網文章：母稿改寫成文章，SEO / AEO 優化，上架，回傳 article_id。優化版含紅線詞時保留未優化版。 */
-async function publishWebsite(input: MultiplatformInput, forceArticleId?: string): Promise<{ articleId: string }> {
+async function publishWebsite(input: MultiplatformInput, forceArticleId?: string): Promise<{ articleId: string; article: string }> {
   const { env, brandShort, brandName, master, coverUrl } = input;
   const fullBrand = FULL_BRAND_IDS[brandShort];
   const provider = process.env.AI_PROVIDER;
   let written = await callWebArticle(master, brandName, [], undefined, provider);
   if (written.is_local_check) throw new Error("AI 服務未啟用，無法產生官網文章");
-  // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試兩次
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const offending = brandVoiceSentences(written.article);
+  // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試三次
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const offending = brandVoiceSentences(written.article, brandShort);
     const redlines = inspectForPublish(clean(written.article), fullBrand, "warm").violatedWords;
     if (!offending.length && !redlines.length) break;
     written = await callWebArticle(
@@ -199,7 +199,9 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
       brandName, [], undefined, provider,
     );
   }
-  let article = clean(written.article);
+  // 三次都沒改掉的話，句首品牌名直接換成第一人稱，確保上架的文章不是品牌在說話
+  const voiceFix = rewriteBrandSubject(written.article, brandShort);
+  let article = clean(voiceFix.text);
   if (article.length < 120) throw new Error("官網文章內容太短");
   let faqText = "";
   let schemaText = "";
@@ -212,7 +214,7 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
       ...checkText(optimizedText, context).violatedWords,
       ...checkText(faq.map((item) => `${item.q}${item.a}`).join("\n"), context).violatedWords,
     ];
-    if (optimizedText.length >= 120 && hits.length === 0 && !BRAND_AS_SUBJECT.test(optimizedText)) {
+    if (optimizedText.length >= 120 && hits.length === 0 && !brandSubjectHits(optimizedText, brandShort).length) {
       article = optimizedText;
       // FAQ 與結構化資料只用「這一篇」優化結果組出，避免沿用上一篇的內容
       faqText = faq.length ? faqToPlainText(faq) : "";
@@ -246,11 +248,11 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   const data = await res.json();
   const id = Array.isArray(data) ? data[0]?.id : data?.id;
   if (id === undefined || id === null) throw new Error("官網已寫入但沒有取得文章編號");
-  return { articleId: String(id) };
+  return { articleId: String(id), article };
 }
 
 /** 用新規則重寫既有官網文章（同一個 article_id，網址與 FB 留言連結不變）。失敗時舊文章保持原樣。 */
-export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env" | "brandShort" | "brandName" | "master" | "coverUrl"> & { articleId: string }): Promise<{ articleId: string }> {
+export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env" | "brandShort" | "brandName" | "master" | "coverUrl"> & { articleId: string }): Promise<{ articleId: string; article: string }> {
   return publishWebsite({ ...input, jobId: "", fbScheduledAt: "", fbQueueId: "" }, input.articleId);
 }
 
