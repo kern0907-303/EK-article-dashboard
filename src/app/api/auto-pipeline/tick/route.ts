@@ -1,3 +1,4 @@
+import { readFunnelFromPrompt } from "@/data/brands/conversion";
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
@@ -139,6 +140,7 @@ export async function POST(req: NextRequest) {
             const multi = await runMultiplatform({
               env, jobId: job.id, brandShort: job.brand_id, brandName, master: draft,
               fbScheduledAt: job.scheduled_at, fbQueueId: String(queueId), coverUrl: card.url,
+              funnel: readFunnelFromPrompt(String(job.prompt || "")),
               ...(experiment ? { experiment: { experiment_id: experiment.experimentId, variable: experiment.variable, arm: experiment.arm } } : {}),
             });
             const summary = summarize(multi);

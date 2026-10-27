@@ -11,6 +11,24 @@
 //
 // 詳見 docs/PIPELINE_FINDINGS_AND_PLAN.md。
 
+/**
+ * 單篇文章的流量溫度。海巡在每個題目上標冷或溫，各約一半。
+ * 冷流量是破圈，讀者不認識作者，要零摩擦，不要一上來就要 email。
+ * 溫流量是建立信任，讀者看過幾篇，願意留資料換更完整的東西。
+ */
+export type TrafficFunnel = "cold" | "warm";
+
+/**
+ * 從任務提示詞判讀冷暖。海巡寫進提示詞的是「本篇目標：破圈…」或「本篇目標：建立信任…」。
+ * 判讀不出來就回 null，讓下游退回通用 CTA，不要亂猜一個。
+ */
+export function readFunnelFromPrompt(prompt: string): TrafficFunnel | null {
+  const text = String(prompt || "");
+  if (/本篇目標：破圈|冷流量/.test(text)) return "cold";
+  if (/本篇目標：建立信任|溫流量/.test(text)) return "warm";
+  return null;
+}
+
 /** 品牌在信任漏斗中的位置，決定該用什麼強度的 CTA */
 export type FunnelStage =
   | "entry"    // 入口：對陌生人，目標是換 email，不談成交

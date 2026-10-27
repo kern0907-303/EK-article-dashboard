@@ -1,3 +1,4 @@
+import { readFunnelFromPrompt } from "@/data/brands/conversion";
 import { NextRequest, NextResponse } from "next/server";
 import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv } from "@/lib/publish-queue";
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
       const multi = await runMultiplatform({
         env, jobId: job.id, brandShort: brand, brandName: BRAND_NAME[brand], master: String(row.content || ""),
         fbScheduledAt: row.scheduled_at, fbQueueId: String(row.id), coverUrl: row.image_url || null,
+        funnel: readFunnelFromPrompt(String(job.prompt || "")),
         only: todoPlatforms, ...(existingArticleId ? { existingArticleId: String(existingArticleId) } : {}),
       });
       const NAME = { website: "官網", instagram: "IG", threads: "Threads" } as const;
@@ -91,6 +93,7 @@ export async function POST(req: NextRequest) {
       const multi = await runMultiplatform({
         env, jobId: item.job.id, brandShort: item.brand, brandName: BRAND_NAME[item.brand], master: String(item.row.content || ""),
         fbScheduledAt: item.row.scheduled_at, fbQueueId: String(item.row.id), coverUrl: item.row.image_url || null,
+        funnel: readFunnelFromPrompt(String(item.job.prompt || "")),
       });
       const summary = summarize(multi);
       await pipelineDb("auto_pipeline_jobs", `id=eq.${encodeURIComponent(item.job.id)}`, {

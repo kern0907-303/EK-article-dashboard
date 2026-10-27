@@ -12,6 +12,7 @@ import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 import { buildFaqJsonLd, faqToPlainText } from "@/lib/seo-optimizer";
 import { articleUpdateUrl, existingArticleQuery, pickExistingId } from "@/lib/publish-dedupe";
 import { withCoverImage } from "@/lib/article-image.mjs";
+import type { TrafficFunnel } from "@/data/brands/conversion";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
@@ -166,6 +167,8 @@ export interface MultiplatformInput {
   existingArticleId?: string;
   /** 成效回流實驗標籤：寫進 Threads / IG 排程列，之後成效才能對回是哪個結構臂 */
   experiment?: { experiment_id: string; variable: string; arm: string };
+  /** 冷或溫。寫進官網文章，頁尾 CTA 依此決定帶去計算機還是小測。判讀不出來就不寫。 */
+  funnel?: TrafficFunnel | null;
 }
 
 export interface MultiplatformResult {
@@ -232,7 +235,7 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   const lines = article.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const titleLine = lines.find((line) => !/^!\[/.test(line)) || "未命名文章";
   const title = titleLine.replace(/^#+\s*/, "").replace(/[#*_]/g, "").trim() || "未命名文章";
-  const row = { brand_id: brandShort, title, content: article, aeo_schema: schemaText, aeo_faq: faqText ? stripMarkdown(faqText) : "", status: "published" };
+  const row = { brand_id: brandShort, title, content: article, aeo_schema: schemaText, aeo_faq: faqText ? stripMarkdown(faqText) : "", status: "published", funnel: input.funnel || null };
 
   let existingId: string | null = forceArticleId || null;
   if (!forceArticleId) {
@@ -252,7 +255,7 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
 }
 
 /** 用新規則重寫既有官網文章（同一個 article_id，網址與 FB 留言連結不變）。失敗時舊文章保持原樣。 */
-export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env" | "brandShort" | "brandName" | "master" | "coverUrl"> & { articleId: string }): Promise<{ articleId: string; article: string }> {
+export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env" | "brandShort" | "brandName" | "master" | "coverUrl" | "funnel"> & { articleId: string }): Promise<{ articleId: string; article: string }> {
   return publishWebsite({ ...input, jobId: "", fbScheduledAt: "", fbQueueId: "" }, input.articleId);
 }
 

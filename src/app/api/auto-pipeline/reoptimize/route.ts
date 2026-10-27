@@ -1,3 +1,4 @@
+import { readFunnelFromPrompt } from "@/data/brands/conversion";
 import { NextRequest, NextResponse } from "next/server";
 import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
@@ -217,6 +218,7 @@ export async function POST(req: NextRequest) {
           const written = await rewriteWebsiteArticle({
             env, brandShort: row.brand_id as "nas" | "abl" | "i8", brandName: brandNameOf(row.brand_id),
             master: item.master, coverUrl: item.coverUrl || null, articleId: String(item.articleId),
+            funnel: readFunnelFromPrompt(String(row.prompt || "")),
           });
           after = `官網文章已重寫（編號 ${written.articleId}，網址不變）`;
           afterFull = written.article;
