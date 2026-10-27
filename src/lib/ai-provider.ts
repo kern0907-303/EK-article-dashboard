@@ -1259,7 +1259,15 @@ ${brandContext}`;
     }
 
     const irisReport: AIResponseReport = { label: "Iris" };
-    console.log(`[callErickCOO] Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`);
+    /**
+     * 修改模式：自動流水線發現品牌當主詞或引用不合格時，會帶著問題句子要求重寫。
+     * 那是「照指示改掉這幾句」，不是重新創作，所以不需要最強的模型，
+     * 也不需要再跑一次 Iris（它只產 SEO 關鍵字，重寫用不到，失敗時本來就回空值）。
+     * 一篇文章最多重寫三次，省下來的是三次 Maya 加三次 Iris。
+     */
+    const reviseMode = typeof subPromptsInput === "object" && subPromptsInput !== null && subPromptsInput.reviseMode === true;
+    const mayaPreferred: "anthropic" | "gemini" = reviseMode ? "gemini" : "anthropic";
+    console.log(`[callErickCOO] ${reviseMode ? `Revise mode: Maya only (${mayaPreferred})` : `Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`}`);
     const runMayaWithJSONRetry = async (): Promise<{ result: any; response: string }> => {
       const mayaOptions: ProviderCallOptions = { maxTokens: 12000, timeoutMs: 120000, report: mayaReport };
       let lastParseError: unknown;
@@ -1267,7 +1275,7 @@ ${brandContext}`;
         const prompt = attempt === 0
           ? finalMayaPrompt
           : `${finalMayaPrompt}\n\n【格式重試】上一次回覆無法解析。這次請只輸出一個完整、合法的 JSON 物件，不要程式碼區塊、不要前言或結語；必須包含非空字串欄位 social_copy${storyArgument ? "，並依框架格式包含 story_thesis 欄位" : ""}${storyKnowledge.required ? "，並包含 citation_title 與 citation_author 欄位" : ""}。`;
-        const response = await runQueryWithFallback(prompt, config, true, "anthropic", mayaOptions);
+        const response = await runQueryWithFallback(prompt, config, true, mayaPreferred, mayaOptions);
         try {
           const result = robustJSONParse(response);
           if (!result || typeof result.social_copy !== "string" || !result.social_copy.trim()) {
@@ -1285,7 +1293,9 @@ ${brandContext}`;
       throw new Error(`Maya（${mayaReport.provider || "AI"}/${mayaReport.model || "未知模型"}）回覆格式無法解析；finish_reason=${mayaReport.finishReason || "unknown"}。${normalizeAIError(lastParseError)}`);
     };
     const [irisOutcome, mayaOutcome] = await Promise.allSettled([
-      runQueryWithFallback(irisStepPrompt, config, true, "gemini", { maxTokens: 5000, timeoutMs: 100000, report: irisReport }),
+      reviseMode
+        ? Promise.resolve('{"seo_keywords":[],"aeo_faq":"","aeo_schema":""}')
+        : runQueryWithFallback(irisStepPrompt, config, true, "gemini", { maxTokens: 5000, timeoutMs: 100000, report: irisReport }),
       runMayaWithJSONRetry()
     ]);
 

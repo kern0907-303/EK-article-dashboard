@@ -20,6 +20,7 @@ import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIF
 import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
+import { buildRevisePrompt } from "@/data/skills/revise-prompt";
 import { brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { cardHeadline } from "@/lib/article-image.mjs";
@@ -242,10 +243,18 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     const badCites = citationProblems(draft);
     const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId)).map((issue) => issue.message.slice(0, 80));
     if (!offending.length && !hardHits.length && !badCites.length) break;
+    // 修改模式：只送上一版全文與問題清單，不再把整包提示詞與書籍筆記重送一次，
+    // 並且跳過 Iris、改用便宜模型。重寫是照指示改句子，不是重新創作。
+    const problems = [
+      ...offending.map((line) => `品牌名稱當主詞：${line}`),
+      ...badCites.map((item) => `引用有問題：${item}`),
+      ...hardHits,
+    ];
     const revised = await retry(async () => {
       const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-        maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}${badCites.length ? `上一版的引用有問題：${badCites.join("、")}。這些書沒有經過查證，請全文重寫，完全拿掉這些引用與相關的文末出處。${source.citation ? `需要引用時只能引用《${source.citation.title}》。` : "這一篇不可以引用任何書籍。"}` : ""}`,
-        iris: irisPrompt,
+        reviseMode: true,
+        maya: buildRevisePrompt(draft, problems, source.citation),
+        iris: "",
       }, undefined, undefined, "facebook");
       const text = result.dispatchData?.social_copy;
       if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");

@@ -28,6 +28,6 @@ export function buildCitationDirective(citation: VerifiedCitation | null, noteCo
     `文末單獨一行：文中引用的觀點，出自${citation.author}所著《${citation.title}》。`,
     "如果這一篇用不到這本書，就完全不要引用，文末也不要寫出處。寧可不引用，也不可以引用別本。",
     "下面是這本書的筆記，只能依據它寫，不可以補上筆記裡沒有的說法：",
-    String(noteContent || "").slice(0, 6000),
+    String(noteContent || "").slice(0, 2500),
   ].join("\n");
 }
