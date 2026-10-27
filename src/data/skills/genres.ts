@@ -442,6 +442,29 @@ export const GENRES: Record<GenreId, GenreDef> = {
 
 export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.response];
 
+/** 從提示詞裡讀出 n8n 指定的文體（【本篇文體】拆解文） */
+export function readGenreFromPrompt(prompt: string): GenreId | null {
+  const match = String(prompt || "").match(/【本篇文體】\s*([^\n，。]{1,12})/);
+  if (!match) return null;
+  const text = match[1].trim();
+  const found = (Object.keys(GENRES) as GenreId[]).find((id) => id === text.toLowerCase() || text.includes(GENRES[id].name.replace("文", "")));
+  return found && GENRES[found].enabled ? found : null;
+}
+
+/**
+ * 只換文體骨架的附加指令，附在既有提示詞後面用。
+ * 與 buildGenrePrompt 不同：這個不取代整份提示詞，平台規則、標籤庫與品牌知識都保留，
+ * 所以自動流水線接上去不會掉東西。
+ */
+export function buildGenreDirective(id: GenreId): string {
+  const g = GENRES[id];
+  return [
+    `【本篇文體：${g.name}】`,
+    "這一篇照下面的骨架寫，優先於提示詞裡其他關於結構的建議。只換骨架，標題型、品牌規範、紅線、禁用詞與事實邊界一律照原本規則。",
+    g.skeleton,
+  ].join("\n");
+}
+
 /** 組出送給 Maya 的完整提示詞（四層串接 + 輸出格式） */
 export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
   const g = GENRES[s.genre];

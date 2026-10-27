@@ -7,7 +7,8 @@ import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
 import { AUTO_PIPELINE_ENABLED, isSafeToSchedule } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, isQueueEnabled, supabaseHeaders } from "@/lib/publish-queue";
-import { PROMPT_VERSION } from "@/data/skills/genres";
+import { PROMPT_VERSION, buildGenreDirective, readGenreFromPrompt } from "@/data/skills/genres";
+import { buildTitleDirective, detectTitleStyle, pickTitleStyle, readTitleStyleFromPrompt, repeatedStyleWarning, TITLE_STYLES, type TitleStyleId } from "@/data/skills/title-styles";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { cardHeadline } from "@/lib/article-image.mjs";
 import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
@@ -29,6 +30,16 @@ async function makeCardUrl(brandId: string, content: string): Promise<{ url: str
   } catch (error) {
     return { url: null, error: error instanceof Error ? error.message.slice(0, 120) : "圖卡失敗" };
   }
+}
+
+const firstLine = (text: unknown): string => String(text || "").split("\n").map((line) => line.trim()).filter(Boolean)[0] || "";
+
+/** 同品牌最近幾篇的標題句型，由近到遠。讀不到就當作沒有，不影響生成。 */
+async function recentTitleStyles(brandId: string): Promise<Array<TitleStyleId | null>> {
+  try {
+    const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled&order=scheduled_at.desc&limit=6&select=draft_content`);
+    return rows.map((row) => detectTitleStyle(firstLine(row.draft_content)));
+  } catch { return []; }
 }
 
 function authorized(req: NextRequest): boolean {
@@ -105,11 +116,16 @@ export async function POST(req: NextRequest) {
     let draft = "";
     // 成效回流實驗（EXPERIMENT_ENABLED=true 才會生效）：依預定發文日查當天的結構臂，查不到就照原流程
     let experiment: ExperimentAssignment | null = null;
+    // 標題型與文體：題目階段（n8n）指定的優先，沒指定就避開這個品牌最近 3 篇用過的句型輪換
+    const recentStyles = await recentTitleStyles(String(job.brand_id));
+    const titleStyle = readTitleStyleFromPrompt(job.prompt) || pickTitleStyle(recentStyles, String(job.id));
+    const promptGenre = readGenreFromPrompt(job.prompt);
+    const styleDirective = [buildTitleDirective(titleStyle), promptGenre ? buildGenreDirective(promptGenre) : ""].filter(Boolean).join("\n\n");
     try {
       experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await retryOnce(async () => {
         const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-          maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}`,
+          maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${styleDirective}\n\n${VOICE_DIRECTIVE}`,
           iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
         }, undefined, undefined, "facebook");
         const text = result.dispatchData?.social_copy;
@@ -137,7 +153,7 @@ export async function POST(req: NextRequest) {
         if (!offending.length && !hardHits.length) break;
         const revised = await retryOnce(async () => {
           const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}`,
+            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${styleDirective}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}`,
             iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
           }, undefined, undefined, "facebook");
           const text = result.dispatchData?.social_copy;
@@ -152,7 +168,12 @@ export async function POST(req: NextRequest) {
       const blocks = blockingIssues(issues);
       const gateIssues = runQualityGate(draft, { platform: "facebook" });
       const gateBlocks = gateBlockers(gateIssues);
-      const warnings = [...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message), ...mechanical.fixes.map((fix) => `自動修正：${fix}`)];
+      const finalStyle = detectTitleStyle(firstLine(draft));
+      const styleNotes = [
+        finalStyle && finalStyle !== titleStyle ? `本篇指定標題型「${TITLE_STYLES[titleStyle].name}」，實際寫出來比較像「${TITLE_STYLES[finalStyle].name}」。` : "",
+        repeatedStyleWarning(finalStyle, recentStyles),
+      ].filter(Boolean);
+      const warnings = [...styleNotes, ...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message), ...mechanical.fixes.map((fix) => `自動修正：${fix}`)];
       const leftover = draft.match(/【需補[^】]*】/g);
       const negatedHits = issues.guardrailHits.filter((hit) => hit.negated);
       if (negatedHits.length) {
