@@ -91,11 +91,14 @@ export function checkGenreText(
     const n = estimateLines(p);
     if (n > worst.lines) worst = { lines: n, head: p.slice(0, 14) };
   }
-  if (worst.lines > 3 && (!platform || platform === "facebook")) {
+  // 一行約 28 字。門檻原本是 3 行（約 84 字），實際長文幾乎每篇都會中，等於沒有鑑別度。
+  // 改成 6 行（約 168 字）才提醒，留給真正的大段落。
+  const LONG_PARAGRAPH_LINES = 6;
+  if (worst.lines > LONG_PARAGRAPH_LINES && (!platform || platform === "facebook")) {
     issues.push({
       level: "warn",
       code: "long-paragraph",
-      message: `有段落約 ${worst.lines} 行（超過 3 行），開頭是「${worst.head}…」，建議拆短。`,
+      message: `有段落約 ${worst.lines} 行（超過 ${LONG_PARAGRAPH_LINES} 行），開頭是「${worst.head}…」，建議拆短。`,
     });
   }
 

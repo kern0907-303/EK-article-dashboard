@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 type Platform = "facebook" | "website" | "instagram" | "threads";
 const PLATFORMS: Array<{ id: Platform; label: string }> = [
@@ -20,9 +20,18 @@ function when(iso: string | null) {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
+/** 衍生平台。一鍵重寫會照這個順序跑，官網先做因為 FB 留言的連結指向它。 */
+const DERIVED: Platform[] = ["website", "instagram", "threads"];
+
 /**
  * 用目前這版規則重寫已排程但還沒發出去的內容。
- * 一次只做一個平台。先按「看看有幾篇要改」試算，確認後再分批執行。新稿沒通過品管就保留舊稿。
+ *
+ * 兩種用法：
+ * 手動 —— 一次一個平台，先試算再分批執行，適合第一次驗證規則。
+ * 一鍵 —— FB 主稿全部是新規則之後，自動依序把官網、IG、Threads 跑完。
+ *
+ * 一鍵只是在前端連續呼叫同一支 API，伺服器端的防呆（主稿過期擋住衍生稿、距發佈時間太近、
+ * 新稿沒過品管就保留舊稿）完全沒有放寬。隨時可以按停止，已改完的不會被回頭動到。
  */
 export default function ReoptimizePanel() {
   const [busy, setBusy] = useState(false);
@@ -36,6 +45,10 @@ export default function ReoptimizePanel() {
   const [batch, setBatch] = useState(1);
   /** 展開看全文的那幾篇 */
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoLog, setAutoLog] = useState<string[]>([]);
+  /** 按下停止後，進行中的迴圈跑完當批就收手 */
+  const stopRef = useRef(false);
 
   const label = PLATFORMS.find((p) => p.id === platform)!.label;
 
@@ -63,6 +76,65 @@ export default function ReoptimizePanel() {
     finally { setBusy(false); }
   }, [batch, brand]);
 
+  const post = async (body: Record<string, unknown>) => {
+    const res = await fetch("/api/auto-pipeline/reoptimize", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "操作失敗");
+    return data;
+  };
+
+  /** 一鍵：FB 主稿確認是新規則之後，依序把官網、IG、Threads 的舊規則稿全部重寫 */
+  const runAll = useCallback(async () => {
+    stopRef.current = false;
+    setAutoRunning(true); setDone([]); setAutoLog([]); setItems(null); setNotice("");
+    const scope = brand === "all" ? {} : { brand };
+    const log = (line: string) => setAutoLog((prev) => [...prev, line]);
+    let total = 0;
+    try {
+      // 衍生稿是從 FB 主稿改寫的，主稿還是舊規則就先擋下來，不要用舊主稿去生成新衍生稿
+      const master = await post({ dryRun: true, platform: "facebook", ...scope });
+      setRulesVersion(master.rulesVersion || "");
+      if ((master.staleCount || 0) > 0) {
+        setNotice(`還有 ${master.staleCount} 篇 FB 主稿是舊規則。衍生稿是從主稿改寫的，請先把主稿全部重寫完，再按一鍵。`);
+        return;
+      }
+      log("FB 主稿全部是最新規則，開始重寫其他平台");
+
+      for (const p of DERIVED) {
+        if (stopRef.current) break;
+        const name = PLATFORMS.find((x) => x.id === p)!.label;
+        const pre = await post({ dryRun: true, platform: p, ...scope });
+        let left: number = pre.staleCount || 0;
+        if (!left) { log(`${name}：沒有要改的`); continue; }
+        log(`${name}：${left} 篇要改`);
+        let rounds = 0;
+        let stuck = 0;
+        while (left > 0 && !stopRef.current && rounds++ < 40) {
+          setNotice(`正在重寫${name}，還有 ${left} 篇，每篇約 1 到 2 分鐘，請不要關閉這個頁面…`);
+          const r = await post({ dryRun: false, platform: p, limit: Math.min(3, left), ...scope });
+          if (Array.isArray(r.done) && r.done.length) {
+            setDone((prev) => [...prev, ...r.done]);
+            total += r.done.length;
+          }
+          const failed = (r.skipped || []) as Array<{ reason: string }>;
+          for (const f of failed.slice(0, 2)) log(`${name} 略過一篇：${f.reason}`);
+          // 連續兩輪沒有任何進度就收手，不要一直空轉
+          if (!r.processed) { stuck += 1; if (stuck >= 2) { log(`${name}：連續兩次沒有進度，停在這裡`); break; } }
+          else stuck = 0;
+          left = typeof r.remaining === "number" ? r.remaining : 0;
+        }
+        log(`${name}：這一輪結束，還剩 ${left} 篇`);
+      }
+      setNotice(stopRef.current
+        ? `已停止。這次總共重寫 ${total} 篇，已改完的不會被回頭動到，之後再按一鍵會從沒改到的繼續。`
+        : `全部完成，這次總共重寫 ${total} 篇。`);
+    } catch (e) {
+      setNotice(`${e instanceof Error ? e.message : "一鍵重寫失敗"}（已重寫 ${total} 篇，再按一次會從沒改到的繼續）`);
+    } finally { setAutoRunning(false); }
+  }, [brand]);
+
   const choosePlatform = (next: Platform) => {
     if (busy) return;
     setPlatform(next); setItems(null); setDone([]); setStaleCount(0); setNotice("");
@@ -81,7 +153,7 @@ export default function ReoptimizePanel() {
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="選擇平台">
         {PLATFORMS.map((p) => (
-          <button key={p.id} disabled={busy} onClick={() => choosePlatform(p.id)} aria-pressed={platform === p.id}
+          <button key={p.id} disabled={busy || autoRunning} onClick={() => choosePlatform(p.id)} aria-pressed={platform === p.id}
             className={`min-h-[44px] rounded-full border px-4 text-sm font-semibold disabled:opacity-50 ${platform === p.id ? "border-amber-300 bg-amber-300 text-slate-950" : "border-white/20 bg-white/5 hover:bg-white/10"}`}>
             {p.label}
           </button>
@@ -90,20 +162,53 @@ export default function ReoptimizePanel() {
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
         <label className="flex items-center gap-2 text-sm">品牌
-          <select value={brand} disabled={busy} onChange={(e) => { setBrand(e.target.value); setItems(null); setStaleCount(0); }} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100">
+          <select value={brand} disabled={busy || autoRunning} onChange={(e) => { setBrand(e.target.value); setItems(null); setStaleCount(0); }} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100">
             <option value="all">全部</option><option value="nas">平衡空間</option><option value="abl">艾伯林量子調頻</option><option value="i8">初八企業顧問</option>
           </select>
         </label>
         <label className="flex items-center gap-2 text-sm">這次重寫幾篇
-          <select value={batch} disabled={busy} onChange={(e) => setBatch(Number(e.target.value))} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100">
+          <select value={batch} disabled={busy || autoRunning} onChange={(e) => setBatch(Number(e.target.value))} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100">
             {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <button disabled={busy} onClick={() => void call(true, platform)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">看看有幾篇要改</button>
-        <button disabled={busy || staleCount === 0} onClick={() => void call(false, platform)} className="min-h-[44px] rounded-lg bg-amber-500 px-4 text-sm font-bold text-slate-950 disabled:opacity-40">
+        <button disabled={busy || autoRunning} onClick={() => void call(true, platform)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">看看有幾篇要改</button>
+        <button disabled={busy || autoRunning || staleCount === 0} onClick={() => void call(false, platform)} className="min-h-[44px] rounded-lg bg-amber-500 px-4 text-sm font-bold text-slate-950 disabled:opacity-40">
           {busy ? "處理中…" : `重寫 ${Math.min(batch, staleCount || batch)} 篇${label}`}
         </button>
         {rulesVersion && <span className="text-xs text-slate-400">目前規則版本：{rulesVersion}</span>}
+      </div>
+
+      <div className="space-y-2 rounded-xl border border-sky-400/40 bg-sky-400/10 p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <b className="text-sm">一鍵重寫其他平台</b>
+          <button
+            type="button"
+            disabled={busy || autoRunning}
+            onClick={() => void runAll()}
+            className="min-h-[44px] rounded-lg bg-sky-400 px-4 text-sm font-bold text-slate-950 disabled:opacity-40"
+          >
+            {autoRunning ? "執行中…" : "官網、IG、Threads 一次跑完"}
+          </button>
+          {autoRunning && (
+            <button
+              type="button"
+              onClick={() => { stopRef.current = true; setNotice("收到停止，跑完這一批就會停下來…"); }}
+              className="min-h-[44px] rounded-lg border border-white/30 px-4 text-sm font-semibold"
+            >
+              停止
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-slate-300">
+          FB 主稿三個品牌都改完之後再按。會先檢查主稿是不是都已經是最新規則，還有舊的就不會動衍生稿。
+          依序跑官網、IG、Threads，每篇約 1 到 2 分鐘，中途可以停，已改完的不會被回頭動到，下次再按會從沒改到的繼續。
+          上面的手動模式照舊可以用。
+        </p>
+        {autoLog.length > 0 && (
+          <ol className="space-y-0.5 text-xs text-slate-200">
+            {autoLog.map((line, i) => <li key={i}>{line}</li>)}
+          </ol>
+        )}
       </div>
 
       {notice && <div role="status" className="rounded-lg border border-white/20 bg-white/5 p-3 text-sm">{notice}</div>}

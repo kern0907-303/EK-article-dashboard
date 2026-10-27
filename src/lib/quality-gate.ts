@@ -162,8 +162,14 @@ export function checkGarbled(text: string): GateIssue[] {
   if (simplified.size >= 3) add("block", "simplified_chars", `混入簡體字：${[...simplified].slice(0, 6).join("")}`);
   else if (simplified.size > 0) add("warn", "simplified_chars", `可能有簡體字：${[...simplified].join("")}`);
   const trimmed = body.trim();
-  if (trimmed.length > 120 && TRAILING_BAD.test(trimmed)) add("block", "truncated", "結尾停在逗號或冒號，文章可能被截斷");
-  else if (trimmed.length > 120 && /[一-鿿]$/.test(trimmed)) add("warn", "no_end_punctuation", "結尾沒有標點，請確認文章是否完整");
+  // 貼文結尾通常是主題標籤行（例如「生命數字 #自我探索 #人生節奏」），那不是正文。
+  // 判斷文章完不完整之前要先把它拿掉，否則每一篇都會被誤報「結尾沒有標點」。
+  const isTagLine = (line: string) => /[#＃]/.test(line) && !/[。！？，；：]/.test(line);
+  const kept = trimmed.split("\n");
+  while (kept.length && (!kept[kept.length - 1].trim() || isTagLine(kept[kept.length - 1]))) kept.pop();
+  const ending = kept.join("\n").trim() || trimmed;
+  if (ending.length > 120 && TRAILING_BAD.test(ending)) add("block", "truncated", "結尾停在逗號或冒號，文章可能被截斷");
+  else if (ending.length > 120 && /[一-鿿]$/.test(ending)) add("warn", "no_end_punctuation", "結尾沒有標點，請確認文章是否完整");
   return issues;
 }
 

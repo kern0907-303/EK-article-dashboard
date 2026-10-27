@@ -77,3 +77,19 @@ assert.deepEqual(voiceReport("我在平衡空間帶過一個案子。").hits, []
 assert.ok(voiceReport("初八企業顧問談現金流", "i8").hits.length > 0);
 
 console.log("brand-subject 測試通過");
+
+// 2026-10-27：這兩條警告在實際重寫的五篇裡 5/5 全中，等於沒有鑑別度，調整過門檻
+import { runQualityGate } from "../src/lib/quality-gate";
+const codesOf = (text: string) => runQualityGate(text, { platform: "facebook" }).map((i) => i.code);
+
+// 結尾是主題標籤行，不該被判成「結尾沒有標點」
+const withTags = `${"這是一段完整的文章內容，用來測試結尾判斷是不是正確。".repeat(6)}\n\n生命數字 #自我探索 #人生節奏 #關係說明書`;
+assert.ok(!codesOf(withTags).includes("no_end_punctuation"), "標籤結尾不該誤報");
+// 正文真的沒有結尾標點，仍然要報
+const noPunct = `${"這是一段完整的文章內容，用來測試結尾判斷是不是正確。".repeat(6)}最後一句沒有標點\n\n#標籤`;
+assert.ok(codesOf(noPunct).includes("no_end_punctuation"), "正文沒標點還是要報");
+// 正文被截斷在逗號，仍然要擋
+const cut = `${"這是一段完整的文章內容，用來測試結尾判斷是不是正確。".repeat(6)}然後他說，\n\n#標籤`;
+assert.ok(codesOf(cut).includes("truncated"), "截斷仍要擋");
+
+console.log("警告門檻測試通過");
