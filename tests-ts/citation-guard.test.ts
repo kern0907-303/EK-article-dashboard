@@ -37,8 +37,8 @@ const allowed = buildCitationDirective({ title: "心流", author: "契克森米�
 assert.ok(allowed.includes("《心流》"));
 assert.ok(allowed.includes("作者某某提出"), "要帶出歸屬格式");
 assert.ok(allowed.includes("出自契克森米哈伊所著《心流》"), "要帶出文末出處格式");
-assert.ok(allowed.includes("不要副標題"));
-assert.ok(allowed.includes("一律用中文"), "書名作者要用中文");
+assert.ok(allowed.includes("副標題"), "要禁止副標題");
+assert.ok(allowed.includes("中文寫法"), "書名作者要用中文");
 assert.ok(allowed.includes("寧可不引用"), "用不到就不要硬引");
 // 筆記內容要截斷，不要把整本塞進提示詞
 assert.ok(buildCitationDirective({ title: "A", author: "B" }, "x".repeat(99999)).length < 9000);
@@ -46,8 +46,28 @@ assert.ok(buildCitationDirective({ title: "A", author: "B" }, "x".repeat(99999))
 // 自動流水線一定要接上知識庫，而且未查證引用必須擋稿
 const gen = readFileSync("src/lib/auto-generate.ts", "utf8");
 assert.ok(gen.includes("chooseKnowledgeSource"), "FB 主稿要從知識庫取出處");
-assert.ok(gen.includes("unverifiedCitations(draft, source.citation)"), "要比對實際引用");
-assert.ok(/uncited\.length[\s\S]{0,200}?引經據典只能用知識庫/.test(gen), "未查證引用要變成擋稿原因");
+assert.ok(gen.includes("unverifiedCitations(text, source.citation)"), "要比對實際引用");
+assert.ok(/uncited\.length[\s\S]{0,260}?引經據典只能用知識庫/.test(gen), "未查證引用要變成擋稿原因");
 assert.ok(gen.includes("citationDirective"), "引用規則要進提示詞");
+
+// 2026-10-27 回歸案例：第一版用了資料表的英文欄位，實際跑出
+// 《Self-Compassion: The Proven Power of Being Kind to Yourself》，Dr. Kristin Neff
+// 違反「書名作者一律用中文」與「只寫主書名不要副標題」兩條規則
+const zh = buildCitationDirective({ title: "自我慈悲", author: "克莉絲汀·聶夫" }, "筆記");
+assert.ok(zh.includes("《自我慈悲》") && zh.includes("克莉絲汀·聶夫"));
+assert.ok(zh.includes("一個英文字母都不可以出現"), "要明講不可以出現英文原名");
+assert.ok(!/Self-Compassion|Kristin/.test(zh), "指令裡不可以夾帶英文原名");
+
+// 英文原名若出現在文章裡，要被當成違規抓出來
+const enInBody = "《Self-Compassion: The Proven Power of Being Kind to Yourself》作者 Dr. Kristin Neff 提出，善待自己是可以練的。";
+assert.ok(unverifiedCitations(enInBody, { title: "自我慈悲" }).length > 0, "英文書名要被擋");
+// 中文正確寫法要放行
+assert.deepEqual(unverifiedCitations("《自我慈悲》作者克莉絲汀·聶夫提出，善待自己是可以練的。", { title: "自我慈悲" }), []);
+
+// 取出處時必須用中文欄位，而且中文沒確認就不准引用
+const gen2 = readFileSync("src/lib/auto-generate.ts", "utf8");
+assert.ok(gen2.includes("note?.title_zh") && gen2.includes("note?.author_zh"), "要用中文欄位");
+assert.ok(gen2.includes('note?.zh_status !== "confirmed"'), "中文沒確認就不准引用");
+assert.ok(gen2.includes("citationProblems"), "英文原名要納入違規判定");
 
 console.log("citation-guard 測試通過");
