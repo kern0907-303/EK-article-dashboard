@@ -254,6 +254,66 @@ export async function rewriteWebsiteArticle(input: Pick<MultiplatformInput, "env
   return publishWebsite({ ...input, jobId: "", fbScheduledAt: "", fbQueueId: "" }, input.articleId);
 }
 
+/**
+ * 用目前的 FB 主稿重寫一則「已經存在」的 Threads 或 IG 排程，時間與排程列不變，只換內容。
+ * 給「重新優化」用：主稿換了之後，衍生稿才不會跟主稿講不同的事。
+ * 任何一關沒過就整則不採用，舊的原樣保留，絕不會把排程換成壞的。
+ */
+export async function rewriteSocialPost(input: {
+  env: SupabaseEnv;
+  brandShort: "nas" | "abl" | "i8";
+  master: string;
+  platform: "instagram" | "threads";
+  /** social_publish_queue 的列 id，必須還是 pending */
+  rowId: string;
+}): Promise<{ text: string; slides: number; note: string }> {
+  const { env, brandShort, master, platform, rowId } = input;
+  const fullBrand = FULL_BRAND_IDS[brandShort];
+  const max = platform === "instagram" ? INSTAGRAM_MAX : THREADS_MAX;
+
+  let derived = await deriveVersions(master);
+  const pick = () => (platform === "instagram" ? derived.instagram : derived.threads);
+  // 品牌紅線擋到就帶著被擋的詞換個說法再改寫一次
+  const blocked = inspectForPublish(pick(), fullBrand, "warm").violatedWords;
+  if (blocked.length) {
+    const retried = await deriveVersions(master, blocked);
+    if (retried.source === "ai") derived = retried;
+  }
+  const content = pick();
+  if (!content.trim()) throw new Error("改寫沒有回傳內容");
+  if (content.length > max) throw new Error(`超過 ${platform === "instagram" ? "Instagram" : "Threads"} 上限 ${max} 字`);
+  const guard = inspectForPublish(content, fullBrand, "warm");
+  if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
+  const gate = gateBlockers(runQualityGate(content, { platform, master }));
+  if (gate.length) throw new Error(`品管未通過：${gateMessage(gate)}`);
+
+  // IG 的輪播圖卡文字跟著主稿換，重新渲染；渲染失敗就沿用舊圖，只換文字
+  let imageUrls: string[] = [];
+  let note = "";
+  if (platform === "instagram") {
+    try {
+      const slideBlocks = derived.slides.flatMap((slide) => gateBlockers(runQualityGate(slide, { platform: "slide" })));
+      if (slideBlocks.length) throw new Error(`圖卡文字品管未通過：${gateMessage(slideBlocks)}`);
+      imageUrls = await renderSlideUrls(brandShort, derived.slides);
+      if (imageUrls.length < 2) throw new Error("輪播張數不足");
+    } catch (error) {
+      imageUrls = [];
+      note = `輪播圖卡沿用舊的：${safe(error)}`;
+    }
+  }
+
+  const patch: Record<string, unknown> = { content, updated_at: new Date().toISOString() };
+  if (imageUrls.length >= 2) { patch.image_url = imageUrls[0]; patch.image_urls = imageUrls; }
+  const res = await fetch(`${env.url}/rest/v1/social_publish_queue?id=eq.${encodeURIComponent(rowId)}&status=eq.pending`, {
+    method: "PATCH", headers: authHeaders(env), body: JSON.stringify(patch), signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`更新排程失敗（${res.status}）：${(await res.text()).slice(0, 160)}`);
+  const rows = await res.json();
+  if (!Array.isArray(rows) || !rows.length) throw new Error("這則排程已不是待發狀態");
+  if (derived.note) note = note ? `${note}；${derived.note}` : derived.note;
+  return { text: content, slides: imageUrls.length, note };
+}
+
 /** 記錄官網文章編號；FB 待發時供首則留言使用，已發佈時只補齊關聯。 */
 export async function linkArticleToFacebookQueue(env: SupabaseEnv, queueId: string, articleId: string): Promise<void> {
   const res = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(queueId)}&status=in.(pending,sent)`, {

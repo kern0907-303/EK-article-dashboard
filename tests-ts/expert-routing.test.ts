@@ -15,6 +15,8 @@ const workspace = source("src/components/WorkspaceBoard.tsx");
 const provider = source("src/lib/ai-provider.ts");
 const route = source("src/app/api/chat/route.ts");
 const pipelineTick = source("src/app/api/auto-pipeline/tick/route.ts");
+// 生成核心在 2026-10-27 抽到共用模組，流水線與重新優化共用；Maya/Iris 的呼叫改在這裡
+const autoGenerate = source("src/lib/auto-generate.ts");
 
 t("Leon 使用較大輸出上限與 120 秒逾時", LEON_GENERATION_OPTIONS.maxTokens >= 12000 && LEON_GENERATION_OPTIONS.timeoutMs === 120000);
 t("空白社群文案不可生成網頁架構", !hasUsableSocialCopy("   "));
@@ -41,7 +43,8 @@ t("Leon 提示詞最多五個區塊並以社群文案為唯一依據", provider.
 t("沒有文章時 API 在模型呼叫前回傳明確錯誤", route.indexOf('expertType === "leon"') < route.indexOf("await callErickCOO(") && route.includes("請先生成社群文案，再生成網頁架構。"));
 t("需要來源文章的檢查可由共用 helper 使用", route.includes("hasUsableSocialCopy(prevData?.social_copy)"));
 
-t("自動流水線仍只呼叫 Maya/Iris，未改走 Leon", pipelineTick.includes('"maya_iris"') && !pipelineTick.includes('"leon_jack"') && !pipelineTick.includes('"leon"'));
+t("自動流水線仍只呼叫 Maya/Iris，未改走 Leon", autoGenerate.includes('"maya_iris"') && !autoGenerate.includes('"leon_jack"') && !autoGenerate.includes('"leon"') && !pipelineTick.includes('"leon"'));
+t("流水線的生成走共用核心，不自己呼叫 AI", pipelineTick.includes("generateFacebookDraft") && !pipelineTick.includes("callErickCOO("));
 t("網頁架構空狀態提供需要時生成按鈕", workspace.includes("尚未生成網頁架構") && workspace.includes("生成網頁架構") && workspace.includes("需要時再生成"));
 t("沒有社群文案時生成按鈕停用並提示", workspace.includes("disabled={!canGenerate || isGenerating}") && workspace.includes("請先生成社群文案"));
 t("網頁架構提供生成經過秒數與取消", workspace.includes("已經過 {elapsedSeconds} 秒") && workspace.includes("cancelArchitectureGeneration"));

@@ -1,57 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { callErickCOO, callSeoOptimizer } from "@/lib/ai-provider";
-import { stripDashes, stripDiagramBlocks, stripMarkdown } from "@/lib/plain-text";
-import { splitPostReminders } from "@/lib/post-reminders";
-import { checkGenreText, blockingIssues } from "@/lib/genre-check";
 import { getDefaultFacebookPage } from "@/lib/facebook-pages";
 import { AUTO_PIPELINE_ENABLED, isSafeToSchedule } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, isQueueEnabled, supabaseHeaders } from "@/lib/publish-queue";
-import { PROMPT_VERSION, buildGenreDirective, readGenreFromPrompt } from "@/data/skills/genres";
-import { buildTitleDirective, detectTitleStyle, pickTitleStyle, readTitleStyleFromPrompt, repeatedStyleWarning, TITLE_STYLES, type TitleStyleId } from "@/data/skills/title-styles";
-import { bannedOpeningWarning, buildOpeningDirective, detectOpeningStyle, OPENING_STYLES, pickOpeningStyle, readOpeningStyleFromPrompt, repeatedOpeningWarning, type OpeningStyleId } from "@/data/skills/opening-styles";
-import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
-import { cardHeadline } from "@/lib/article-image.mjs";
-import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
-import { renderCardJpeg } from "@/lib/card-render-server";
-import { uploadPublicJpeg } from "@/lib/social-image-server";
-import { brandVoiceSentences, isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
+import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
-import { applyMechanicalFixes, gateBlockers, gateWarnings, runQualityGate } from "@/lib/quality-gate";
-
-const CARD_BRAND_IDS: Record<string, string> = { nas: "brand_b_nas", abl: "brand_c_abl", i8: "brand_a_i8", erick: "personal_brand" };
-
-/** 用文案第一行做 FB 橫式品牌圖卡。失敗只回傳 null，不影響排程。 */
-async function makeCardUrl(brandId: string, content: string): Promise<{ url: string | null; error?: string }> {
-  try {
-    const headline = cardHeadline(content);
-    if (!headline) return { url: null, error: "找不到可放在圖卡上的標題" };
-    const jpeg = await renderCardJpeg({ brandId: CARD_BRAND_IDS[brandId] || "personal_brand", text: headline, index: 1, total: 1, sceneDataUri: null, size: AUTO_PIPELINE_CARD_SIZE });
-    return { url: await uploadPublicJpeg(jpeg, brandId) };
-  } catch (error) {
-    return { url: null, error: error instanceof Error ? error.message.slice(0, 120) : "圖卡失敗" };
-  }
-}
-
-const firstLine = (text: unknown): string => String(text || "").split("\n").map((line) => line.trim()).filter(Boolean)[0] || "";
-
-/** 標題後面第一個有內容的段落，跳過單獨一行的小標 */
-const firstParagraph = (text: string): string => {
-  const lines = String(text || "").split("\n").map((line) => line.trim()).filter(Boolean).slice(1);
-  return lines.find((line) => line.length > 24 || /[。！？]/.test(line)) || lines[0] || "";
-};
-
-/** 同品牌最近幾篇的標題句型與開場句型，由近到遠。讀不到就當作沒有，不影響生成。 */
-async function recentStyleHistory(brandId: string): Promise<{ titles: Array<TitleStyleId | null>; openings: Array<OpeningStyleId | null> }> {
-  try {
-    const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled&order=scheduled_at.desc&limit=6&select=draft_content`);
-    return {
-      titles: rows.map((row) => detectTitleStyle(firstLine(row.draft_content))),
-      openings: rows.map((row) => detectOpeningStyle(firstParagraph(String(row.draft_content || "")))),
-    };
-  } catch { return { titles: [], openings: [] }; }
-}
+import { brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.AUTO_PIPELINE_CRON_SECRET || "";
@@ -107,7 +62,6 @@ async function sendBatchNotice(batchId: string) {
 }
 
 /** 流水線生成 FB 主稿的說話聲音規則（編輯器的文體提示詞才有這條，流水線路徑要自己帶） */
-const VOICE_DIRECTIVE = "【說話的人】文章是人在說話，不是品牌在說話。只能用艾瑞克的第一人稱（我），或不指名的客觀第三方陳述。品牌名稱不可以當主詞去認為、相信、陪伴、提供、協助、看見、想要，也不可以用「我們」替品牌發言；標題不要讓品牌名稱當主詞，品牌名稱全文最多出現一次且只當地點或服務名稱。只輸出社群貼文純文字，不要附流程圖、圖表或任何程式碼區塊。";
 
 export async function POST(req: NextRequest) {
   if (!AUTO_PIPELINE_ENABLED) return NextResponse.json({ error: "自動流水線未啟用" }, { status: 404 });
@@ -123,90 +77,28 @@ export async function POST(req: NextRequest) {
     const job = Array.isArray(rows) ? rows[0] : rows;
     if (!job?.id) return NextResponse.json({ success: true, processed: false, reason: "目前沒有待處理項目或另一篇正在執行" });
 
-    const brandName = ({ nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "Erick 個人品牌" } as const)[job.brand_id as "nas" | "abl" | "i8" | "erick"];
+    const brandName = brandNameOf(String(job.brand_id));
     let draft = "";
     // 成效回流實驗（EXPERIMENT_ENABLED=true 才會生效）：依預定發文日查當天的結構臂，查不到就照原流程
     let experiment: ExperimentAssignment | null = null;
-    // 標題型與文體：題目階段（n8n）指定的優先，沒指定就避開這個品牌最近 3 篇用過的句型輪換
-    const history = await recentStyleHistory(String(job.brand_id));
-    const recentStyles = history.titles;
-    const titleStyle = readTitleStyleFromPrompt(job.prompt) || pickTitleStyle(recentStyles, String(job.id));
-    // 開場型：需要真實素材的型（引用權威、客戶原話）只有在提示詞帶了素材時才可能被挑中
-    const hasMaterial = /逐字稿|口述|素材|原話|客戶說|學員說/.test(String(job.prompt || ""));
-    const openingStyle = readOpeningStyleFromPrompt(job.prompt) || pickOpeningStyle(history.openings, String(job.id), hasMaterial);
-    const promptGenre = readGenreFromPrompt(job.prompt);
-    const styleDirective = [
-      buildTitleDirective(titleStyle),
-      buildOpeningDirective(openingStyle, titleStyle),
-      buildSubheadDirective("facebook"),
-      promptGenre ? buildGenreDirective(promptGenre) : "",
-    ].filter(Boolean).join("\n\n");
+    // 標題型、開場型與文體由共用核心決定，與「重新優化」走同一份規則
+    const history = await recentStyleHistory(String(job.brand_id), String(job.id));
     try {
       experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
-      const generated = await retryOnce(async () => {
-        const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-          maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${styleDirective}\n\n${VOICE_DIRECTIVE}`,
-          iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
-        }, undefined, undefined, "facebook");
-        const text = result.dispatchData?.social_copy;
-        if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
-        const split = splitPostReminders(stripDashes(stripMarkdown(text)), result.dispatchData?.post_reminders);
-        return { text: split.body, reminders: split.reminders };
+      const generated = await generateFacebookDraft({
+        brandId: String(job.brand_id), prompt: String(job.prompt), seed: String(job.id), history, retry: retryOnce,
+        ...(experiment ? { experimentDirective: experiment.directive } : {}),
+        onFirstDraft: (first) => updateJob(job.id, { status: "optimizing", current_step: "自動健檢與 SEO 優化", draft_content: first }, "generating"),
       });
-      draft = generated.text;
-      const postReminders = generated.reminders.map((item) => `發文前提醒（不在文章裡）：${item}`);
-      if (!await updateJob(job.id, { status: "optimizing", current_step: "自動健檢與 SEO 優化", draft_content: draft }, "generating")) {
-        return NextResponse.json({ success: true, processed: true, status: "cancelled" });
-      }
-      const optimized = await retryOnce(async () => {
-        const result = await callSeoOptimizer(draft, brandName, [], process.env.AI_PROVIDER, "facebook");
-        if (!result.optimized_content?.trim()) throw new Error("SEO 優化器沒有回傳文案");
-        return stripDashes(stripMarkdown(result.optimized_content));
-      });
-      draft = optimized;
-      let mechanical = applyMechanicalFixes(draft);
-      draft = mechanical.text;
-      // 品牌名稱不可當主詞發言：發現就帶著問題句子重新生成，最多再試兩次，仍不過才交給品管擋下
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const offending = brandVoiceSentences(draft);
-        const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION }, "facebook", job.brand_id)).map((issue) => issue.message.slice(0, 80));
-        if (!offending.length && !hardHits.length) break;
-        const revised = await retryOnce(async () => {
-          const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
-            maya: `${experiment ? `${job.prompt}\n\n${experiment.directive}` : job.prompt}\n\n${styleDirective}\n\n${VOICE_DIRECTIVE}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${hardHits.length ? `上一版有這些問題必須改掉：${hardHits.join("｜")}。請全文重寫，完全不要出現被指出的禁用詞，改用其他說法。` : ""}`,
-            iris: `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${job.prompt}`,
-          }, undefined, undefined, "facebook");
-          const text = result.dispatchData?.social_copy;
-          if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
-          return splitPostReminders(stripDashes(stripMarkdown(stripDiagramBlocks(text))), result.dispatchData?.post_reminders).body;
-        });
-        mechanical = applyMechanicalFixes(revised);
-        draft = mechanical.text;
-      }
-      const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };
-      const issues = checkGenreText(draft, meta, "facebook", job.brand_id);
-      const blocks = blockingIssues(issues);
-      const gateIssues = runQualityGate(draft, { platform: "facebook" });
-      const gateBlocks = gateBlockers(gateIssues);
-      const finalStyle = detectTitleStyle(firstLine(draft));
-      const finalOpening = detectOpeningStyle(firstParagraph(draft));
-      const styleNotes = [
-        finalStyle && finalStyle !== titleStyle ? `本篇指定標題型「${TITLE_STYLES[titleStyle].name}」，實際寫出來比較像「${TITLE_STYLES[finalStyle].name}」。` : "",
-        repeatedStyleWarning(finalStyle, recentStyles),
-        finalOpening && finalOpening !== openingStyle ? `本篇指定開場型「${OPENING_STYLES[openingStyle].name}」，實際寫出來比較像「${OPENING_STYLES[finalOpening].name}」。` : "",
-        repeatedOpeningWarning(finalOpening, history.openings),
-        bannedOpeningWarning(firstParagraph(draft)),
-        subheadWarning(draft, "facebook"),
-      ].filter(Boolean);
-      const warnings = [...styleNotes, ...postReminders, ...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message), ...mechanical.fixes.map((fix) => `自動修正：${fix}`)];
-      const leftover = draft.match(/【需補[^】]*】/g);
-      const negatedHits = issues.guardrailHits.filter((hit) => hit.negated);
+      if (generated.cancelled) return NextResponse.json({ success: true, processed: true, status: "cancelled" });
+      draft = generated.draft;
+      const postReminders = generated.postReminders;
+      const negatedHits = generated.guardrailHits.filter((hit) => hit.negated);
       if (negatedHits.length) {
         console.info("[auto-pipeline] guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
       }
-      const blockedReason = leftover?.length
-        ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
-        : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`)].join("；");
+      const warnings = [rulesVersionNote(), ...generated.styleNotes, ...postReminders, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`)];
+      const blockedReason = generated.blockedReason;
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });
       }
