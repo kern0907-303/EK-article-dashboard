@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { citedBookTitles, unverifiedCitations, vagueResearchClaim } from "../src/lib/quality-gate";
-import { buildCitationDirective } from "../src/data/skills/citation-rules";
+import { allowedCitationFromTitles, buildCitationDirective } from "../src/data/skills/citation-rules";
 
 // 2026-10-27 回歸案例：這篇實際排進 ABL 的發佈佇列，引了不在知識庫裡的書
 const popper = [
@@ -69,5 +69,24 @@ const gen2 = readFileSync("src/lib/auto-generate.ts", "utf8");
 assert.ok(gen2.includes("note?.title_zh") && gen2.includes("note?.author_zh"), "要用中文欄位");
 assert.ok(gen2.includes('note?.zh_status !== "confirmed"'), "中文沒確認就不准引用");
 assert.ok(gen2.includes("citationProblems"), "英文原名要納入違規判定");
+
+// 2026-10-28 回歸案例：引用查證原本只做在 FB 主稿。
+// 官網文章走 auto-multiplatform 的 callWebArticle 獨立改寫，IG / Threads 走 deriveVersions，
+// 兩條路都可以自己憑記憶長出一本書，官網因此掛了十幾篇沒查證的引用。
+// 母稿恰好一本書時沿用那一本（已經查證過），其他情況一律不准引用。
+assert.deepEqual(allowedCitationFromTitles(["猜想與反駁"]), { title: "猜想與反駁" });
+assert.equal(allowedCitationFromTitles([]), null, "母稿沒引用時衍生稿也不准引用");
+assert.equal(allowedCitationFromTitles(["心流", "自我慈悲"]), null, "母稿兩本以上無法判斷哪本查證過");
+
+const multi = readFileSync("src/lib/auto-multiplatform.ts", "utf8");
+assert.ok(multi.includes("allowedCitationFromTitles(citedBookTitles(master))"), "衍生稿要以母稿為引用依據");
+assert.ok(multi.includes("unverifiedCitations(written.article, allowedCitation)"), "官網文章要比對引用");
+assert.ok(/官網文章引用未經查證/.test(multi), "官網未查證引用要擋稿，不是只提醒");
+assert.ok(multi.includes("unverifiedCitations(optimizedText, allowedCitation)"), "SEO 優化版也要比對引用");
+assert.ok(/socialCites/.test(multi), "一鍵重寫社群稿要比對引用");
+assert.ok(/const cites = citeBlock\(content\);[\s\S]{0,80}?throw new Error\(cites\)/.test(multi), "初次產生的 IG / Threads 也要擋");
+assert.equal((multi.match(/throw new Error\(cites\)/g) || []).length, 2, "IG 與 Threads 兩條路都要擋");
+
+console.log("衍生稿引用查證測試通過");
 
 console.log("citation-guard 測試通過");

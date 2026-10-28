@@ -13,10 +13,11 @@ import { buildFaqJsonLd, faqToPlainText } from "@/lib/seo-optimizer";
 import { articleUpdateUrl, existingArticleQuery, pickExistingId } from "@/lib/publish-dedupe";
 import { withCoverImage } from "@/lib/article-image.mjs";
 import type { TrafficFunnel } from "@/data/brands/conversion";
+import { allowedCitationFromTitles } from "@/data/skills/citation-rules";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
-import { applyMechanicalFixes, brandSubjectHits, brandSubjectSentences, gateBlockers, gateMessage, rewriteBrandSubject, runQualityGate } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, brandSubjectSentences, citedBookTitles, gateBlockers, gateMessage, rewriteBrandSubject, runQualityGate, unverifiedCitations } from "@/lib/quality-gate";
 
 export const THREADS_MAX = 500;
 export const INSTAGRAM_MAX = 2200;
@@ -181,6 +182,20 @@ export interface MultiplatformResult {
 const safe = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[已遮蔽]").replace(/Bearer\s+\S+/gi, "Bearer [已遮蔽]").slice(0, 200);
 
 /** 找出品牌名稱當主詞的句子（最多 3 句、每句截 60 字），給重寫要求用。 */
+/**
+ * 衍生稿（官網、IG、Threads）唯一允許的出處，就是 FB 主稿已經用的那一本。
+ *
+ * 為什麼這樣判斷：主稿的引用是 generateFacebookDraft 從知識庫挑出來、用書名作者核對過的，
+ * 所以主稿裡出現的書必定查證過。衍生稿是從主稿改寫來的，沿用同一本就安全。
+ * 主稿沒有引用，衍生稿也不准有，因為沒有東西可以拿來比對。
+ *
+ * 2026-10-28 發現的洞：引用查證原本只做在 FB 主稿，官網文章是另一支 callWebArticle
+ * 獨立改寫的，可以自己憑記憶長出一本書，官網上因此有十幾篇掛著沒查證的引用。
+ */
+export function allowedCitationFromMaster(master: string): { title: string } | null {
+  return allowedCitationFromTitles(citedBookTitles(master));
+}
+
 export function brandVoiceSentences(article: string, brandId?: string): string[] {
   return brandSubjectSentences(article, brandId);
 }
@@ -190,15 +205,18 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   const { env, brandShort, brandName, master, coverUrl } = input;
   const fullBrand = FULL_BRAND_IDS[brandShort];
   const provider = process.env.AI_PROVIDER;
+  // 衍生稿只能沿用主稿查證過的出處，不可以自己長出一本新書
+  const allowedCitation = allowedCitationFromMaster(master);
   let written = await callWebArticle(master, brandName, [], undefined, provider);
   if (written.is_local_check) throw new Error("AI 服務未啟用，無法產生官網文章");
   // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試三次
   for (let attempt = 0; attempt < 3; attempt++) {
     const offending = brandVoiceSentences(written.article, brandShort);
+    const badCites = unverifiedCitations(written.article, allowedCitation);
     const redlines = inspectForPublish(clean(written.article), fullBrand, "warm").violatedWords;
-    if (!offending.length && !redlines.length) break;
+    if (!offending.length && !redlines.length && !badCites.length) break;
     written = await callWebArticle(
-      `${master}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${redlines.length ? `上一版出現這個品牌不可使用的詞：${redlines.slice(0, 5).join("、")}。請全文重寫，完全不要出現這些詞，改用其他說法（例如次數、頻頻、常常）。` : ""}`,
+      `${master}\n\n【修改要求，不是原文】${offending.length ? `上一版出現品牌名稱當主詞的句子：${offending.join("｜")}。請全文重寫，這些句子改成艾瑞克的第一人稱或不指名的客觀陳述，品牌名稱全文最多出現一次且只當地點或服務名稱，標題也不要讓品牌名稱當主詞。` : ""}${redlines.length ? `上一版出現這個品牌不可使用的詞：${redlines.slice(0, 5).join("、")}。請全文重寫，完全不要出現這些詞，改用其他說法（例如次數、頻頻、常常）。` : ""}${badCites.length ? `上一版引用了不可以引用的書：${badCites.map((title) => `《${title}》`).join("、")}。${allowedCitation ? `這一篇只能引用《${allowedCitation.title}》。` : "這一篇不可以引用任何書籍，不要出現書名號。"}請全文重寫並拿掉這些引用與相關的文末出處。` : ""}`,
       brandName, [], undefined, provider,
     );
   }
@@ -217,7 +235,7 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
       ...checkText(optimizedText, context).violatedWords,
       ...checkText(faq.map((item) => `${item.q}${item.a}`).join("\n"), context).violatedWords,
     ];
-    if (optimizedText.length >= 120 && hits.length === 0 && !brandSubjectHits(optimizedText, brandShort).length) {
+    if (optimizedText.length >= 120 && hits.length === 0 && !brandSubjectHits(optimizedText, brandShort).length && !unverifiedCitations(optimizedText, allowedCitation).length) {
       article = optimizedText;
       // FAQ 與結構化資料只用「這一篇」優化結果組出，避免沿用上一篇的內容
       faqText = faq.length ? faqToPlainText(faq) : "";
@@ -231,6 +249,8 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   if (!guard.passed) throw new Error(`官網文章未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
   const webGate = gateBlockers(runQualityGate(article.replace(/!\[[^\]]*\]\([^)]*\)/g, ""), { platform: "website", master }));
   if (webGate.length) throw new Error(`官網文章品管未通過：${gateMessage(webGate)}`);
+  const webCites = unverifiedCitations(article, allowedCitation);
+  if (webCites.length) throw new Error(`官網文章引用未經查證：${webCites.map((title) => `《${title}》`).join("、")}。引經據典只能沿用主稿查證過的出處`);
 
   const lines = article.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const titleLine = lines.find((line) => !/^!\[/.test(line)) || "未命名文章";
@@ -291,6 +311,8 @@ export async function rewriteSocialPost(input: {
   if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
   const gate = gateBlockers(runQualityGate(content, { platform, master }));
   if (gate.length) throw new Error(`品管未通過：${gateMessage(gate)}`);
+  const socialCites = unverifiedCitations(content, allowedCitationFromMaster(master));
+  if (socialCites.length) throw new Error(`引用未經查證：${socialCites.map((title) => `《${title}》`).join("、")}。只能沿用主稿查證過的出處`);
 
   // IG 的輪播圖卡文字跟著主稿換，重新渲染；渲染失敗就沿用舊圖，只換文字
   let imageUrls: string[] = [];
@@ -357,6 +379,13 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
   }
   if (!want("instagram") && !want("threads")) return result;
 
+  const socialAllowedCitation = allowedCitationFromMaster(master);
+  const citeBlock = (text: string): string => {
+    const bad = unverifiedCitations(text, socialAllowedCitation);
+    if (!bad.length) return "";
+    return `引用未經查證：${bad.map((title) => `《${title}》`).join("、")}`;
+  };
+
   let derived: DerivedVersions | null = null;
   try {
     derived = await deriveVersions(master);
@@ -397,6 +426,8 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
     if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
     const gate = gateBlockers(runQualityGate(content, { platform: "instagram", master }));
     if (gate.length) throw new Error(`品管未通過：${gateMessage(gate)}`);
+    const cites = citeBlock(content);
+    if (cites) throw new Error(cites);
     const id = await enqueueSocial(env, {
       platform: "instagram", brand: brandShort, content, image_url: imageUrls[0], image_urls: imageUrls,
       scheduled_at: times.instagram, status: "pending", job_id: jobId, ...(articleId ? { article_id: articleId } : {}),
@@ -415,6 +446,8 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
     if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
     const gate = gateBlockers(runQualityGate(content, { platform: "threads", master }));
     if (gate.length) throw new Error(`品管未通過：${gateMessage(gate)}`);
+    const cites = citeBlock(content);
+    if (cites) throw new Error(cites);
     const withImages = imageUrls.length >= 2;
     const id = await enqueueSocial(env, {
       platform: "threads", brand: brandShort, content,

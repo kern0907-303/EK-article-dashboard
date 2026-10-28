@@ -31,3 +31,13 @@ export function buildCitationDirective(citation: VerifiedCitation | null, noteCo
     String(noteContent || "").slice(0, 2500),
   ].join("\n");
 }
+
+/**
+ * 母稿允許的引用。
+ * FB 主稿的引用已經在 auto-generate 對知識庫查證過，所以母稿裡那一本是可信的。
+ * 衍生稿（官網、IG、Threads）只能沿用那一本或完全不引用，不需要再呼叫 AI 查一次。
+ * 母稿引了兩本以上時無法判斷哪一本經過查證，一律回 null，衍生稿就不准引用。
+ */
+export function allowedCitationFromTitles(titles: string[]): { title: string } | null {
+  return titles.length === 1 ? { title: titles[0] } : null;
+}
