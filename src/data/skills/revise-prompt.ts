@@ -14,11 +14,14 @@ import type { VerifiedCitation } from "./citation-rules";
  * @param problems 必須修掉的問題，每則一句話
  * @param citation 這一篇查證過的出處；null 代表整篇不准引用
  */
-export function buildRevisePrompt(draft: string, problems: string[], citation: VerifiedCitation | null): string {
+export function buildRevisePrompt(draft: string, problems: string[], citation: VerifiedCitation | null, options?: { allowTitle?: boolean }): string {
+  const allowTitle = options?.allowTitle === true;
   return [
     "【修改任務，不是重新創作】",
     "下面是上一版文章全文。請保留它的題目、結構、語氣、小標與大部分句子，只修掉被指出的問題，其他地方一個字都不要動。",
-    "不要換題目，不要重寫開場，不要調整段落順序，不要增減小標。",
+    allowTitle
+      ? "不要重寫開場，不要調整段落順序，不要增減小標。標題被指出有問題，所以要重寫標題：場景必須是文章裡真的寫出來的畫面，一次讀完就要懂，最多兩個短句，不可以出現兩個否定詞，論點不變。"
+      : "不要換題目，不要重寫開場，不要調整段落順序，不要增減小標。",
     "",
     "【上一版全文】",
     String(draft || ""),

@@ -33,7 +33,7 @@ assert.ok(provider.includes('runQueryWithFallback(prompt, config, true, mayaPref
 const gen = readFileSync("src/lib/auto-generate.ts", "utf8");
 const firstCall = gen.slice(gen.indexOf("const generated = await retry"), gen.indexOf("let draft = generated.text"));
 assert.ok(!firstCall.includes("reviseMode"), "第一稿要維持原本的模型");
-assert.ok(gen.includes("buildRevisePrompt(draft, problems, source.citation)"), "重寫要走精簡提示詞");
+assert.ok(gen.includes("buildRevisePrompt(draft, problems, source.citation,"), "重寫要走精簡提示詞");
 // SEO 優化器保留（艾瑞克 2026-10-28 決定：那是 FB 的品質把關，不是 SEO）
 assert.ok(gen.includes("callSeoOptimizer"), "SEO 優化器要保留");
 

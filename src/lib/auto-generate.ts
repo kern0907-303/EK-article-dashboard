@@ -17,7 +17,7 @@ import {
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
-import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, fictionAsRealClient, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
@@ -238,23 +238,32 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   let mechanical = applyMechanicalFixes(draft);
   draft = mechanical.text;
 
+  // 案例文本來就是寫真實個案，第一人稱見證句是對的；其他文體的人物是虛構的，不可以這樣寫
+  const allowsRealClient = readGenreFromPrompt(prompt) === "case";
   // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試三次，仍不過才做機械式修正
   for (let attempt = 0; attempt < 3; attempt++) {
     const offending = brandVoiceSentences(draft, brandId);
     const badCites = citationProblems(draft);
     const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId)).map((issue) => issue.message.slice(0, 80));
-    if (!offending.length && !hardHits.length && !badCites.length) break;
+    // 這兩條規則原本只寫在提示詞裡，沒有任何地方檢查，所以模型照樣違規而且一路排程出去。
+    // 2026-10-29 實例：標題「走出住了十九年的大門，忍耐從來無關膽怯，看懂原因每一步才算數」
+    // 三個短句黏成一串；正文「她對我說，走出大門坐上計程車的那一刻」把虛構人物說成真實個案。
+    const titleIssue = hardToReadTitle(draft);
+    const witness = allowsRealClient ? [] : fictionAsRealClient(draft);
+    if (!offending.length && !hardHits.length && !badCites.length && !titleIssue && !witness.length) break;
     // 修改模式：只送上一版全文與問題清單，不再把整包提示詞與書籍筆記重送一次，
     // 並且跳過 Iris、改用便宜模型。重寫是照指示改句子，不是重新創作。
     const problems = [
       ...offending.map((line) => `品牌名稱當主詞：${line}`),
       ...badCites.map((item) => `引用有問題：${item}`),
       ...hardHits,
+      ...(titleIssue ? [`標題不好讀：${titleIssue}`] : []),
+      ...witness.map((line) => `把虛構人物寫成我親身接觸過的真實個案：${line}。改回第三人稱，不要出現她跟我說、她告訴我這類句型`),
     ];
     const revised = await retry(async () => {
       const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
         reviseMode: true,
-        maya: buildRevisePrompt(draft, problems, source.citation),
+        maya: buildRevisePrompt(draft, problems, source.citation, { allowTitle: Boolean(titleIssue) }),
         iris: "",
       }, undefined, undefined, "facebook");
       const text = result.dispatchData?.social_copy;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { brandWeSpeak, fictionAsRealClient, runQualityGate, gateBlockers, gateWarnings } from "../src/lib/quality-gate";
 import { DERIVATIVES_SYSTEM_PROMPT, DERIVATIVES_PROMPT_VERSION } from "../src/data/prompts/derivatives-v1";
+import { buildRevisePrompt } from "../src/data/skills/revise-prompt";
 
 // 2026-10-29 回歸案例：編輯 AI 擋下一組 NAS 內容。三個問題全部出在衍生稿那一邊，
 // FB 主稿是乾淨的。原因是說話的人與虛構人物這兩條規則只寫在主稿路徑，衍生稿的提示詞沒有。
@@ -60,5 +61,28 @@ assert.ok(/faqProblems\.length[\s\S]{0,200}?faqText = ""/.test(multi), "過不�
 assert.ok(/faqProblems\.length[\s\S]{0,220}?schemaText = ""/.test(multi), "結構化資料要一起拿掉，不然 schema 還留著違規問答");
 // 官網文章的品管要帶 brandId，否則抓不到「我們」替品牌發言
 assert.ok(/platform: "website", master, brandId: brandShort/.test(multi));
+
+// 2026-10-29 第二次踩到：規則寫在提示詞裡但沒有任何地方檢查，所以模型照樣違規，
+// 而且一路排程出去。實例是重跑後的 NAS 主稿，標題三個短句黏成一串，正文又出現
+// 「她對我說，走出大門坐上計程車的那一刻」。警示級檢查抓到了，但警示不會擋稿。
+// 修法：把這兩條接進主稿生成的重寫迴圈，用便宜的修改模式改掉，而不是只記一條警示。
+const gen2 = readFileSync("src/lib/auto-generate.ts", "utf8");
+assert.ok(/const titleIssue = hardToReadTitle\(draft\)/.test(gen2), "主稿迴圈要檢查標題好不好讀");
+assert.ok(/fictionAsRealClient\(draft\)/.test(gen2), "主稿迴圈要檢查虛構人物當真實個案");
+assert.ok(/!titleIssue && !witness\.length/.test(gen2), "這兩條沒過就不可以跳出迴圈");
+assert.ok(/標題不好讀：/.test(gen2) && /把虛構人物寫成我親身接觸過的真實個案/.test(gen2), "要帶進問題清單給模型修");
+// 案例文寫的是真實個案，第一人稱見證句是對的，不可以被改掉
+assert.ok(/readGenreFromPrompt\(prompt\) === "case"/.test(gen2), "案例文要豁免");
+assert.ok(/allowsRealClient \? \[\] : fictionAsRealClient/.test(gen2));
+
+// 修改模式原本鎖死標題（不要換題目），標題有問題時必須能解鎖，否則修不掉
+const lockedRevise = buildRevisePrompt("全文", ["品牌名稱當主詞：平衡空間提醒你"], null);
+assert.ok(lockedRevise.includes("不要換題目"), "預設還是鎖住標題");
+const openRevise = buildRevisePrompt("全文", ["標題不好讀：標題有 3 個短句黏成一串"], null, { allowTitle: true });
+assert.ok(!openRevise.includes("不要換題目"), "標題有問題時要解鎖");
+assert.ok(openRevise.includes("場景必須是文章裡真的寫出來的畫面"));
+assert.ok(openRevise.includes("最多兩個短句"));
+assert.ok(openRevise.includes("論點不變"), "換標題不等於換主題");
+assert.ok(openRevise.includes("不要調整段落順序"), "其他結構還是鎖著");
 
 console.log("derivative-voice 測試通過");
