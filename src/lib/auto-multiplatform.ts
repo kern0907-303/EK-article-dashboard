@@ -247,10 +247,27 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   if (coverUrl) article = withCoverImage(article, coverUrl);
   const guard = inspectForPublish(article, fullBrand, "warm");
   if (!guard.passed) throw new Error(`官網文章未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
-  const webGate = gateBlockers(runQualityGate(article.replace(/!\[[^\]]*\]\([^)]*\)/g, ""), { platform: "website", master }));
+  const webGate = gateBlockers(runQualityGate(article.replace(/!\[[^\]]*\]\([^)]*\)/g, ""), { platform: "website", master, brandId: brandShort }));
   if (webGate.length) throw new Error(`官網文章品管未通過：${gateMessage(webGate)}`);
   const webCites = unverifiedCitations(article, allowedCitation);
   if (webCites.length) throw new Error(`官網文章引用未經查證：${webCites.map((title) => `《${title}》`).join("、")}。引經據典只能沿用主稿查證過的出處`);
+
+  // 常見問答原本完全沒有過閘，直接寫進資料庫，所以「平衡空間如何協助…」這種品牌當主詞的
+  // 問句一路發到官網上。問答跟文章適用同一套規則，過不了就不要這一份問答，寧可沒有 FAQ。
+  if (faqText) {
+    const faqPlain = stripMarkdown(faqText);
+    const faqProblems = [
+      ...brandSubjectSentences(faqPlain, brandShort).map((line) => `品牌名稱當主詞：${line}`),
+      ...gateBlockers(runQualityGate(faqPlain, { platform: "website", brandId: brandShort })).map((issue) => issue.message),
+      ...inspectForPublish(faqPlain, fullBrand, "warm").violatedWords.map((word) => `紅線詞「${word}」`),
+      ...unverifiedCitations(faqPlain, allowedCitation).map((title) => `未查證引用《${title}》`),
+    ];
+    if (faqProblems.length) {
+      console.warn("[auto-multiplatform] 常見問答沒過閘，這一篇不附 FAQ：", faqProblems.slice(0, 3).join("；"));
+      faqText = "";
+      schemaText = "";
+    }
+  }
 
   const lines = article.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const titleLine = lines.find((line) => !/^!\[/.test(line)) || "未命名文章";

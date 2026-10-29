@@ -263,9 +263,59 @@ export function checkConsistency(master: string, derived: string): GateIssue[] {
   return issues;
 }
 
-export interface GateOptions { platform: GatePlatform; master?: string }
+export interface GateOptions { platform: GatePlatform; master?: string; brandId?: string }
 
 /** 一次跑完所有機械檢查 */
+/**
+ * 用「我們」替品牌發言。只提醒不擋稿。
+ *
+ * 2026-10-29 實例：官網文章結尾寫「在平衡空間的自我探索裡，我們透過生命數字看見自己的慣性」。
+ * 品牌名在這裡是合法的（當地點），擋不到；真正的問題是同一句的「我們」聽起來像品牌在說話。
+ * 「我們常以為自己在等待一個轉折點」這種泛指所有人的用法是好文案，所以只在同一句出現品牌名時才提醒。
+ */
+export function brandWeSpeak(text: string, brandId?: string): string[] {
+  const body = String(text || "");
+  const own = brandId ? BRAND_FULL[String(brandId).toUpperCase()] : "";
+  const names = own ? [own] : BRAND_NAMES;
+  const out: string[] = [];
+  for (const sentence of body.split(/[。！？\n]/)) {
+    if (!sentence.includes("我們")) continue;
+    if (!names.some((name) => sentence.includes(name))) continue;
+    out.push(sentence.trim().slice(0, 60));
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * 把虛構人物寫成作者親身接觸過的真實客戶。只提醒不擋稿。
+ *
+ * 2026-10-29 實例：IG 寫「她跟我說」、Threads 寫「她告訴我」、IG 寫「我一開始以為只要陪她整理」。
+ * 艾瑞克的規則是人物可以虛構、可以有名字，但不可以說成真實客戶或真實個案。
+ * 真實去識別化案例也會用同樣句型，所以這條只提醒、交給審稿端判斷，不擋稿。
+ */
+const WITNESS_PATTERNS: RegExp[] = [
+  /(她|他|[\u4e00-\u9fa5]{1,3}(?:小姐|先生|女士))(?:當初)?(?:跟|對|向)我(?:說|提|講|聊)/g,
+  /(她|他|[\u4e00-\u9fa5]{1,3}(?:小姐|先生|女士))告訴我/g,
+  /我[^。！？\n]{0,12}?(?:陪|帶|接)(?:著|過)?(她|他|[\u4e00-\u9fa5]{1,3}(?:小姐|先生|女士))/g,
+  /我[^。！？\n]{0,12}?(?:接觸|遇|陪|服務|看)(?:過)?(?:不少|很多|許多|幾個)?(?:這樣|類似|同樣)的(?:個案|案例|客戶|經歷)/g,
+  /某位客戶(?:說|提到|告訴我)/g,
+];
+
+export function fictionAsRealClient(text: string): string[] {
+  const body = String(text || "");
+  const out: string[] = [];
+  for (const pattern of WITNESS_PATTERNS) {
+    pattern.lastIndex = 0;
+    let hit: RegExpExecArray | null;
+    while ((hit = pattern.exec(body)) !== null) {
+      const start = Math.max(0, hit.index - 12);
+      out.push(body.slice(start, hit.index + hit[0].length + 12).replace(/\n/g, " ").trim());
+      if (out.length > 8) break;
+    }
+  }
+  return [...new Set(out)];
+}
+
 /**
  * 標題好不好讀。只提醒不擋稿。
  *
@@ -294,6 +344,10 @@ export function runQualityGate(text: string, options: GateOptions): GateIssue[] 
     const titleIssue = hardToReadTitle(text);
     if (titleIssue) issues.push({ level: "warn", code: "title_readability", message: titleIssue });
   }
+  const weSpeak = brandWeSpeak(text, options.brandId);
+  if (weSpeak.length) issues.push({ level: "warn", code: "brand_we", message: `用「我們」替品牌發言：${weSpeak.slice(0, 2).join("｜")}` });
+  const witness = fictionAsRealClient(text);
+  if (witness.length) issues.push({ level: "warn", code: "fiction_as_client", message: `把人物寫成親身接觸過的真實個案：${witness.slice(0, 2).join("｜")}。人物可以虛構，但不可以說成真實客戶` });
   if (options.master && options.platform !== "facebook") issues.push(...checkConsistency(options.master, text));
   return issues;
 }
