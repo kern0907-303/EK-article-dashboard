@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     const jobId = typeof body?.jobId === "string" && UUID_RE.test(body.jobId) ? body.jobId : "";
     if (!jobId) return NextResponse.json({ error: "缺少 jobId" }, { status: 400 });
     const note = String(body?.note || "").trim().slice(0, 500);
+    const allowTitle = body?.allowTitle === true;
     const env = getSupabaseEnv();
     if (!env) return NextResponse.json({ error: "後台未設定 Supabase 連線資訊" }, { status: 500 });
 
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     const before = String(queued?.content || job.draft_content || "");
     if (!before.trim()) return NextResponse.json({ error: "這個任務還沒有文案可以重寫" }, { status: 409 });
 
-    const result = await rewriteExamples({ brandId: String(job.brand_id), draft: before, note, retry: retryOnce });
+    const result = await rewriteExamples({ brandId: String(job.brand_id), draft: before, note, allowTitle, retry: retryOnce });
     if (result.blockedReason) {
       return NextResponse.json({ error: `重寫的版本沒通過檢查，已保留原稿：${result.blockedReason}`, blocked: true }, { status: 422 });
     }
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
     const hasDerivative = stalePlatforms.length > 0;
     const nextWarnings = [...new Set([
       ...(keepVersion.length ? keepVersion : [rulesVersionNote()]),
-      "已一鍵重寫例子，題目與論點未變",
+      allowTitle ? "已一鍵重寫標題與例子，論點未變" : "已一鍵重寫例子，題目與論點未變",
       ...result.notes,
       ...result.fixes.map((fix: string) => `自動修正：${fix}`),
       ...result.warnNotes,
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
       success: true, jobId, brandName: brandNameOf(String(job.brand_id)),
       before, after: result.draft,
       beforeTitle: headline(before), afterTitle: headline(result.draft),
-      titleKept: firstLine(before) === firstLine(result.draft),
+      titleKept: !result.titleChanged, allowTitle,
       notes: result.notes, warnNotes: result.warnNotes, stalePlatforms, hasDerivative,
       queued: Boolean(queued),
       message: hasDerivative

@@ -17,7 +17,7 @@ import {
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
-import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
@@ -316,6 +316,12 @@ export interface RewriteExamplesInput {
   draft: string;
   /** 艾瑞克寫的說明，例如哪一段看不懂。可留空 */
   note?: string;
+  /**
+   * true 代表標題也可以重寫。
+   * 預設鎖住標題，因為「主題方向不變」通常就是指標題不要動；
+   * 但看不懂的那一行有時候就是標題本身，那時候要能解鎖。
+   */
+  allowTitle?: boolean;
   retry: <T>(run: () => Promise<T>) => Promise<T>;
 }
 
@@ -328,6 +334,8 @@ export interface RewriteExamplesResult {
   blockedReason: string;
   /** 真的有換掉內容才是 true。模型原文回傳時為 false */
   changed: boolean;
+  /** 標題有沒有換掉 */
+  titleChanged: boolean;
 }
 
 /**
@@ -340,9 +348,9 @@ export interface RewriteExamplesResult {
  * 所以重寫後只准保留那一本或完全不引用，不給模型換書或新增引用的空間。
  */
 export async function rewriteExamples(input: RewriteExamplesInput): Promise<RewriteExamplesResult> {
-  const { brandId, note, retry } = input;
+  const { brandId, note, allowTitle, retry } = input;
   const before = String(input.draft || "");
-  if (!before.trim()) return { draft: before, notes: [], fixes: [], warnNotes: [], blockedReason: "沒有可以重寫的內容", changed: false };
+  if (!before.trim()) return { draft: before, notes: [], fixes: [], warnNotes: [], blockedReason: "沒有可以重寫的內容", changed: false, titleChanged: false };
   const brandName = brandNameOf(brandId);
   const keep = allowedCitationFromMaster(before);
   const keepTitle = keep?.title || null;
@@ -357,7 +365,7 @@ export async function rewriteExamples(input: RewriteExamplesInput): Promise<Rewr
       // 修改模式：跳過 Iris、改用便宜模型。這是照指示換段落，不是重新創作。
       const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
         reviseMode: true,
-        maya: buildExampleRewritePrompt({ draft: attempt === 0 ? before : draft, keepCitationTitle: keepTitle, note, problems }),
+        maya: buildExampleRewritePrompt({ draft: attempt === 0 ? before : draft, keepCitationTitle: keepTitle, note, problems, allowTitle }),
         iris: "",
       }, undefined, undefined, "facebook");
       const text = result.dispatchData?.social_copy;
@@ -399,10 +407,18 @@ export async function rewriteExamples(input: RewriteExamplesInput): Promise<Rewr
     ? `重寫後引用有問題：${uncited.join("、")}。已保留舊稿`
     : [...blockingIssues(issues).map((issue) => issue.message), ...gateBlockers(gateIssues).map((issue) => `品管：${issue.message}`)].join("；");
 
-  if (titleChanged) notes.push("標題被改掉了，已自動換回上一版標題。");
-  if (titleChanged && !blockedReason) {
-    const body = draft.split("\n").slice(1).join("\n");
-    draft = `${firstLine(before)}\n${body}`;
+  // 標題鎖住時，模型擅自改標題要換回去；解鎖時就讓它換，並且檢查新標題好不好讀
+  if (titleChanged && !allowTitle) {
+    notes.push("標題被改掉了，已自動換回上一版標題。要連標題一起換，請勾選「標題也要重寫」。");
+    if (!blockedReason) {
+      const body = draft.split("\n").slice(1).join("\n");
+      draft = `${firstLine(before)}\n${body}`;
+    }
+  }
+  if (allowTitle) {
+    notes.push(titleChanged ? `標題已換成「${firstLine(draft)}」` : "標題沒有換，模型認為原標題可以留。");
+    const titleIssue = hardToReadTitle(draft);
+    if (titleIssue) notes.push(`新標題還有問題：${titleIssue}`);
   }
   if (keepTitle) notes.push(`原本引用的《${keepTitle}》已確認保留。`);
   if (problems.length) notes.push(`重寫三次後仍有要注意的地方：${problems.slice(0, 3).join("；")}`);
@@ -412,5 +428,6 @@ export async function rewriteExamples(input: RewriteExamplesInput): Promise<Rewr
     warnNotes: [...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message)],
     blockedReason,
     changed: draft.trim() !== before.trim(),
+    titleChanged: firstLine(draft) !== firstLine(before),
   };
 }

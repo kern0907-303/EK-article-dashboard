@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildExampleRewritePrompt, EXAMPLE_STANDARD } from "../src/data/skills/example-rewrite-prompt";
+import { buildExampleRewritePrompt, EXAMPLE_STANDARD, TITLE_STANDARD } from "../src/data/skills/example-rewrite-prompt";
+import { hardToReadTitle } from "../src/lib/quality-gate";
 import {
   clearStalePlatform, existingDerivatives, markDerivativesStale, readStalePlatforms,
 } from "../src/data/skills/derivative-sync";
@@ -121,5 +122,55 @@ assert.ok(page.includes("/api/auto-pipeline/rewrite-examples"));
 assert.ok(page.includes("確認內容，同步其他平台"), "要在確認內容之後才同步");
 assert.ok(/for \(let n = 0; n < rows\.length; n\+\+\)/.test(page), "同步要依序一個平台跑一次，不要同時發四個");
 assert.ok(page.includes("哪裡不妥、哪一段看不懂"), "要能寫清楚哪裡看不懂");
+
+// 2026-10-29 回歸案例：他按了一鍵重寫，內文確實換了，但他說「一個字沒變」。
+// 兩個原因都是我的：畫面重寫後沒有重新載入清單，點回那一則會讀到舊內容；
+// 而他真正看不懂的那一行是標題，標題被我鎖成一個字都不能改，模型想改還被換回去。
+
+// 標題預設鎖住
+assert.ok(locked.includes("標題一個字都不要改"));
+assert.ok(!locked.includes("標題要重寫"));
+// 勾了「標題也要重寫」才解鎖，而且條件要寫清楚
+const titleOn = buildExampleRewritePrompt({ draft, keepCitationTitle: null, allowTitle: true });
+assert.ok(!titleOn.includes("標題一個字都不要改"), "解鎖後不可以還鎖著");
+assert.ok(titleOn.includes("標題要重寫，條件如下"));
+assert.ok(titleOn.includes(TITLE_STANDARD));
+assert.ok(TITLE_STANDARD.includes("文章裡真的寫出來的畫面"), "標題不可以寫文章沒有的場景");
+assert.ok(TITLE_STANDARD.includes("一次讀完就要懂"));
+assert.ok(TITLE_STANDARD.includes("兩個否定詞"));
+assert.ok(TITLE_STANDARD.includes("論點不變"), "換標題不等於換主題");
+// 解鎖後論點與結構還是鎖著
+assert.ok(titleOn.includes("核心論點"));
+assert.ok(titleOn.includes("段落順序"));
+
+// 標題好不好讀：只提醒不擋稿
+const badTitle = "簽下離婚協議那天，她把客廳十九年份的日曆一張張撕下來，沒有勇氣不是留下來的原因";
+assert.ok(hardToReadTitle(badTitle).includes("否定詞"), "兩個否定詞要被抓出來");
+assert.equal(hardToReadTitle("她等了十九年，等的不是兒子成年"), "", "一個否定詞的短標題要放行");
+assert.equal(hardToReadTitle("兒子搬進宿舍那天，她拉著兩個行李箱走出住了十九年的家"), "", "場景型標題要放行");
+assert.ok(hardToReadTitle("第一句，第二句，第三句").includes("短句"), "三個短句黏成一串要提醒");
+assert.equal(hardToReadTitle(""), "");
+// 標題檢查吃的是第一行，不是整篇
+assert.equal(hardToReadTitle(`她等了十九年\n\n沒有勇氣不是留下來的原因，也不是能力不足`), "");
+
+const gate = readFileSync("src/lib/quality-gate.ts", "utf8");
+assert.ok(gate.includes('code: "title_readability"'), "要進品管關卡讓審稿端看得到");
+assert.ok(/title_readability[\s\S]{0,120}?level: "warn"|level: "warn"[\s\S]{0,120}?title_readability/.test(gate), "標題只提醒不擋稿");
+
+const gen = readFileSync("src/lib/auto-generate.ts", "utf8");
+assert.ok(gen.includes("allowTitle"), "換例子要能解鎖標題");
+assert.ok(/titleChanged && !allowTitle/.test(gen), "只有鎖住時才把標題換回去");
+assert.ok(gen.includes("hardToReadTitle"), "換完標題要檢查好不好讀");
+
+const route2 = readFileSync("src/app/api/auto-pipeline/rewrite-examples/route.ts", "utf8");
+assert.ok(route2.includes("allowTitle"), "端點要收這個開關");
+
+const page2 = readFileSync("src/app/needs-attention/page.tsx", "utf8");
+assert.ok(page2.includes("標題也要重寫"), "畫面要有這個勾選");
+assert.ok(page2.includes("allowTitle: rewriteTitle"), "勾選要送出去");
+// 重寫成功後一定要重新載入清單，否則點回那一則會看到舊內容
+assert.ok(/await load\(\);\s*\n\s*setDraft\(after\);/.test(page2), "重寫後要先重載清單再放回新稿");
+
+console.log("標題解鎖與重載測試通過");
 
 console.log("rewrite-examples 測試通過");

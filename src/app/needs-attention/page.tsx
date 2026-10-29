@@ -52,8 +52,9 @@ export default function NeedsAttentionPage() {
   const [problems, setProblems] = useState<string[]>([]);
   const [serverWords, setServerWords] = useState<string[]>([]);
   const [rewriteNote, setRewriteNote] = useState("");
+  const [rewriteTitle, setRewriteTitle] = useState(false);
   const [rewriting, setRewriting] = useState(false);
-  const [rewriteInfo, setRewriteInfo] = useState<{ afterTitle: string; titleKept: boolean; notes: string[] } | null>(null);
+  const [rewriteInfo, setRewriteInfo] = useState<{ afterTitle: string; titleKept: boolean; allowTitle: boolean; notes: string[] } | null>(null);
   const [stale, setStale] = useState<DerivativePlatform[]>([]);
   const [syncRows, setSyncRows] = useState<SyncRow[]>([]);
   const [syncing, setSyncing] = useState(false);
@@ -107,7 +108,7 @@ export default function NeedsAttentionPage() {
   const select = (i: Item) => {
     setSelectedKey(i.key); setEditing(i.canEdit); setDraft(i.full); setWhenLocal(toLocalInput(i.scheduledAt));
     setProblems([]); setServerWords([]); setForce(false); setNotice("");
-    setRewriteNote(""); setRewriteInfo(null); setSyncRows([]); setStale(i.stalePlatforms || []);
+    setRewriteNote(""); setRewriteTitle(false); setRewriteInfo(null); setSyncRows([]); setStale(i.stalePlatforms || []);
   };
 
   /**
@@ -120,14 +121,20 @@ export default function NeedsAttentionPage() {
     try {
       const res = await fetch("/api/auto-pipeline/rewrite-examples", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: i.jobId, note: rewriteNote }),
+        body: JSON.stringify({ jobId: i.jobId, note: rewriteNote, allowTitle: rewriteTitle }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "重寫失敗");
-      setDraft(String(data.after || ""));
-      setRewriteInfo({ afterTitle: String(data.afterTitle || ""), titleKept: data.titleKept !== false, notes: Array.isArray(data.notes) ? data.notes : [] });
+      const after = String(data.after || "");
+      setRewriteInfo({
+        afterTitle: String(data.afterTitle || ""), titleKept: data.titleKept !== false,
+        allowTitle: data.allowTitle === true, notes: Array.isArray(data.notes) ? data.notes : [],
+      });
       setStale(Array.isArray(data.stalePlatforms) ? data.stalePlatforms : []);
       setNotice(String(data.message || "已重寫。"));
+      // 重新載入清單，否則左邊那一列還是舊內容，點回這一則會看到舊版，像是什麼都沒改
+      await load();
+      setDraft(after);
     } catch (e) { setNotice(e instanceof Error ? e.message : "重寫失敗"); }
     finally { setRewriting(false); }
   };
@@ -287,13 +294,17 @@ export default function NeedsAttentionPage() {
                       <textarea value={rewriteNote} onChange={(e) => setRewriteNote(e.target.value)} rows={2} disabled={rewriting}
                         placeholder="例如：第二段那個開會的例子看不懂，換成一個一個人在家裡的場景" className="rounded-lg border border-white/20 bg-slate-900 p-2 text-sm text-slate-100" />
                     </label>
-                    <p className="text-xs leading-6 text-violet-100/80">一鍵重寫只換故事與舉例，標題、論點、段落順序與結尾都不動。新版沒通過品管或引用查證就不會存，原稿保留。</p>
+                    <label className="flex items-start gap-2 text-sm text-violet-50">
+                      <input type="checkbox" checked={rewriteTitle} onChange={(e) => setRewriteTitle(e.target.checked)} disabled={rewriting} className="mt-1" />
+                      <span>標題也要重寫（論點不變。看不懂的那一行是標題本身時勾這個，不勾會鎖住標題）</span>
+                    </label>
+                    <p className="text-xs leading-6 text-violet-100/80">{rewriteTitle ? "會連標題一起換。新標題必須用文章裡真的寫出來的場景，一次讀完要懂，不可以兩個否定詞。" : "只換故事與舉例，標題、論點、段落順序與結尾都不動。"}新版沒通過品管或引用查證就不會存，原稿保留。</p>
                   </div>
                 )}
                 {rewriteInfo && (
                   <div className="rounded-lg border border-violet-400/40 bg-violet-400/10 p-3 text-sm text-violet-50">
                     <b>已重寫，新版已經在下面的編輯框裡。</b>
-                    <p className="mt-1 text-xs leading-6">標題：{rewriteInfo.titleKept ? "沒有改動" : `已換回原標題（${rewriteInfo.afterTitle}）`}</p>
+                    <p className="mt-1 text-xs leading-6">標題：{rewriteInfo.titleKept ? "沒有改動" : rewriteInfo.allowTitle ? `已換成「${rewriteInfo.afterTitle}」` : `模型想改，已換回原標題（${rewriteInfo.afterTitle}）`}</p>
                     {rewriteInfo.notes.length > 0 && <ul className="mt-1 list-inside list-disc space-y-1 text-xs">{rewriteInfo.notes.map((n, k) => <li key={k}>{n}</li>)}</ul>}
                     <p className="mt-2 text-xs leading-6">讀過沒問題就按下面的同步，其他平台才會跟著換。只想再改幾個字就直接改編輯框，然後按「儲存修改」。</p>
                   </div>

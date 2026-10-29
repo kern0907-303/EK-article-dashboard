@@ -266,8 +266,34 @@ export function checkConsistency(master: string, derived: string): GateIssue[] {
 export interface GateOptions { platform: GatePlatform; master?: string }
 
 /** 一次跑完所有機械檢查 */
+/**
+ * 標題好不好讀。只提醒不擋稿。
+ *
+ * 2026-10-29 實例：「簽下離婚協議那天，她把客廳十九年份的日曆一張張撕下來，沒有勇氣不是
+ * 留下來的原因」。兩個否定詞疊在一起，加上三個短句黏成一長串，要讀三遍才知道在說什麼。
+ * 標題是讀者唯一一定會看到的那一行，所以單獨檢查它。
+ */
+const TITLE_NEGATIONS = /不是|不會|不能|不用|沒有|不必|並非|未必/g;
+
+export function hardToReadTitle(text: string): string {
+  const title = String(text || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
+  if (!title) return "";
+  TITLE_NEGATIONS.lastIndex = 0;
+  const negations = title.match(TITLE_NEGATIONS) || [];
+  const clauses = title.split(/[，,、]/).map((part) => part.trim()).filter(Boolean);
+  if (negations.length >= 2) return `標題有兩個否定詞（${[...new Set(negations)].join("、")}），讀者要讀兩遍才懂，建議正面說`;
+  if (clauses.length >= 3) return `標題有 ${clauses.length} 個短句黏成一串，建議收到兩句以內`;
+  if (title.length > 42) return `標題 ${title.length} 字偏長，建議收到 40 字以內`;
+  return "";
+}
+
 export function runQualityGate(text: string, options: GateOptions): GateIssue[] {
   const issues = [...checkGarbled(text), ...checkFormat(text, options.platform)];
+  // 標題只在 FB 主稿與官網文章有意義，社群短稿與圖卡沒有獨立標題
+  if (options.platform === "facebook" || options.platform === "website") {
+    const titleIssue = hardToReadTitle(text);
+    if (titleIssue) issues.push({ level: "warn", code: "title_readability", message: titleIssue });
+  }
   if (options.master && options.platform !== "facebook") issues.push(...checkConsistency(options.master, text));
   return issues;
 }

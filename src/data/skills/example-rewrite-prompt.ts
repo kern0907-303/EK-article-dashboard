@@ -17,6 +17,21 @@ export const EXAMPLE_STANDARD = [
   "不可以編造數字、成效、見證，例如三週改善八成、業績成長兩倍、客戶回報如何。",
 ].join("\n");
 
+/**
+ * 一個看得懂的標題要守住的條件。
+ * 2026-10-29 實例：「簽下離婚協議那天，她把客廳十九年份的日曆一張張撕下來，沒有勇氣不是
+ * 留下來的原因」。撕日曆的畫面文章裡沒有，「沒有勇氣不是原因」有兩個否定，三個短句用逗號
+ * 黏在一起。三個問題都在這裡寫成明確條件。
+ */
+export const TITLE_STANDARD = [
+  "標題寫的場景必須是文章裡真的寫出來的畫面。文章沒寫到的東西不可以出現在標題。",
+  "一次讀完就要懂，不可以讓人回頭重讀。",
+  "整個標題最多兩個短句，不要三句以上用逗號黏成一長串。",
+  "不可以出現兩個否定詞，例如沒有什麼不是什麼的原因。要說就正面說。",
+  "品牌名稱不要出現在標題裡，也不要當主詞。",
+  "論點不變。換的是說法，不是換一個主題。",
+].join("\n");
+
 export interface ExampleRewriteInput {
   /** 上一版全文 */
   draft: string;
@@ -26,6 +41,8 @@ export interface ExampleRewriteInput {
   note?: string;
   /** 上一輪重寫後仍然被抓到的問題，每則一句話 */
   problems?: string[];
+  /** true 代表標題也要重寫。預設鎖住標題，只有他指定時才解鎖 */
+  allowTitle?: boolean;
 }
 
 /**
@@ -34,22 +51,25 @@ export interface ExampleRewriteInput {
  * 只送上一版全文加上「只能動哪裡」，模型照著改。
  */
 export function buildExampleRewritePrompt(input: ExampleRewriteInput): string {
-  const { draft, keepCitationTitle, note, problems } = input;
+  const { draft, keepCitationTitle, note, problems, allowTitle } = input;
   const list = (problems || []).filter((item) => String(item || "").trim());
   return [
     "【換例子的修改任務，不是重新創作】",
     "下面是上一版文章全文。它的題目、論點與結論是對的，不要換。問題只在舉的例子不妥或讀者看不懂。",
     "",
     "【不可以動的部分】",
-    "標題一個字都不要改。",
+    ...(allowTitle ? [] : ["標題一個字都不要改。"]),
     "整篇的核心論點、立場與結論不要改，不要換成另一個主題。",
     "段落順序、小標數量與小標文字不要改。",
     "結尾的行動呼籲不要改。",
     "全文長度與上一版相近，不要變成另一種篇幅。",
     "",
     "【要換掉的部分】",
-    "只換故事、情境與舉例的段落。換成同樣支撐原本論點、但讀者一看就懂的例子。",
+    allowTitle
+      ? "標題，以及故事、情境與舉例的段落。換成同樣支撐原本論點、但讀者一看就懂的版本。"
+      : "只換故事、情境與舉例的段落。換成同樣支撐原本論點、但讀者一看就懂的例子。",
     "",
+    ...(allowTitle ? ["【標題要重寫，條件如下】", TITLE_STANDARD, ""] : []),
     "【什麼叫做一個看得懂的例子】",
     EXAMPLE_STANDARD,
     "",
