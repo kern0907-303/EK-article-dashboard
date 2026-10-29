@@ -173,4 +173,18 @@ assert.ok(/await load\(\);\s*\n\s*setDraft\(after\);/.test(page2), "重寫後要
 
 console.log("標題解鎖與重載測試通過");
 
+// 2026-10-29：標題手動改掉之後，圖卡上印的還是舊標題，而且沒有任何地方只能重做圖卡。
+// 圖卡會跟著貼文發出去，所以這是「該接的沒接上」的同一類洞。
+const pipeline2 = readFileSync("src/app/api/auto-pipeline/route.ts", "utf8");
+assert.ok(pipeline2.includes('action === "remake_card"'), "要有只重做圖卡的動作");
+assert.ok(/remake_card[\s\S]{0,1400}?makeCardUrl/.test(pipeline2), "要真的重畫一張");
+assert.ok(/remake_card[\s\S]{0,1800}?image_url: card\.url/.test(pipeline2), "要寫回排程列的圖卡網址");
+assert.ok(/remake_card[\s\S]{0,1600}?status !== "pending"/.test(pipeline2), "已派發的不可以換圖");
+assert.ok(!/remake_card[\s\S]{0,1600}?callErickCOO/.test(pipeline2), "重做圖卡不可以呼叫 AI");
+
+const page3 = readFileSync("src/app/needs-attention/page.tsx", "utf8");
+assert.ok(page3.includes("重做標題圖卡"), "待處理中心要有這顆按鈕");
+assert.ok(page3.includes('action: "remake_card"'));
+assert.ok(page3.includes("這是會跟著貼文發出去的圖卡"), "重做後要讓他看到那張圖");
+
 console.log("rewrite-examples 測試通過");

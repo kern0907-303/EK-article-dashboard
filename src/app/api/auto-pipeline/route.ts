@@ -135,6 +135,33 @@ export async function PATCH(req: NextRequest) {
       const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: reviewedAfterPipelineEdit(current.queue_id, !!scheduledNow), ...(contentChanged && hadDerivatives ? { social_results: priorSocial } : {}), updated_at: new Date().toISOString() }) });
       return NextResponse.json({ success: true, job: updated[0], warnings, editNotes, derivativesStale: contentChanged && hadDerivatives, stalePlatforms: contentChanged && hadDerivatives ? stalePlatforms : [], guardrailHits: checked.guardrailHits, ...(scheduledNow ? { scheduled: true, queueId: scheduledNow.queueId, cardNote: scheduledNow.cardNote } : {}) });
     }
+    /**
+     * 重做標題圖卡。
+     *
+     * 為什麼需要：圖卡上印的是文章第一行。標題改了圖卡就不對了，但手改標題（含直接改資料）
+     * 之後沒有任何地方可以只重做圖卡，結果發出去的圖還是舊標題。
+     * 這支不呼叫 AI、不花額度，只重畫一張圖。
+     */
+    if (action === "remake_card" && typeof id === "string") {
+      const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}&select=id,brand_id,queue_id&limit=1`);
+      const job = rows[0];
+      if (!job) return NextResponse.json({ error: "找不到這個任務" }, { status: 404 });
+      if (!job.queue_id) return NextResponse.json({ error: "這則還沒排程，沒有圖卡可以重做" }, { status: 409 });
+      const queueRows = await pipelineDb<any[]>("publish_queue", `id=eq.${encodeURIComponent(job.queue_id)}&select=id,status,content,image_url&limit=1`);
+      const queued = queueRows[0];
+      if (!queued) return NextResponse.json({ error: "找不到排程列" }, { status: 404 });
+      if (queued.status !== "pending") return NextResponse.json({ error: "排程已進入派發或完成，無法再換圖" }, { status: 409 });
+      const card = await makeCardUrl(String(job.brand_id), String(queued.content || ""));
+      if (!card.url) return NextResponse.json({ error: `圖卡重做失敗：${String(card.error || "沒有回傳網址")}` }, { status: 502 });
+      const res = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(job.queue_id)}&status=eq.pending`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ image_url: card.url, updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error(`更新圖卡網址失敗（${res.status}）`);
+      const updated = await res.json();
+      if (!Array.isArray(updated) || !updated.length) return NextResponse.json({ error: "排程在更新前已進入派發" }, { status: 409 });
+      return NextResponse.json({ success: true, imageUrl: card.url, previousImageUrl: queued.image_url || null, title: firstLine(String(queued.content || "")) });
+    }
     if (action !== "cancel") return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
     const filter = typeof id === "string" ? `id=eq.${encodeURIComponent(id)}` : `batch_id=eq.${encodeURIComponent(batchId)}`;
     const jobs = await pipelineDb<any[]>("auto_pipeline_jobs", `${filter}&status=in.(pending,generating,optimizing,scheduled)`, {});

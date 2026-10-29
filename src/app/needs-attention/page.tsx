@@ -58,6 +58,7 @@ export default function NeedsAttentionPage() {
   const [stale, setStale] = useState<DerivativePlatform[]>([]);
   const [syncRows, setSyncRows] = useState<SyncRow[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [cardUrl, setCardUrl] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,7 +109,7 @@ export default function NeedsAttentionPage() {
   const select = (i: Item) => {
     setSelectedKey(i.key); setEditing(i.canEdit); setDraft(i.full); setWhenLocal(toLocalInput(i.scheduledAt));
     setProblems([]); setServerWords([]); setForce(false); setNotice("");
-    setRewriteNote(""); setRewriteTitle(false); setRewriteInfo(null); setSyncRows([]); setStale(i.stalePlatforms || []);
+    setRewriteNote(""); setRewriteTitle(false); setRewriteInfo(null); setSyncRows([]); setCardUrl(""); setStale(i.stalePlatforms || []);
   };
 
   /**
@@ -199,6 +200,22 @@ export default function NeedsAttentionPage() {
     } catch (e) { setNotice(e instanceof Error ? e.message : "儲存失敗"); }
     finally { setBusy(false); }
   };
+  /** 重做標題圖卡。圖卡上印的是第一行，標題改了就要重畫。不呼叫 AI。 */
+  const remakeCard = async (i: Item) => {
+    setBusy(true); setNotice(""); setCardUrl("");
+    try {
+      const res = await fetch("/api/auto-pipeline", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: i.refId, action: "remake_card" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "圖卡重做失敗");
+      setCardUrl(String(data.imageUrl || ""));
+      setNotice(`圖卡已用現在的標題重做：${String(data.title || "")}`);
+    } catch (e) { setNotice(e instanceof Error ? e.message : "圖卡重做失敗"); }
+    finally { setBusy(false); }
+  };
+
   const cancel = (i: Item) => {
     if (!window.confirm("確定取消這則排程？")) return;
     return call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "cancel" }, "已取消。");
@@ -285,6 +302,9 @@ export default function NeedsAttentionPage() {
                   {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
                   {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
                   {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
+                  {selected.source === "job" && selected.queued && (
+                    <button disabled={busy || rewriting || syncing} onClick={() => void remakeCard(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50" title="圖卡上印的是文章第一行，標題改了要重畫。不花 AI 額度">重做標題圖卡</button>
+                  )}
                   {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
                 </div>
                 {selected.canEdit && selected.source === "job" && selected.jobId && (
@@ -327,6 +347,12 @@ export default function NeedsAttentionPage() {
                       </li>
                     ))}
                   </ul>
+                )}
+                {cardUrl && (
+                  <figure className="flex flex-col gap-1 rounded-lg border border-emerald-400/40 bg-emerald-400/10 p-2">
+                    <img src={cardUrl} alt="重做後的標題圖卡" className="w-full rounded" />
+                    <figcaption className="text-xs text-emerald-100">這是會跟著貼文發出去的圖卡。</figcaption>
+                  </figure>
                 )}
                 {selected.canEdit && <h3 className="text-sm font-semibold text-sky-200">修改文案</h3>}
                 {selected.canEdit ? (
