@@ -6,6 +6,8 @@ import { blockingIssues, checkGenreText } from "@/lib/genre-check";
 import { PROMPT_VERSION } from "@/data/skills/genres";
 import { scheduleManualJob } from "@/lib/auto-pipeline-schedule";
 import { enforceCopyRules } from "@/lib/quality-gate";
+import { firstLine, makeCardUrl } from "@/lib/auto-generate";
+import { existingDerivatives, markDerivativesStale } from "@/data/skills/derivative-sync";
 
 function disabled() {
   return NextResponse.json({ error: "自動流水線尚未啟用。設定 AUTO_PIPELINE_ENABLED=true 後才會啟用。", enabled: false }, { status: 404 });
@@ -89,14 +91,32 @@ export async function PATCH(req: NextRequest) {
         console.info("[auto-pipeline] edited draft guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
       }
       if (issues.length) return NextResponse.json({ error: "文案仍有阻擋項目，修正後再儲存。", violations: issues.map((item) => item.message), warnings, guardrailHits: checked.guardrailHits }, { status: 422 });
+      // 手動改稿也要接上：標題變了圖卡要重做，內容變了衍生稿要標成待同步。
+      // 少了這兩步，發出去的圖卡還是舊標題，官網與社群還是舊內容。
+      const contentChanged = String(current.draft_content || "") !== updatedContent;
+      const titleChanged = firstLine(String(current.draft_content || "")) !== firstLine(updatedContent);
+      const editNotes: string[] = [];
       if (current.queue_id) {
+        const queuePatch: Record<string, unknown> = { content: updatedContent, updated_at: new Date().toISOString() };
+        if (titleChanged) {
+          const card = await makeCardUrl(String(current.brand_id), updatedContent);
+          if (card.url) { queuePatch.image_url = card.url; editNotes.push("標題變了，已重做標題圖卡。"); }
+          else editNotes.push(`標題變了但圖卡重做失敗，沿用舊圖：${String(card.error || "").slice(0, 120)}`);
+        }
         const queueRes = await fetch(`${env.url}/rest/v1/publish_queue?id=eq.${encodeURIComponent(current.queue_id)}&source=eq.auto_pipeline&status=eq.pending`, {
           method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
-          body: JSON.stringify({ content: updatedContent, updated_at: new Date().toISOString() }),
+          body: JSON.stringify(queuePatch),
         });
         if (!queueRes.ok) throw new Error(`更新排程文案失敗（${queueRes.status}）`);
         const queueRows = await queueRes.json();
         if (!Array.isArray(queueRows) || !queueRows.length) return NextResponse.json({ error: "排程已進入派發或完成，無法再修改" }, { status: 409 });
+      }
+      const stalePlatforms = existingDerivatives(current.social_results, !!current.queue_id);
+      const hadDerivatives = stalePlatforms.length > 0;
+      let priorSocial: Record<string, unknown> = {};
+      if (contentChanged && hadDerivatives) {
+        priorSocial = markDerivativesStale(current.social_results, !!current.queue_id);
+        editNotes.push("主稿改了，官網、IG、Threads 還是舊內容，請在待處理中心按同步。");
       }
       // 手動待處理的任務：改完要直接排程發佈（一個動作完成，不再停在已儲存）
       let scheduledNow: { queueId: string; cardNote: string } | null = null;
@@ -110,10 +130,10 @@ export async function PATCH(req: NextRequest) {
         updatedContent = gate.text;
       }
       const priorWarnings = Array.isArray(current.warnings) ? current.warnings.filter((warning: unknown) => typeof warning === "string" && warning.startsWith("發文前提醒（不在文章裡）：")) : [];
-      const nextWarnings = [...new Set([...priorWarnings, ...warnings])];
+      const nextWarnings = [...new Set([...priorWarnings, ...warnings, ...editNotes])];
       // 只儲存尚未排程的草稿，不等於已完成排程或審稿；否則待處理中心會把它藏掉。
-      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: reviewedAfterPipelineEdit(current.queue_id, !!scheduledNow), updated_at: new Date().toISOString() }) });
-      return NextResponse.json({ success: true, job: updated[0], warnings, guardrailHits: checked.guardrailHits, ...(scheduledNow ? { scheduled: true, queueId: scheduledNow.queueId, cardNote: scheduledNow.cardNote } : {}) });
+      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: reviewedAfterPipelineEdit(current.queue_id, !!scheduledNow), ...(contentChanged && hadDerivatives ? { social_results: priorSocial } : {}), updated_at: new Date().toISOString() }) });
+      return NextResponse.json({ success: true, job: updated[0], warnings, editNotes, derivativesStale: contentChanged && hadDerivatives, stalePlatforms: contentChanged && hadDerivatives ? stalePlatforms : [], guardrailHits: checked.guardrailHits, ...(scheduledNow ? { scheduled: true, queueId: scheduledNow.queueId, cardNote: scheduledNow.cardNote } : {}) });
     }
     if (action !== "cancel") return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
     const filter = typeof id === "string" ? `id=eq.${encodeURIComponent(id)}` : `batch_id=eq.${encodeURIComponent(batchId)}`;

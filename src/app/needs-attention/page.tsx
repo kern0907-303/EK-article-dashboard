@@ -11,7 +11,11 @@ interface Item {
   source: "job" | "fb_queue" | "social_queue"; refId: string; jobId: string | null;
   derivativePlatform?: "website" | "instagram" | "threads";
   canEdit: boolean; queued?: boolean; canRetry: boolean; retryRisk: string | null; canMarkDone: boolean; canCancel: boolean; canDismiss: boolean;
+  stalePlatforms: DerivativePlatform[];
 }
+type DerivativePlatform = "website" | "instagram" | "threads";
+const DERIVATIVE_LABEL: Record<DerivativePlatform, string> = { website: "官網文章", instagram: "IG 輪播", threads: "Threads" };
+interface SyncRow { platform: DerivativePlatform; state: "waiting" | "running" | "done" | "failed"; message: string }
 
 const KINDS: { id: Kind; label: string; hint: string; tone: string }[] = [
   { id: "review", label: "待審稿", hint: "看過點頭就好", tone: "border-amber-400/40 bg-amber-400/10 text-amber-100" },
@@ -47,6 +51,12 @@ export default function NeedsAttentionPage() {
   const [force, setForce] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const [serverWords, setServerWords] = useState<string[]>([]);
+  const [rewriteNote, setRewriteNote] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteInfo, setRewriteInfo] = useState<{ afterTitle: string; titleKept: boolean; notes: string[] } | null>(null);
+  const [stale, setStale] = useState<DerivativePlatform[]>([]);
+  const [syncRows, setSyncRows] = useState<SyncRow[]>([]);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,6 +107,61 @@ export default function NeedsAttentionPage() {
   const select = (i: Item) => {
     setSelectedKey(i.key); setEditing(i.canEdit); setDraft(i.full); setWhenLocal(toLocalInput(i.scheduledAt));
     setProblems([]); setServerWords([]); setForce(false); setNotice("");
+    setRewriteNote(""); setRewriteInfo(null); setSyncRows([]); setStale(i.stalePlatforms || []);
+  };
+
+  /**
+   * 一鍵重寫：題目與論點不變，只換掉故事與舉例。
+   * 重寫完不會自動同步其他平台，先讓他讀過內容，確認之後再按同步。
+   */
+  const rewriteOne = async (i: Item) => {
+    if (!i.jobId) return;
+    setRewriting(true); setNotice(""); setProblems([]); setRewriteInfo(null); setSyncRows([]);
+    try {
+      const res = await fetch("/api/auto-pipeline/rewrite-examples", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: i.jobId, note: rewriteNote }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "重寫失敗");
+      setDraft(String(data.after || ""));
+      setRewriteInfo({ afterTitle: String(data.afterTitle || ""), titleKept: data.titleKept !== false, notes: Array.isArray(data.notes) ? data.notes : [] });
+      setStale(Array.isArray(data.stalePlatforms) ? data.stalePlatforms : []);
+      setNotice(String(data.message || "已重寫。"));
+    } catch (e) { setNotice(e instanceof Error ? e.message : "重寫失敗"); }
+    finally { setRewriting(false); }
+  };
+
+  /**
+   * 確認內容之後，把其他平台一個一個換成新主稿寫出來的版本。
+   * 刻意一次只打一個平台，不同時跑，哪一個失敗都看得出來，也不會四個平台一起燒。
+   */
+  const syncDerivatives = async (i: Item) => {
+    if (!i.jobId || !stale.length) return;
+    setSyncing(true); setNotice("");
+    const rows: SyncRow[] = stale.map((platform) => ({ platform, state: "waiting", message: "" }));
+    setSyncRows([...rows]);
+    for (let n = 0; n < rows.length; n++) {
+      rows[n] = { ...rows[n], state: "running", message: "重寫中…" };
+      setSyncRows([...rows]);
+      try {
+        const res = await fetch("/api/auto-pipeline/reoptimize", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: rows[n].platform, jobId: i.jobId, dryRun: false, limit: 1 }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `失敗（${res.status}）`);
+        const skipped = Array.isArray(data.skipped) && data.skipped.length ? String(data.skipped[0].reason || "") : "";
+        if (data.processed) rows[n] = { ...rows[n], state: "done", message: "已換成新版" };
+        else rows[n] = { ...rows[n], state: "failed", message: skipped || "沒有可同步的項目" };
+      } catch (e) { rows[n] = { ...rows[n], state: "failed", message: e instanceof Error ? e.message.slice(0, 120) : "失敗" }; }
+      setSyncRows([...rows]);
+    }
+    const left = rows.filter((row) => row.state !== "done").map((row) => DERIVATIVE_LABEL[row.platform]);
+    setStale(rows.filter((row) => row.state !== "done").map((row) => row.platform));
+    setNotice(left.length ? `還有沒換成功的：${left.join("、")}。原內容保留，可以再按一次同步。` : "官網、IG、Threads 都已經換成新版。");
+    setSyncing(false);
+    await load();
   };
   /** 儲存文案。schedule 為 true 時，同一個動作把還沒排程的任務排進發佈佇列。 */
   const saveEdit = async (i: Item, schedule: boolean) => {
@@ -206,12 +271,52 @@ export default function NeedsAttentionPage() {
                   {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
                     <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並排程發佈"}</button>
                   )}
+                  {selected.canEdit && selected.source === "job" && selected.jobId && (
+                    <button disabled={busy || rewriting || syncing} onClick={() => void rewriteOne(selected)} className="min-h-[48px] rounded-lg bg-violet-500 px-5 text-base font-bold text-white disabled:opacity-50">{rewriting ? "重寫中，約 1 分鐘…" : "一鍵重寫（換例子）"}</button>
+                  )}
                   {selected.canEdit && <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>}
                   {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
                   {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
                   {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
                   {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
                 </div>
+                {selected.canEdit && selected.source === "job" && selected.jobId && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-violet-400/30 bg-violet-400/10 p-3 text-sm">
+                    <label className="flex flex-col gap-1 text-xs text-violet-100">
+                      哪裡不妥、哪一段看不懂（可留空，寫了會照著改）
+                      <textarea value={rewriteNote} onChange={(e) => setRewriteNote(e.target.value)} rows={2} disabled={rewriting}
+                        placeholder="例如：第二段那個開會的例子看不懂，換成一個一個人在家裡的場景" className="rounded-lg border border-white/20 bg-slate-900 p-2 text-sm text-slate-100" />
+                    </label>
+                    <p className="text-xs leading-6 text-violet-100/80">一鍵重寫只換故事與舉例，標題、論點、段落順序與結尾都不動。新版沒通過品管或引用查證就不會存，原稿保留。</p>
+                  </div>
+                )}
+                {rewriteInfo && (
+                  <div className="rounded-lg border border-violet-400/40 bg-violet-400/10 p-3 text-sm text-violet-50">
+                    <b>已重寫，新版已經在下面的編輯框裡。</b>
+                    <p className="mt-1 text-xs leading-6">標題：{rewriteInfo.titleKept ? "沒有改動" : `已換回原標題（${rewriteInfo.afterTitle}）`}</p>
+                    {rewriteInfo.notes.length > 0 && <ul className="mt-1 list-inside list-disc space-y-1 text-xs">{rewriteInfo.notes.map((n, k) => <li key={k}>{n}</li>)}</ul>}
+                    <p className="mt-2 text-xs leading-6">讀過沒問題就按下面的同步，其他平台才會跟著換。只想再改幾個字就直接改編輯框，然後按「儲存修改」。</p>
+                  </div>
+                )}
+                {selected.jobId && stale.length > 0 && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-sky-400/40 bg-sky-400/10 p-3 text-sm text-sky-50">
+                    <b>其他平台還是舊內容：{stale.map((p) => DERIVATIVE_LABEL[p]).join("、")}</b>
+                    <p className="text-xs leading-6">確認上面的內容沒問題之後按這個按鈕。一次換一個平台，依序跑完，哪一個失敗都會列出來。</p>
+                    <button disabled={syncing || rewriting || busy} onClick={() => void syncDerivatives(selected)} className="min-h-[48px] rounded-lg bg-sky-500 px-5 text-base font-bold text-white disabled:opacity-50">{syncing ? "同步中，請不要關閉這個頁面…" : "確認內容，同步其他平台"}</button>
+                  </div>
+                )}
+                {syncRows.length > 0 && (
+                  <ul className="flex flex-col gap-1 rounded-lg border border-white/10 bg-slate-900 p-3 text-xs">
+                    {syncRows.map((row) => (
+                      <li key={row.platform} className="flex items-center justify-between gap-3">
+                        <span className="font-semibold">{DERIVATIVE_LABEL[row.platform]}</span>
+                        <span className={row.state === "done" ? "text-emerald-300" : row.state === "failed" ? "text-rose-300" : "text-slate-300"}>
+                          {row.state === "waiting" ? "等待中" : row.state === "running" ? "重寫中…" : row.message}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {selected.canEdit && <h3 className="text-sm font-semibold text-sky-200">修改文案</h3>}
                 {selected.canEdit ? (
                   <FindableTextarea value={draft} onChange={setDraft} words={[...new Set([...extractRedlineWords([selected.reason]), ...serverWords])]} rows={16} disabled={busy} />

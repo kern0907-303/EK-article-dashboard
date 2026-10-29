@@ -59,7 +59,8 @@ assert.ok(reopt.includes("generated.blockedReason"), "新稿沒過品管要保�
 assert.ok(reopt.includes("dryRun"), "要有試算模式");
 assert.ok(reopt.includes("FB 主稿還是舊規則，請先重寫主稿"), "主稿還舊時不可以重寫衍生稿");
 assert.ok(reopt.includes("rules_version"), "衍生平台的規則版本要記錄");
-assert.ok(reopt.includes("delete previous.rules_version"), "主稿換了要讓衍生稿重新被列為待重寫");
+assert.ok(reopt.includes("markDerivativesStale"), "主稿換了要讓衍生稿重新被列為待重寫");
+assert.ok(reopt.includes("clearStalePlatform"), "某個平台同步完要從待同步清單移掉");
 
 // 衍生稿重寫：時間與排程列不變，只換內容，沒過關就不動
 const multi = readFileSync("src/lib/auto-multiplatform.ts", "utf8");

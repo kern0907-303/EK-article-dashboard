@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { clearStalePlatform, existingDerivatives, markDerivativesStale } from "@/data/skills/derivative-sync";
 import { rewriteSocialPost, rewriteWebsiteArticle } from "@/lib/auto-multiplatform";
 import {
   amplifierNote, brandNameOf, firstLine, generateFacebookDraft, isCurrentRules, makeCardUrl,
@@ -187,9 +188,8 @@ export async function POST(req: NextRequest) {
             ? row.warnings.filter((w: unknown) => typeof w === "string" && !w.startsWith(RULES_VERSION_PREFIX) && w.startsWith("發文前提醒"))
             : [];
           // 主稿換了，之前跟著舊主稿產生的衍生稿就不同步了，把它們的規則版本清掉，試算時才會被列出來
-          const previous = row.social_results && typeof row.social_results === "object" ? { ...(row.social_results as Record<string, unknown>) } : {};
-          const hadDerivatives = Boolean(item.articleId) || Boolean((previous as any).instagram) || Boolean((previous as any).threads);
-          delete previous.rules_version;
+          const hadDerivatives = existingDerivatives(row.social_results, Boolean(item.articleId)).length > 0;
+          const previous = markDerivativesStale(row.social_results, Boolean(item.articleId));
           const notes = [...generated.styleNotes, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`),
             hadDerivatives ? "主稿換了，官網、IG、Threads 要再各自重寫一次才會同步。" : ""].filter(Boolean);
           await pipelineDb("auto_pipeline_jobs", `id=eq.${encodeURIComponent(row.id)}`, {
@@ -236,7 +236,8 @@ export async function POST(req: NextRequest) {
         }
 
         // 把這個平台的規則版本記進 social_results，不動其他平台的結果
-        const previous = row.social_results && typeof row.social_results === "object" ? { ...(row.social_results as Record<string, unknown>) } : {};
+        // 這個平台同步完了，從待同步清單移掉，其他平台的狀態不動
+        const previous = clearStalePlatform(row.social_results, platform);
         previous.rules_version = { ...((previous.rules_version as Record<string, string>) || {}), [platform]: RULES_VERSION };
         try {
           await pipelineDb("auto_pipeline_jobs", `id=eq.${encodeURIComponent(row.id)}`, {

@@ -21,7 +21,8 @@ import { applyMechanicalFixes, brandSubjectHits, gateBlockers, gateWarnings, rew
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
-import { brandVoiceSentences } from "@/lib/auto-multiplatform";
+import { buildExampleRewritePrompt } from "@/data/skills/example-rewrite-prompt";
+import { allowedCitationFromMaster, brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { cardHeadline } from "@/lib/article-image.mjs";
 import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
@@ -306,5 +307,110 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     warnNotes: [...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message)],
     blockedReason, titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier,
     guardrailHits: issues.guardrailHits,
+  };
+}
+
+export interface RewriteExamplesInput {
+  brandId: string;
+  /** 上一版全文，通常是排程列裡那一份 */
+  draft: string;
+  /** 艾瑞克寫的說明，例如哪一段看不懂。可留空 */
+  note?: string;
+  retry: <T>(run: () => Promise<T>) => Promise<T>;
+}
+
+export interface RewriteExamplesResult {
+  draft: string;
+  notes: string[];
+  fixes: string[];
+  warnNotes: string[];
+  /** 不是空字串就代表這一版不能用，呼叫端要保留舊稿 */
+  blockedReason: string;
+  /** 真的有換掉內容才是 true。模型原文回傳時為 false */
+  changed: boolean;
+}
+
+/**
+ * 換例子重寫：題目、論點、結構、小標與結尾都不動，只換故事與舉例。
+ *
+ * 跟 generateFacebookDraft 的差別：那支是從題目重新創作，會換掉論點；這支是修改模式，
+ * 只送上一版全文與「只能動哪裡」，所以題目方向保得住，輸入量也小很多。
+ *
+ * 引用的處理：不重新去知識庫挑書。上一版引的那一本在生成時已經對知識庫查證過，
+ * 所以重寫後只准保留那一本或完全不引用，不給模型換書或新增引用的空間。
+ */
+export async function rewriteExamples(input: RewriteExamplesInput): Promise<RewriteExamplesResult> {
+  const { brandId, note, retry } = input;
+  const before = String(input.draft || "");
+  if (!before.trim()) return { draft: before, notes: [], fixes: [], warnNotes: [], blockedReason: "沒有可以重寫的內容", changed: false };
+  const brandName = brandNameOf(brandId);
+  const keep = allowedCitationFromMaster(before);
+  const keepTitle = keep?.title || null;
+
+  let draft = before;
+  let fixes: string[] = [];
+  let problems: string[] = [];
+  const notes: string[] = [];
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const revised = await retry(async () => {
+      // 修改模式：跳過 Iris、改用便宜模型。這是照指示換段落，不是重新創作。
+      const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
+        reviseMode: true,
+        maya: buildExampleRewritePrompt({ draft: attempt === 0 ? before : draft, keepCitationTitle: keepTitle, note, problems }),
+        iris: "",
+      }, undefined, undefined, "facebook");
+      const text = result.dispatchData?.social_copy;
+      if (typeof text !== "string" || !text.trim()) throw new Error("Maya 沒有回傳社群文案");
+      return splitPostReminders(stripDashes(stripMarkdown(stripDiagramBlocks(text))), result.dispatchData?.post_reminders).body;
+    });
+    const mechanical = applyMechanicalFixes(revised);
+    draft = mechanical.text;
+    fixes = mechanical.fixes;
+
+    const offending = brandVoiceSentences(draft, brandId);
+    const badCites = unverifiedCitations(draft, keep);
+    const hardHits = blockingIssues(checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId)).map((issue) => issue.message.slice(0, 80));
+    problems = [
+      ...offending.map((line) => `品牌名稱當主詞：${line}`),
+      ...badCites.map((title) => `引用了不該出現的《${title}》`),
+      ...(keepTitle && !draft.includes(`《${keepTitle}》`) ? [`原本引用的《${keepTitle}》被拿掉了，要保留原樣`] : []),
+      ...hardHits,
+    ];
+    if (!problems.length) break;
+  }
+
+  // 最後一道保險：句首品牌名直接換成第一人稱，跟主稿生成走同一條路。
+  if (brandSubjectHits(draft, brandId).length) {
+    const voiceFix = rewriteBrandSubject(draft, brandId);
+    draft = voiceFix.text;
+    fixes = [...fixes, ...voiceFix.fixes];
+  }
+
+  const issues = checkGenreText(draft, { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }, "facebook", brandId);
+  const gateIssues = runQualityGate(draft, { platform: "facebook" });
+  const uncited = unverifiedCitations(draft, keep);
+  const leftover = draft.match(/【需補[^】]*】/g);
+  const titleChanged = firstLine(draft) !== firstLine(before);
+
+  const blockedReason = leftover?.length
+    ? `重寫後含未補的標記 ${[...new Set(leftover)].join("、")}，已保留舊稿`
+    : uncited.length
+    ? `重寫後引用有問題：${uncited.join("、")}。已保留舊稿`
+    : [...blockingIssues(issues).map((issue) => issue.message), ...gateBlockers(gateIssues).map((issue) => `品管：${issue.message}`)].join("；");
+
+  if (titleChanged) notes.push("標題被改掉了，已自動換回上一版標題。");
+  if (titleChanged && !blockedReason) {
+    const body = draft.split("\n").slice(1).join("\n");
+    draft = `${firstLine(before)}\n${body}`;
+  }
+  if (keepTitle) notes.push(`原本引用的《${keepTitle}》已確認保留。`);
+  if (problems.length) notes.push(`重寫三次後仍有要注意的地方：${problems.slice(0, 3).join("；")}`);
+
+  return {
+    draft, notes, fixes,
+    warnNotes: [...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message)],
+    blockedReason,
+    changed: draft.trim() !== before.trim(),
   };
 }

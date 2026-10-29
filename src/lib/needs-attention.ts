@@ -1,4 +1,5 @@
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { readStalePlatforms, type DerivativePlatform } from "@/data/skills/derivative-sync";
 import { publishedWebsiteBrands, websiteArticleId } from "@/lib/pipeline-website-status";
 
 export type AttentionKind = "review" | "manual" | "failed" | "blocked";
@@ -29,6 +30,8 @@ export interface AttentionItem {
   canCancel: boolean;
   /** 失敗且不想重試時，放棄這則（改為已取消） */
   canDismiss: boolean;
+  /** 主稿改過、還沒跟著同步的衍生平台。空陣列代表都同步了 */
+  stalePlatforms: DerivativePlatform[];
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -59,7 +62,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
   const items: AttentionItem[] = [];
 
   // 1. 流水線任務：待人工、失敗、24~48 小時內要發但還沒審的
-  const jobSelect = "id,brand_id,scheduled_at,status,error_reason,draft_content,prompt,queue_id,reviewed,current_step";
+  const jobSelect = "id,brand_id,scheduled_at,status,error_reason,draft_content,prompt,queue_id,reviewed,current_step,social_results";
   const [problemJobs, unreviewedJobs] = await Promise.all([
     safeQuery<any>("auto_pipeline_jobs", `status=in.(manual,failed)&reviewed=eq.false&order=scheduled_at.asc&limit=100&select=${jobSelect}`),
     safeQuery<any>("auto_pipeline_jobs", `status=eq.scheduled&reviewed=eq.false&scheduled_at=gte.${iso(now)}&scheduled_at=lt.${iso(now + 2 * DAY)}&order=scheduled_at.asc&limit=100&select=${jobSelect}`),
@@ -79,6 +82,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
         : brand === "erick" ? "個人帳號無法排程，複製文案自己發，發完按「我已處理」。"
         : "確認內容與時間沒問題後，到自動流水線頁面排程，或標記已處理。",
       canEdit: kind !== "failed" && !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: false, canDismiss: false,
+      stalePlatforms: readStalePlatforms(job.social_results),
     });
   }
   for (const job of unreviewedJobs) {
@@ -88,6 +92,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       text: snippet(job.draft_content || job.prompt), full: String(job.draft_content || job.prompt || ""), source: "job", refId: job.id, jobId: job.id,
       advice: "讀過內容沒問題就標記已審，需要調整就先修改。官網、IG、Threads 衍生稿跟著這一則。",
       canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: true, canDismiss: false,
+      stalePlatforms: readStalePlatforms(job.social_results),
     });
   }
 
@@ -118,7 +123,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
           text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
           derivativePlatform: platform as "website" | "instagram" | "threads",
           advice: platform === "website" ? "官網文章沒生成成功，還沒有可修改的官網草稿。這一則 FB 不受影響；到多平台衍生頁重新生成，或只移除這項失敗提醒。" : "這一則 FB 不受影響。到多平台衍生頁重試；也可以只移除這項失敗提醒，原紀錄會保留。",
-          canEdit: false, canRetry: false, retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: true,
+          canEdit: false, canRetry: false, retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: true, stalePlatforms: [],
         });
       }
     }
@@ -134,7 +139,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       reason: row.status === "partial" ? "部分粉專已發出、部分失敗" : `FB 發佈失敗：${snippet(row.error || "未記錄原因", 80)}`,
       text: snippet(row.content), full: String(row.content ?? ""), source: "fb_queue", refId: row.id, jobId: null,
       advice: anySent ? "已有粉專成功發出，重試會重複發文，請到 Facebook 確認後再決定。" : "先確認不是內容問題，再按重試，系統會在約 6 分鐘後重新派發。",
-      canEdit: false, canRetry: !anySent && row.status === "failed", retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: row.status === "failed",
+      canEdit: false, canRetry: !anySent && row.status === "failed", retryRisk: null, canMarkDone: false, canCancel: false, canDismiss: row.status === "failed", stalePlatforms: [],
     });
   }
 
@@ -147,7 +152,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       reason: `${PLATFORM_LABEL[row.platform] || row.platform} 發佈失敗：${snippet(row.error || "未記錄原因", 80)}`,
       text: snippet(row.content), full: String(row.content ?? ""), source: "social_queue", refId: row.id, jobId: null,
       advice: unknown ? "上次結果不明，可能其實已發出。先到平台確認，沒有發出再重試。" : "多半是暫時性錯誤，直接重試；重複失敗再看原因。",
-      canEdit: false, canRetry: true, retryRisk: unknown ? "上次結果不明，這則可能已經發出，重試會造成重複發文。確定要重試嗎？" : null, canMarkDone: false, canCancel: false, canDismiss: true,
+      canEdit: false, canRetry: true, retryRisk: unknown ? "上次結果不明，這則可能已經發出，重試會造成重複發文。確定要重試嗎？" : null, canMarkDone: false, canCancel: false, canDismiss: true, stalePlatforms: [],
     });
   }
 
