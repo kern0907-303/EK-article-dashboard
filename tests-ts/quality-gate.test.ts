@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyMechanicalFixes, enforceCopyRules, checkConsistency, checkFormat, checkGarbled, gateBlockers, runQualityGate } from "../src/lib/quality-gate";
+import { applyMechanicalFixes, enforceCopyRules, checkConsistency, checkFormat, checkGarbled, gateBlockers, gateWarnings, hardToReadTitle, runQualityGate } from "../src/lib/quality-gate";
 
 const codes = (issues: { code: string }[]) => issues.map((issue) => issue.code);
 const good = "很多人以為努力就會有結果，但真正卡住的往往不是不夠努力。我們這週聊三個常見的盲點，第一個是方向，第二個是節奏，第三個是你願不願意先停下來看一看。";
@@ -84,5 +84,31 @@ assert.equal(levelOf(checkConsistency(master, "客戶做了28年的生意，每�
 assert.ok(!codes(checkGarbled(good + "【小提醒】")).includes("placeholder"));
 assert.ok(codes(checkGarbled(good + "【需補：案例】")).includes("placeholder"));
 assert.equal(enforceCopyRules("艾伯林量子調頻陪你走過每一天。" + good, "facebook").blockers.length, 0);
+
+// 2026-10-30 回歸案例：ABL 排到「【長照的兩種放手，承認有限不等於放棄】」，
+// 整個標題被【】包住。那是批次提示詞樣板的格式被模型抄進標題，不是標題的一部分，
+// 而且圖卡印的就是第一行，等於連圖上都會有那對括號。
+const bracketTitle = "【長照的兩種放手，承認有限不等於放棄】\n\n那天她在病房外站了很久。" + good;
+const bracketFixed = applyMechanicalFixes(bracketTitle);
+assert.equal(bracketFixed.text.split("\n")[0], "長照的兩種放手，承認有限不等於放棄", "整段包住的標題要拆掉外層括號");
+assert.ok(bracketFixed.fixes.some((fix) => fix.includes("【】")), "要記下做了這個修正");
+assert.equal(hardToReadTitle(bracketFixed.text), "", "拆完就不該再提醒");
+
+// 【需補：…】與【保留區塊1】是有意義的標記，不可以被拆掉
+const needMore = applyMechanicalFixes("【需補：科學依據】\n\n" + good);
+assert.equal(needMore.text.split("\n")[0], "【需補：科學依據】", "需補標記要原樣保留");
+const keepBlock = applyMechanicalFixes("沉默不等於大度\n\n【保留區塊1】\n\n" + good);
+assert.ok(keepBlock.text.includes("【保留區塊1】"), "保留區塊要原樣保留");
+assert.equal(keepBlock.text.split("\n")[0], "沉默不等於大度", "乾淨的標題不要被動到");
+
+// 只有單邊或夾在中間的【】拆不掉，要提醒，交給重寫迴圈換標題
+assert.ok(hardToReadTitle("【限時】三個方法\n\n" + good).includes("【】"));
+assert.ok(hardToReadTitle("【需補：科學依據】\n\n" + good).includes("【】"));
+// 乾淨標題不可以誤報
+assert.equal(hardToReadTitle("沉默不等於大度\n\n" + good), "");
+// 只提醒不擋稿，否則已排程的舊稿會整批發不出去
+const bracketIssues = runQualityGate("【限時】三個方法\n\n" + good, { platform: "facebook" });
+assert.equal(gateBlockers(bracketIssues).length, 0);
+assert.ok(gateWarnings(bracketIssues).some((issue) => issue.code === "title_readability"));
 
 console.log("quality-gate tests passed");

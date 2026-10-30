@@ -180,6 +180,19 @@ export function applyMechanicalFixes(text: string): { text: string; fixes: strin
   out = out.split("\n").filter((line) => !/^\s*[，、,.。；;：:]+\s*$/.test(line)).join("\n");
   if (out !== before) fixes.push("清掉只剩標點的殘行");
   out = out.replace(/\n{3,}/g, "\n\n").trim();
+  // 標題被【】整段包住：那是提示詞樣板的格式被模型抄進標題，不是內容的一部分。
+  // 2026-10-30 實例：ABL 排到「【長照的兩種放手，承認有限不等於放棄】」。
+  // 【需補：…】與【保留區塊1】是有意義的標記，不可以拆。
+  const head = out.split("\n");
+  const firstIndex = head.findIndex((line) => line.trim());
+  if (firstIndex >= 0) {
+    const title = head[firstIndex].trim();
+    if (/^【[^【】]+】$/.test(title) && !/需補|保留區塊/.test(title)) {
+      head[firstIndex] = title.slice(1, -1).trim();
+      out = head.join("\n");
+      fixes.push("標題被【】包住，已拆掉外層括號");
+    }
+  }
   return { text: out, fixes };
 }
 
@@ -328,6 +341,8 @@ const TITLE_NEGATIONS = /不是|不會|不能|不用|沒有|不必|並非|未必
 export function hardToReadTitle(text: string): string {
   const title = String(text || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
   if (!title) return "";
+  // 標題不該有【】。整段被包住的情況由機械修正拆掉，拆不掉的（例如只有單邊）在這裡提醒。
+  if (/[【】]/.test(title)) return `標題出現【】這類標記（${title.slice(0, 30)}），那是提示詞樣板的格式，不是標題的一部分`;
   TITLE_NEGATIONS.lastIndex = 0;
   const negations = title.match(TITLE_NEGATIONS) || [];
   const clauses = title.split(/[，,、]/).map((part) => part.trim()).filter(Boolean);
