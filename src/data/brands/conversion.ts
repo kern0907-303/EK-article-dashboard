@@ -12,20 +12,52 @@
 // 詳見 docs/PIPELINE_FINDINGS_AND_PLAN.md。
 
 /**
- * 單篇文章的流量溫度。海巡在每個題目上標冷或溫，各約一半。
- * 冷流量是破圈，讀者不認識作者，要零摩擦，不要一上來就要 email。
- * 溫流量是建立信任，讀者看過幾篇，願意留資料換更完整的東西。
+ * 單篇文章的流量溫度。海巡在每個題目上標破圈或建立信任，各約一半。
+ *
+ * 2026-10-30 改版（取代原本的 cold / warm）：NAS 的免費入口定成兩層，
+ * 計算器 /nas/calculator/ 接超冷流量（零摩擦，輸入生日直接看結果），
+ * 卡點五型自我檢查 /nas/quiz 接冷流量（8 題加 LINE 登入看詳細解析）。
+ * 所以文章也照同一組名字分，不要再用「沒有標記就等於超冷」這種隱含規則，
+ * 那個規則讓補標記變成會悄悄換掉入口的動作。
+ *
+ * supercold 破圈文章：讀者完全不認識作者，給摩擦最低的計算器。
+ * cold       建立信任文章：讀者看過幾篇，願意多做 8 題換完整解析。
  */
-export type TrafficFunnel = "cold" | "warm";
+export type TrafficFunnel = "supercold" | "cold";
+
+/** 資料庫裡可能還有改版前寫進去的舊值 */
+export type LegacyTrafficFunnel = TrafficFunnel | "warm";
 
 /**
- * 從任務提示詞判讀冷暖。海巡寫進提示詞的是「本篇目標：破圈…」或「本篇目標：建立信任…」。
+ * 從任務提示詞判讀分層。海巡寫進提示詞的是「本篇目標：破圈…」或「本篇目標：建立信任…」。
  * 判讀不出來就回 null，讓下游退回通用 CTA，不要亂猜一個。
  */
 export function readFunnelFromPrompt(prompt: string): TrafficFunnel | null {
   const text = String(prompt || "");
-  if (/本篇目標：破圈|冷流量/.test(text)) return "cold";
-  if (/本篇目標：建立信任|溫流量/.test(text)) return "warm";
+  if (/本篇目標：破圈|超冷流量|冷流量/.test(text) && !/本篇目標：建立信任|溫流量/.test(text)) return "supercold";
+  if (/本篇目標：建立信任|溫流量/.test(text)) return "cold";
+  return null;
+}
+
+/**
+ * 把資料庫裡的值正規化成現在這兩層。
+ *
+ * 刻意只處理 warm 這一個舊值：它過去代表「建立信任」，就是現在的 cold。
+ * 舊的 cold（過去代表破圈）由資料庫一次性改成 supercold，不在這裡猜，
+ * 否則同一個字串 cold 會有兩種意思，讀的人永遠分不出是哪一種。
+ */
+export function normalizeFunnel(value: unknown): TrafficFunnel | null {
+  const text = String(value || "").trim();
+  if (text === "supercold") return "supercold";
+  if (text === "cold") return "cold";
+  if (text === "warm") return "cold";
+  return null;
+}
+
+/** 這一層的 FB 首則留言要把人帶去哪裡。NAS 以外的品牌沒有這兩個入口，回 null。 */
+export function funnelEntryPath(funnel: TrafficFunnel | null): string | null {
+  if (funnel === "supercold") return "/nas/calculator/";
+  if (funnel === "cold") return "/nas/quiz";
   return null;
 }
 
