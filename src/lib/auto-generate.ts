@@ -302,7 +302,9 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     subheadWarning(draft, "facebook"),
     vagueResearchClaim(draft) ? `出現沒有指名出處的說法「${vagueResearchClaim(draft)}」，確認是不是要改成具體來源或拿掉。` : "",
     source.citation
-      ? `本篇可引用的出處：《${source.citation.title}》，${source.citation.author}`
+      ? draft.includes(`《${source.citation.title}》`)
+        ? `本篇已引用《${source.citation.title}》，${source.citation.author}`
+        : `本篇取到出處《${source.citation.title}》，${source.citation.author}，但正文沒有用到它`
       : `本篇沒有取到知識庫出處，已禁止引用。原因：${source.reason || "未記錄"}`,
   ].filter(Boolean);
 

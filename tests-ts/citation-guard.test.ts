@@ -90,3 +90,18 @@ assert.equal((multi.match(/throw new Error\(cites\)/g) || []).length, 2, "IG 與
 console.log("衍生稿引用查證測試通過");
 
 console.log("citation-guard 測試通過");
+
+// 2026-10-31：選書修好之後，連續三篇都「拿到出處但正文沒用」。
+// 原因不是選書，是指令把不引用設成了最省力的選項：
+// 前面一整串嚴格格式要求（歸屬寫法、不可出現英文字母、文末固定一行），
+// 後面接一句「用不到就完全不要引用」，模型當然選不引用。
+// 預設翻成引用，但保留艾瑞克說的「不是每一篇」：真的無關才不引用。
+{
+  const directive = buildCitationDirective({ title: "心流", author: "米哈里" }, "筆記內容");
+  assert.ok(directive.includes("就要引用它一次，不要省略"), "有可用觀點時要引用，不能省略");
+  assert.ok(directive.includes("確實與本篇主題無關時，才不引用"), "保留真的無關就不引用的退路");
+  assert.ok(!directive.includes("如果這一篇用不到這本書，就完全不要引用"), "舊的那句把不引用設成最省力選項，不可以留著");
+  // 沒拿到出處時仍然完全禁止引用，這條是硬規則不可以鬆
+  const none = buildCitationDirective(null, "");
+  assert.ok(none.includes("不可以引用任何書籍"), "沒有出處就完全禁止引用");
+}
