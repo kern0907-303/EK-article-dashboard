@@ -1559,7 +1559,7 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
     requestBody.response_format = { type: "json_object" };
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const send = () => fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1568,6 +1568,24 @@ async function callOpenAI(messages: any[], config: AIProviderConfig, jsonMode?: 
     body: JSON.stringify(requestBody),
     signal: getTimeoutSignal(opts?.timeoutMs || 60000)
   });
+
+  let response = await send();
+
+  // 2026-10-31：Anthropic 餘額用完時回退到 OpenAI，結果 OpenAI 也全部 400，
+  // 原因是新模型只接受預設 temperature（1），這裡固定送 0.7。
+  // 等於「Claude 沒額度轉 GPT」這張安全網一直是斷的，實際上都掉到 Gemini。
+  // 遇到這個錯就拿掉 temperature 重送一次，換模型也不會再踩到。
+  if (response.status === 400) {
+    const firstError = await response.text();
+    if (/temperature/i.test(firstError) && "temperature" in requestBody) {
+      console.warn(`[callOpenAI] 模型 ${requestBody.model} 不接受指定的 temperature，拿掉後重送一次`);
+      delete requestBody.temperature;
+      response = await send();
+    } else {
+      if (opts?.report) opts.report.httpStatus = response.status;
+      throw providerHTTPError("OpenAI", requestBody.model, response.status, firstError);
+    }
+  }
 
   if (!response.ok) {
     const errText = await response.text();

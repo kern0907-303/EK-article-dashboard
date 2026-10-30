@@ -7,6 +7,8 @@ export function isScienceChannel(platform: string): boolean;
 export function shouldSkipSciencePlatform(platform: string, parentText?: string): boolean;
 export function selectPlatformSpec(specs: Array<any>, platform: string, format: string): Record<string, any>;
 export function buildKnowledgeDirectoryForPrompt(directory: Array<any>): Array<{ id: string; title: string; author: string; domain: string; subdomain: string }>;
+export function buildNumberedKnowledgeCatalog(directory: Array<any>): Array<{ no: number; title: string; author: string; domain: string; subdomain: string }>;
+export function resolveKnowledgeSelection<T extends { id: string }>(directory: Array<T>, answer: unknown): T | null;
 export function isMetaphysicalTopic(text?: string): boolean;
 export function getMissingMarkers(text?: string): string[];
 export function ensureScienceMarker(content: string, hasAllowedSource: boolean): string;

@@ -28,6 +28,7 @@ import { cardHeadline } from "@/lib/article-image.mjs";
 import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { uploadPublicJpeg } from "@/lib/social-image-server";
+import { getPipelineProvider } from "@/lib/ai-setting-server";
 
 /**
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
@@ -69,19 +70,21 @@ export const BRAND_NAMES = { nas: "平衡空間", abl: "艾伯林量子調頻", 
  * 中文欄位缺、或 zh_status 還沒 confirmed 的，寧可這篇不引用，也不要掛英文原名出去。
  * 知識庫暫時不可用時回 null，該篇就不准引用，不會因此生成失敗。
  */
-export async function loadCitationSource(topic: string): Promise<{ citation: VerifiedCitation | null; content: string; banned: string[] }> {
+export async function loadCitationSource(topic: string): Promise<{ citation: VerifiedCitation | null; content: string; banned: string[]; reason: string }> {
   try {
-    const source = await chooseKnowledgeSource(topic, process.env.AI_PROVIDER);
-    if (!source.citation) return { citation: null, content: "", banned: [] };
+    const source = await chooseKnowledgeSource(topic, await getPipelineProvider());
+    if (!source.citation) return { citation: null, content: "", banned: [], reason: source.reason || "選書步驟沒有回傳出處" };
     const note = source.note as { title_zh?: string; author_zh?: string; zh_status?: string } | null;
     const title = String(note?.title_zh || "").trim();
     const author = String(note?.author_zh || "").trim();
-    if (!title || !author || note?.zh_status !== "confirmed") return { citation: null, content: "", banned: [] };
+    if (!title || !author || note?.zh_status !== "confirmed") {
+      return { citation: null, content: "", banned: [], reason: `選到的書中文欄位不完整或未確認（書名「${title || "空"}」、作者「${author || "空"}」、狀態 ${note?.zh_status || "空"}）` };
+    }
     // 英文原名與英文作者名不可以出現在文章裡，出現了就當成未查證的引用處理
     const banned = [source.citation.title, source.citation.author].map((value) => String(value || "").trim()).filter((value) => value.length > 3);
-    return { citation: { title, author }, content: source.content, banned };
-  } catch {
-    return { citation: null, content: "", banned: [] };
+    return { citation: { title, author }, content: source.content, banned, reason: "" };
+  } catch (error) {
+    return { citation: null, content: "", banned: [], reason: error instanceof Error ? error.message.slice(0, 160) : "取出處失敗" };
   }
 }
 
@@ -209,7 +212,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   ];
 
   const generated = await retry(async () => {
-    const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
+    const result = await callErickCOO([], brandName, await getPipelineProvider(), "expert", "maya_iris", {
       maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n${citationDirective}`,
       iris: irisPrompt,
     }, undefined, undefined, "facebook");
@@ -231,7 +234,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   }
 
   draft = await retry(async () => {
-    const result = await callSeoOptimizer(draft, brandName, [], process.env.AI_PROVIDER, "facebook");
+    const result = await callSeoOptimizer(draft, brandName, [], await getPipelineProvider(), "facebook");
     if (!result.optimized_content?.trim()) throw new Error("SEO 優化器沒有回傳文案");
     return stripDashes(stripMarkdown(result.optimized_content));
   });
@@ -261,7 +264,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
       ...witness.map((line) => `把虛構人物寫成我親身接觸過的真實個案：${line}。改回第三人稱，不要出現她跟我說、她告訴我這類句型`),
     ];
     const revised = await retry(async () => {
-      const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
+      const result = await callErickCOO([], brandName, await getPipelineProvider(), "expert", "maya_iris", {
         reviseMode: true,
         maya: buildRevisePrompt(draft, problems, source.citation, { allowTitle: Boolean(titleIssue) }),
         iris: "",
@@ -298,7 +301,9 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     bannedOpeningWarning(firstParagraph(draft)),
     subheadWarning(draft, "facebook"),
     vagueResearchClaim(draft) ? `出現沒有指名出處的說法「${vagueResearchClaim(draft)}」，確認是不是要改成具體來源或拿掉。` : "",
-    source.citation ? `本篇可引用的出處：《${source.citation.title}》，${source.citation.author}` : "本篇沒有取到知識庫出處，已禁止引用",
+    source.citation
+      ? `本篇可引用的出處：《${source.citation.title}》，${source.citation.author}`
+      : `本篇沒有取到知識庫出處，已禁止引用。原因：${source.reason || "未記錄"}`,
   ].filter(Boolean);
 
   const leftover = draft.match(/【需補[^】]*】/g);
@@ -372,7 +377,7 @@ export async function rewriteExamples(input: RewriteExamplesInput): Promise<Rewr
   for (let attempt = 0; attempt < 3; attempt++) {
     const revised = await retry(async () => {
       // 修改模式：跳過 Iris、改用便宜模型。這是照指示換段落，不是重新創作。
-      const result = await callErickCOO([], brandName, process.env.AI_PROVIDER, "expert", "maya_iris", {
+      const result = await callErickCOO([], brandName, await getPipelineProvider(), "expert", "maya_iris", {
         reviseMode: true,
         maya: buildExampleRewritePrompt({ draft: attempt === 0 ? before : draft, keepCitationTitle: keepTitle, note, problems, allowTitle }),
         iris: "",

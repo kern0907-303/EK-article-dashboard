@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import SchedulePicker from "@/components/SchedulePicker";
 import PipelineTimeline from "@/components/PipelineTimeline";
 import ReoptimizePanel from "@/components/ReoptimizePanel";
+import PipelineBrainPicker from "@/components/PipelineBrainPicker";
 
 const BRANDS = [
   { id: "nas", name: "NAS" }, { id: "abl", name: "ABL" }, { id: "i8", name: "I8" }, { id: "erick", name: "Erick" },
@@ -180,6 +181,7 @@ export default function AutoPipelinePage() {
         <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">未審也會依排程發佈</span>
       </header>
       {notice && <div role="status" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm">{notice}</div>}
+      <PipelineBrainPicker />
       <ReoptimizePanel />
       <PipelineTimeline />
       <section className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">

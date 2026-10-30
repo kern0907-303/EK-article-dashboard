@@ -30,6 +30,38 @@ export function buildKnowledgeDirectoryForPrompt(directory = []) {
   return directory.map(({ id, title, author, domain, subdomain }) => ({ id, title, author, domain, subdomain }));
 }
 
+/**
+ * 給選書步驟的目錄：用 1 開始的編號代替 uuid。
+ *
+ * 2026-10-31 發現：原本是把 uuid 丟給模型、要它把同一串 uuid 抄回來，抄錯一個字元就
+ * 對不到任何一本，整篇就變成「沒有取到知識庫出處」。連續兩天三個品牌都沒有引用，
+ * 這是其中一個可以直接拿掉的失敗點。改成回編號，模型只要回一個整數。
+ * 書名作者仍用中文欄位顯示，模型看到的跟文章要寫的是同一組字。
+ */
+export function buildNumberedKnowledgeCatalog(directory = []) {
+  return directory.map((entry, index) => ({
+    no: index + 1,
+    title: entry.title_zh || entry.title,
+    author: entry.author_zh || entry.author,
+    domain: entry.domain,
+    subdomain: entry.subdomain,
+  }));
+}
+
+/**
+ * 把模型的回答對回目錄項目。
+ * 接受 { no: 3 }、{ id: "<uuid>" } 與字串數字，三種都行；對不到就回 null。
+ */
+export function resolveKnowledgeSelection(directory = [], answer = null) {
+  if (!answer || typeof answer !== "object") return null;
+  const raw = answer.no !== undefined && answer.no !== null ? answer.no : answer.number;
+  const no = Number.parseInt(String(raw ?? "").trim(), 10);
+  if (Number.isInteger(no) && no >= 1 && no <= directory.length) return directory[no - 1];
+  const id = String(answer.id || "").trim();
+  if (id) return directory.find((entry) => entry.id === id) || null;
+  return null;
+}
+
 export function isMetaphysicalTopic(text = "") {
   return METAPHYSICS_TERMS.some((term) => text.includes(term));
 }

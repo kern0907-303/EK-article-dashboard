@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     if (!eligible.length) return NextResponse.json({ success: true, created: [], skipped, failures: [] });
 
     const needScienceSource = eligible.some((platform: string) => platform === "小紅書" || platform === "抖音");
-    const source = needScienceSource ? await chooseKnowledgeSource(parent.content, providerOverride, parent.content) : { note: null, content: "", citation: null, directory: [] };
+    const source = needScienceSource ? await chooseKnowledgeSource(parent.content, providerOverride, parent.content) : { note: null, content: "", citation: null, directory: [], reason: "" };
     const generationId = crypto.randomUUID();
     const rows: any[] = [];
     const failures: Array<{ platform: string; language_version: string; error: string }> = [];
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           // 超過字數上限時自動請模型縮短重寫，最多重試 2 次
           for (let attempt = 0; ; attempt += 1) {
             generated = await generatePlatformPayload({
-              platform, languageVersion, parentText: parent.content, source: useScienceSource ? source : { note: null, content: "", citation: null, directory: [] }, providerOverride,
+              platform, languageVersion, parentText: parent.content, source: useScienceSource ? source : { note: null, content: "", citation: null, directory: [], reason: "" }, providerOverride,
               extraInstruction: attempt > 0 && maxLength ? `上一版有 ${[...content].length} 字，超過上限 ${maxLength} 字。請重寫並縮短到 ${Math.max(50, maxLength - 40)} 字以內，保留核心論點，不要只是刪尾巴。` : undefined,
             });
             if (!validateDerivativePayload(platform, generated.payload || {})) throw new Error("模型輸出結構不完整，未保存此平台草稿。請重新產生。");
