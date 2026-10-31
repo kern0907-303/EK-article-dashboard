@@ -97,10 +97,29 @@ console.log("citation-guard 測試通過");
 // 後面接一句「用不到就完全不要引用」，模型當然選不引用。
 // 預設翻成引用，但保留艾瑞克說的「不是每一篇」：真的無關才不引用。
 {
-  const directive = buildCitationDirective({ title: "心流", author: "米哈里" }, "筆記內容");
-  assert.ok(directive.includes("就要引用它一次，不要省略"), "有可用觀點時要引用，不能省略");
-  assert.ok(directive.includes("確實與本篇主題無關時，才不引用"), "保留真的無關就不引用的退路");
-  assert.ok(!directive.includes("如果這一篇用不到這本書，就完全不要引用"), "舊的那句把不引用設成最省力選項，不可以留著");
+  const cite = { title: "心流", author: "米哈里" };
+  // 案例、拆解、回應是單論點故事型會有「論點支持」段的文體，可以引用。
+  // 艾瑞克的規則是「不是每篇都要引用」，所以措辭必須中性：兩個方向都不可以被逼。
+  for (const genre of ["case", "breakdown", "response"]) {
+    const directive = buildCitationDirective(cite, "筆記內容", genre);
+    assert.ok(directive.includes("接不上就不引用"), `${genre} 接不上要能不引用`);
+    assert.ok(directive.includes("引用與不引用都是對的"), `${genre} 兩種都要是對的`);
+    assert.ok(directive.includes("不要為了交差硬塞"), `${genre} 不可以為了交差硬塞`);
+    assert.ok(directive.includes("不要為了省事一律略過"), `${genre} 也不可以一律略過`);
+    assert.ok(!directive.includes("不要省略"), `${genre} 不可以出現逼著引用的措辭`);
+  }
+  // 邀請文是賣東西、寵粉文是陪伴，硬塞一本書反而不對
+  for (const genre of ["invite", "fan"]) {
+    const directive = buildCitationDirective(cite, "筆記內容", genre);
+    assert.ok(directive.includes("如果這一篇用不到這本書，就完全不要引用"), `${genre} 維持可引可不引`);
+    assert.ok(!directive.includes("不要省略"), `${genre} 不可以被逼著引用`);
+  }
+  // 讀不出文體時走保守的那一邊
+  assert.ok(buildCitationDirective(cite, "筆記內容").includes("如果這一篇用不到這本書"), "讀不出文體時不逼著引用");
+  // 每一種文體都不可以引別本
+  for (const genre of ["case", "invite", undefined]) {
+    assert.ok(buildCitationDirective(cite, "筆記內容", genre).includes("不可以引用別本"), "任何文體都不可以引別本");
+  }
   // 沒拿到出處時仍然完全禁止引用，這條是硬規則不可以鬆
   const none = buildCitationDirective(null, "");
   assert.ok(none.includes("不可以引用任何書籍"), "沒有出處就完全禁止引用");

@@ -6,11 +6,20 @@
 export interface VerifiedCitation { title: string; author: string }
 
 /**
+ * 會期待「論點支持」段的文體。
+ * 艾瑞克的單論點故事型四段是：切入現象、故事、論點支持（引經據典）、解決方案，
+ * 所以案例、拆解、回應這三種可以引用。但他的規則是「不是每篇都要引用」，
+ * 所以措辭必須中性，不逼也不壓。
+ * 邀請文是賣東西、寵粉文是陪伴，硬塞一本書反而不對，維持可引可不引。
+ */
+export const CITE_EXPECTED_GENRES = ["case", "breakdown", "response"] as const;
+
+/**
  * 引用規則指令。
  * 艾瑞克的規則是「引經據典只用自己的知識庫，讀過全文再引用，不憑記憶」。
  * 所以要嘛給它一本查證過的書與筆記內容，要嘛就完全禁止引用，沒有第三種。
  */
-export function buildCitationDirective(citation: VerifiedCitation | null, noteContent: string): string {
+export function buildCitationDirective(citation: VerifiedCitation | null, noteContent: string, genre?: string): string {
   if (!citation) {
     return [
       "【引用規則】這一篇不可以引用任何書籍、作者、研究、調查或名人說法。",
@@ -26,8 +35,10 @@ export function buildCitationDirective(citation: VerifiedCitation | null, noteCo
     "書名與作者名只能用上面給的中文寫法，一個英文字母都不可以出現，也不可以加副標題或英文原名對照。",
     "動詞用「提出」，不要用「核心概念是」這類評價說法。",
     `文末單獨一行：文中引用的觀點，出自${citation.author}所著《${citation.title}》。`,
-    "筆記裡只要有任何一個觀點能支撐本篇的主張，就要引用它一次，不要省略。",
-    "只有在筆記內容確實與本篇主題無關時，才不引用，文末也不寫出處。寧可不引用，也不可以引用別本。",
+    (CITE_EXPECTED_GENRES as readonly string[]).includes(String(genre || ""))
+      ? "這本書如果有觀點能支撐本篇主張，就引用它一次；接不上就不引用，文末也不寫出處。引用與不引用都是對的：不要為了交差硬塞一本進來，也不要為了省事一律略過。"
+      : "如果這一篇用不到這本書，就完全不要引用，文末也不要寫出處。",
+    "寧可不引用，也不可以引用別本。",
     "下面是這本書的筆記，只能依據它寫，不可以補上筆記裡沒有的說法：",
     String(noteContent || "").slice(0, 2500),
   ].join("\n");

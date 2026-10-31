@@ -204,7 +204,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   const irisPrompt = `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${prompt}`;
   // 引經據典只能用知識庫。拿不到出處就整篇禁止引用，不讓模型憑記憶補一本書上去。
   const source = await loadCitationSource(prompt);
-  const citationDirective = buildCitationDirective(source.citation, source.content);
+  const citationDirective = buildCitationDirective(source.citation, source.content, readGenreFromPrompt(prompt) || undefined);
   /** 未查證的引用，外加文章裡出現的英文原名 */
   const citationProblems = (text: string): string[] => [
     ...unverifiedCitations(text, source.citation),
