@@ -158,33 +158,88 @@ export async function uploadPublicJpeg(buffer: Buffer, brand: BrandKey | string)
 }
 
 
-/** 通用文字模型呼叫（先 Anthropic，沒有或失敗再退回 OpenAI），給輪播文字濃縮等用途。 */
+/**
+ * 通用文字模型呼叫，給輪播文字濃縮等用途。
+ *
+ * 2026-10-31：Anthropic 沒額度那段時間，衍生稿改寫連續失敗退回機械式截斷。
+ * 原因是這支只有 Anthropic 與 OpenAI 兩家、沒有 Gemini，而且 Anthropic 失敗
+ * 被安靜吞掉查不到原因。改成三家依序，每一家失敗都留下紀錄。
+ */
 export async function completeText(system: string, user: string, maxTokens = 900): Promise<string> {
+  const failures: string[] = [];
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6", max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (res.ok) {
-      const json = (await res.json()) as { content?: { type: string; text?: string }[] };
-      const text = (json.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
-      if (text) return text;
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6", max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
+        const text = (json.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
+        // 被 max_tokens 切斷的內容是半截的，拿去解析一定失敗，不如換下一家
+        if (text && json.stop_reason !== "max_tokens") return text;
+        failures.push(json.stop_reason === "max_tokens" ? "anthropic 回傳被 max_tokens 截斷" : "anthropic 回傳空內容");
+      } else {
+        failures.push(`anthropic HTTP ${res.status}：${(await res.text()).slice(0, 120)}`);
+      }
+    } catch (error) {
+      failures.push(`anthropic ${error instanceof Error ? error.message.slice(0, 120) : "呼叫失敗"}`);
     }
   }
+
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) throw new Error("沒有可用的文字模型密鑰（ANTHROPIC_API_KEY 或 OPENAI_API_KEY）");
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) throw new Error(`文字模型回應 ${res.status}`);
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const text = (json.choices?.[0]?.message?.content || "").trim();
-  if (!text) throw new Error("文字模型沒有回傳內容");
-  return text;
+  if (openaiKey) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }], max_completion_tokens: maxTokens }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
+        const text = (json.choices?.[0]?.message?.content || "").trim();
+        if (text && json.choices?.[0]?.finish_reason !== "length") return text;
+        failures.push(json.choices?.[0]?.finish_reason === "length" ? "openai 回傳被長度上限截斷" : "openai 回傳空內容");
+      } else {
+        failures.push(`openai HTTP ${res.status}：${(await res.text()).slice(0, 120)}`);
+      }
+    } catch (error) {
+      failures.push(`openai ${error instanceof Error ? error.message.slice(0, 120) : "呼叫失敗"}`);
+    }
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: { maxOutputTokens: maxTokens } }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[] };
+        const candidate = json.candidates?.[0];
+        const text = (candidate?.content?.parts || []).map((part) => part.text || "").join("").trim();
+        if (text && candidate?.finishReason !== "MAX_TOKENS") return text;
+        failures.push(candidate?.finishReason === "MAX_TOKENS" ? "gemini 回傳被 maxOutputTokens 截斷" : "gemini 回傳空內容");
+      } else {
+        failures.push(`gemini HTTP ${res.status}：${(await res.text()).slice(0, 120)}`);
+      }
+    } catch (error) {
+      failures.push(`gemini ${error instanceof Error ? error.message.slice(0, 120) : "呼叫失敗"}`);
+    }
+  }
+
+  if (!failures.length) throw new Error("沒有可用的文字模型密鑰（ANTHROPIC_API_KEY、OPENAI_API_KEY 或 GEMINI_API_KEY）");
+  const detail = failures.join("；").slice(0, 300);
+  console.warn("[completeText] 三家都沒成功：", detail);
+  throw new Error(`文字模型都沒成功。${detail}`);
 }

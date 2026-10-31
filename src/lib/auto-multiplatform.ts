@@ -15,6 +15,7 @@ import { withCoverImage } from "@/lib/article-image.mjs";
 import type { TrafficFunnel } from "@/data/brands/conversion";
 import { allowedCitationFromTitles } from "@/data/skills/citation-rules";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
+import { robustJSONParse } from "@/lib/ai-provider";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
 import { applyMechanicalFixes, brandSubjectHits, brandSubjectSentences, citedBookTitles, gateBlockers, gateMessage, rewriteBrandSubject, runQualityGate, unverifiedCitations } from "@/lib/quality-gate";
@@ -75,16 +76,18 @@ export interface DerivedVersions {
 }
 
 function parseDerived(raw: string): { threads: string; instagram: string; slides: string[] } | null {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
+  // 用共用的寬鬆解析，不要自己切括號。
+  // 模型常見的回法是包一層 ```json 或在 JSON 後面多寫一句說明，
+  // 原本的 indexOf/lastIndexOf 加 JSON.parse 一碰到就整個失敗，
+  // 結果退回機械式截斷，Threads 與 IG 的文字品質掉一截。
+  let json: Record<string, unknown>;
   try {
-    const json = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-    if (typeof json.threads !== "string" || typeof json.instagram !== "string" || !Array.isArray(json.slides)) return null;
-    return { threads: json.threads, instagram: json.instagram, slides: json.slides.map(String) };
+    json = robustJSONParse(raw) as Record<string, unknown>;
   } catch {
     return null;
   }
+  if (typeof json.threads !== "string" || typeof json.instagram !== "string" || !Array.isArray(json.slides)) return null;
+  return { threads: json.threads, instagram: json.instagram, slides: json.slides.map(String) };
 }
 
 /** 從母稿改寫 Threads、IG 與輪播文字。AI 失敗時退回機械式截斷與切段，仍然來自同一份母稿。 */
