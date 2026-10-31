@@ -96,7 +96,11 @@ export async function deriveVersions(master: string, avoidWords: string[] = []):
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const note = avoidWords.length ? `\n\n【修改要求，不是原文】上一版出現了不可使用的詞：${avoidWords.slice(0, 8).join("、")}。三個版本都不可出現這些詞，也不可用同義的說法硬帶過，請換個角度表達同一個意思。` : "";
-      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + note, 3000);
+      // 2026-10-31：這裡原本給 3000，OpenAI 與 Gemini 都回報被輸出上限切斷，
+      // 半截的 JSON 解析必定失敗，於是退回機械式截斷，IG 直接貼了整篇 FB 原文。
+      // 規格要求的輸出是 Threads 400 到 460 字、IG 900 到 1500 字、輪播 5 到 7 張各 40 字，
+      // 合計約 1500 到 2240 個中文字，中文換算成 token 往往一字超過一個，3000 根本不夠。
+      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + note, 8000);
       const parsed = parseDerived(raw);
       if (!parsed) { lastError = "AI 回傳格式無法解析"; continue; }
       const threads = trimAtBoundary(clean(parsed.threads), THREADS_MAX - 20);
@@ -420,6 +424,17 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
       if (retried.source === "ai") derived = retried;
     }
     result.derived = { source: derived.source, note: derived.note };
+    // 改寫沒有成功時，derived 裡裝的是母稿的機械截斷：
+    // IG 會變成整篇 FB 原文一字不改，Threads 會變成前 460 字硬切。
+    // 那種內容通過得了品管與品牌紅線，因為它本來就是已經過關的母稿，
+    // 所以必須在這裡擋下來。寧可讓這兩個平台留空、在待處理中心等人工補做，
+    // 也不要讓沒有改寫過的內容照排程自動發出去。
+    if (derived.source !== "ai") {
+      const reason = `改寫沒有成功，不排程以免把母稿原文直接貼到社群。${derived.note || "原因未記錄"}`;
+      if (want("instagram")) result.instagram = { ok: false, error: reason };
+      if (want("threads")) result.threads = { ok: false, error: reason };
+      return result;
+    }
   } catch (error) {
     const message = safe(error);
     result.instagram = { ok: false, error: `改寫失敗：${message}` };

@@ -31,4 +31,23 @@ assert.equal((robustJSONParse(body) as any).threads, "甲");
 assert.equal((robustJSONParse("```json\n" + body + "\n```") as any).instagram, "乙", "包程式碼區塊要能救回來");
 assert.equal((robustJSONParse(body + "\n\n以上是三個版本，請確認。") as any).instagram, "乙", "後面多一句說明要能救回來");
 
+// 2026-10-31 第二輪：補上三家回退之後，重跑那四篇仍然失敗。
+// 新埋的診斷紀錄直接給出答案：
+//   anthropic HTTP 400 額度不足；openai 回傳被長度上限截斷；gemini 回傳被 maxOutputTokens 截斷。
+// 也就是輸出上限本身就不夠。規格要求 Threads 400-460 字、IG 900-1500 字、
+// 輪播 5-7 張各 40 字，合計約 1500 到 2240 個中文字，3000 tokens 裝不下。
+assert.ok(multi.includes("+ note, 8000)"), "衍生稿的輸出上限要夠裝下規格要求的字數");
+assert.ok(!multi.includes("+ note, 3000)"), "3000 會被截斷，不可以退回去");
+
+const carousel = readFileSync(new URL("../src/app/api/carousel-slides/route.ts", import.meta.url), "utf8");
+assert.ok(!carousel.includes("article.slice(0, 6000), 900)"), "輪播 900 太緊，同樣會被截斷");
+
+// 這是艾瑞克要的審核機制：目前全自動，改寫失敗卻照樣排程發出。
+// 機械截斷的內容通過得了品管與品牌紅線，因為它本來就是已經過關的母稿，
+// 所以品管擋不住它，必須在排程之前單獨擋一次。
+assert.ok(multi.includes('if (derived.source !== "ai")'), "改寫沒成功就不可以排程");
+assert.ok(multi.includes("不排程以免把母稿原文直接貼到社群"), "要說清楚為什麼不排程");
+// 官網在這之前就處理完了，擋 IG 與 Threads 不會連帶影響官網
+assert.ok(multi.indexOf('want("website")') < multi.indexOf('if (derived.source !== "ai")'), "官網必須在這道閘門之前完成");
+
 console.log("derive-fallback 測試通過");

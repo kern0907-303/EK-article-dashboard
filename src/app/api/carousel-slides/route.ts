@@ -30,7 +30,9 @@ export async function POST(req: NextRequest) {
     let note = "";
     if (mode !== "auto") {
       try {
-        const raw = await completeText(SYSTEM, article.slice(0, 6000), 900);
+        // 輪播 5 到 7 張、每張 40 字，加上 JSON 結構，900 太緊；
+        // 被輸出上限切斷的話解析會失敗，所以放寬到 2000。
+        const raw = await completeText(SYSTEM, article.slice(0, 6000), 2000);
         slides = sanitizeSlides(parseSlidesJson(raw), 10);
         if (slides.length >= 2) source = "ai";
         else note = "AI 回傳的內容無法使用，已改用自動切段。";
