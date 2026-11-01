@@ -92,9 +92,23 @@ export function stripDashes(input: string): string {
  * （Facebook、官網 FAQ 區都不吃 ** ## 這類符號）。
  * 只動格式符號，不改文字內容。
  */
+/**
+ * 去掉控制字元。
+ *
+ * 2026-11-01：模型產出的文字裡混進一個 NUL（U+0000），Postgres 不收，
+ * 整個 PATCH 被擋下（22P05 unsupported Unicode escape sequence），
+ * 草稿因此完全沒存進去，任務直接失敗，錯誤訊息還被當成標題顯示在待處理中心。
+ * 保留換行與定位字元，其餘 C0 控制字元與 U+FFFE、U+FFFF 一律移除。
+ */
+export function stripControlChars(input: string): string {
+  if (!input) return input;
+  // eslint-disable-next-line no-control-regex
+  return input.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uFFFE\uFFFF]/g, "");
+}
+
 export function stripMarkdown(input: string): string {
   if (!input) return input;
-  const cleaned = stripDividers(input)
+  const cleaned = stripControlChars(stripDividers(input))
     .replace(/^\s{0,3}#{1,6}\s*/gm, "")        // # 標題
     .replace(/\*\*\*([\s\S]+?)\*\*\*/g, "$1")      // ***粗斜體***
     .replace(/\*\*([\s\S]+?)\*\*/g, "$1")          // **粗體**

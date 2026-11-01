@@ -27,8 +27,13 @@ export function pipelineSupabaseUrl(table: string, query = ""): string | null {
 export async function pipelineDb<T = any>(table: string, query = "", init: RequestInit = {}): Promise<T> {
   const env = getSupabaseEnv();
   if (!env) throw new Error("未設定 Supabase 連線資訊");
+  // 最後一道防線：NUL 進不了 Postgres 的 text 欄位，送出去會整個 PATCH 被擋下（22P05），
+  // 結果草稿一個字都存不進去。文字清理那層已經擋過一次，這裡再擋一次，
+  // 因為 warnings、social_results 這些欄位不一定經過文字清理。
+  const body = typeof init.body === "string" ? init.body.replace(/\\u0000/g, "").replace(/\u0000/g, "") : init.body;
   const response = await fetch(`${env.url}/rest/v1/${table}${query ? `?${query}` : ""}`, {
     ...init,
+    ...(body === undefined ? {} : { body }),
     headers: supabaseHeaders(env.key, { Prefer: "return=representation", ...(init.headers as Record<string, string> || {}) }),
     cache: "no-store",
   });

@@ -92,7 +92,8 @@ export default function NeedsAttentionPage() {
   const markDone = (i: Item) => call("/api/needs-attention", "POST", { action: "mark_done", source: "job", id: i.refId }, "已標記處理，這則離開清單。");
   const retry = (i: Item) => {
     if (i.retryRisk && !window.confirm(i.retryRisk)) return;
-    return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, "已重新排入，約 6 分鐘後派發。");
+    const done = i.source === "job" ? "已放回流水線，會重新生成一次，預定發佈時間不變。" : "已重新排入，約 6 分鐘後派發。";
+    return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, done);
   };
   const dismiss = (i: Item) => {
     if (i.derivativePlatform) {
@@ -300,7 +301,7 @@ export default function NeedsAttentionPage() {
                   )}
                   {selected.canEdit && <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>}
                   {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
-                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">重試發佈</button>}
+                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">{selected.source === "job" ? "重新生成" : "重試發佈"}</button>}
                   {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
                   {selected.source === "job" && selected.queued && (
                     <button disabled={busy || rewriting || syncing} onClick={() => void remakeCard(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50" title="圖卡上印的是文章第一行，標題改了要重畫。不花 AI 額度">重做標題圖卡</button>

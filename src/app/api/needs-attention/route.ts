@@ -75,6 +75,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, scheduledAt: body.scheduled_at });
     }
 
+    /**
+     * 失敗的流水線任務：放回去重跑。
+     * 以前失敗就是死路，只剩「我已處理」可按，按了只是藏起來，那個發文時段就空了。
+     * 預定發佈時間不動，撿起來之後照原本的流程走。
+     */
+    if (action === "retry" && source === "job") {
+      const res = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=eq.failed`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ status: "pending", current_step: "等待執行（重新生成）", error_reason: null, retry_count: 0, reviewed: false, updated_at: now }),
+      });
+      if (!res.ok) throw new Error(`重新生成失敗（${res.status}）：${(await res.text()).slice(0, 160)}`);
+      const rows = await res.json();
+      if (!Array.isArray(rows) || !rows.length) return NextResponse.json({ error: "這則已不是失敗狀態，可能已被處理" }, { status: 409 });
+      return NextResponse.json({ success: true });
+    }
+
+    /**
+     * 失敗的流水線任務：明確放棄。
+     * 只處理沒有 FB 排程列的（queue_id 為空），否則要連帶撤回排程，那條路走資料庫函式。
+     */
+    if (action === "dismiss" && source === "job") {
+      const res = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=eq.failed&queue_id=is.null`, {
+        method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
+        body: JSON.stringify({ status: "cancelled", current_step: "已放棄", reviewed: true, updated_at: now }),
+      });
+      if (!res.ok) throw new Error(`放棄失敗（${res.status}）：${(await res.text()).slice(0, 160)}`);
+      const rows = await res.json();
+      if (!Array.isArray(rows) || !rows.length) return NextResponse.json({ error: "這則不是失敗狀態，或已排程，無法直接放棄" }, { status: 409 });
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "dismiss" && (source === "social_queue" || source === "fb_queue")) {
       const table = source === "social_queue" ? "social_publish_queue" : "publish_queue";
       const res = await fetch(`${env.url}/rest/v1/${table}?id=eq.${id}&status=eq.failed`, {

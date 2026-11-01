@@ -77,11 +77,15 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       key: `job:${job.id}`, kind, brand, platform: "FB", scheduledAt: job.scheduled_at,
       reason: reason || (kind === "failed" ? "流水線任務失敗" : "流水線停在人工處理"),
       text: snippet(job.draft_content || job.prompt), full: String(job.draft_content || job.prompt || ""), source: "job", refId: job.id, jobId: job.id,
-      advice: kind === "failed" ? "看原因後到自動流水線頁面重新建立，或取消這則。"
+      advice: kind === "failed" ? "按「重新生成」會把這則放回流水線重跑，預定發佈時間不變。真的不要了就按「放棄這則」。"
         : kind === "blocked" ? "修改文案後儲存，系統會重新跑品管，通過才算處理完。"
         : brand === "erick" ? "個人帳號無法排程，複製文案自己發，發完按「我已處理」。"
         : "確認內容與時間沒問題後，到自動流水線頁面排程，或標記已處理。",
-      canEdit: kind !== "failed" && !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: false, canDismiss: false,
+      // 失敗的任務原本只剩「我已處理」可按，按下去只是把它藏起來，那個發文時段就沒了。
+      // 給它兩條真正的出路：放回流水線重跑，或明確放棄。
+      canEdit: kind !== "failed" && !!job.draft_content, queued: !!job.queue_id,
+      canRetry: kind === "failed", retryRisk: null,
+      canMarkDone: true, canCancel: false, canDismiss: kind === "failed" && !job.queue_id,
       stalePlatforms: readStalePlatforms(job.social_results),
     });
   }
