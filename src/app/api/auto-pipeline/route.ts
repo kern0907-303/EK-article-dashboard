@@ -132,7 +132,7 @@ export async function PATCH(req: NextRequest) {
       const priorWarnings = Array.isArray(current.warnings) ? current.warnings.filter((warning: unknown) => typeof warning === "string" && warning.startsWith("發文前提醒（不在文章裡）：")) : [];
       const nextWarnings = [...new Set([...priorWarnings, ...warnings, ...editNotes])];
       // 只儲存尚未排程的草稿，不等於已完成排程或審稿；否則待處理中心會把它藏掉。
-      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: reviewedAfterPipelineEdit(current.queue_id, !!scheduledNow), ...(contentChanged && hadDerivatives ? { social_results: priorSocial } : {}), updated_at: new Date().toISOString() }) });
+      const updated = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ draft_content: updatedContent, warnings: nextWarnings, reviewed: reviewedAfterPipelineEdit(current.queue_id, !!scheduledNow, contentChanged && hadDerivatives), ...(contentChanged && hadDerivatives ? { social_results: priorSocial } : {}), updated_at: new Date().toISOString() }) });
       return NextResponse.json({ success: true, job: updated[0], warnings, editNotes, derivativesStale: contentChanged && hadDerivatives, stalePlatforms: contentChanged && hadDerivatives ? stalePlatforms : [], guardrailHits: checked.guardrailHits, ...(scheduledNow ? { scheduled: true, queueId: scheduledNow.queueId, cardNote: scheduledNow.cardNote } : {}) });
     }
     /**

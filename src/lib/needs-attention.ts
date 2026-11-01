@@ -129,6 +129,28 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
     }
   }
 
+  // 2b. 主稿改過、衍生稿還沒跟上的（不看 reviewed、不看兩天內）
+  //
+  // 2026-11-01：艾瑞克改了一篇 I8 的標題，存檔後系統要他「去待處理中心按同步」，
+  // 但那次存檔同時把 reviewed 設成 true，而未審清單只撈 reviewed=false 且兩天內的，
+  // 於是那則從清單消失，同步按鈕再也按不到。另一則 ABL 排在 12/22 的也一樣卡著。
+  // 這一段不依賴 reviewed，也不限兩天，只要還有待同步的平台就一定列出來。
+  const alreadyListed = new Set(items.map((item) => item.key));
+  for (const job of multi) {
+    const pending = readStalePlatforms(job.social_results);
+    if (!pending.length) continue;
+    const key = `job:${job.id}`;
+    if (alreadyListed.has(key)) continue;
+    items.push({
+      key, kind: "review", brand: brandOf(job.brand_id), platform: "FB", scheduledAt: job.scheduled_at,
+      reason: `主稿改過，${pending.map((platform) => PLATFORM_LABEL[platform]).join("、")} 還是舊內容`,
+      text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
+      advice: "讀過主稿沒問題就按同步，其他平台才會換成新版。改錯了就先改主稿再同步。",
+      canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null,
+      canMarkDone: false, canCancel: false, canDismiss: false, stalePlatforms: pending,
+    });
+  }
+
   // 3. FB 排程發送失敗（7 天內）
   const fbRows = await safeQuery<any>("publish_queue", `status=in.(failed,partial)&scheduled_at=gte.${iso(now - 7 * DAY)}&order=scheduled_at.desc&limit=50&select=id,brand_id,content,scheduled_at,status,error,results`);
   for (const row of fbRows) {

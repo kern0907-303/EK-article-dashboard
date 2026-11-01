@@ -13,8 +13,15 @@ export const AUTO_PIPELINE_ENABLED = process.env.AUTO_PIPELINE_ENABLED === "true
 export const PIPELINE_MAX_BATCH_SIZE = 21;
 export const PIPELINE_MIN_LEAD_MS = 30 * 60 * 1000;
 
-/** 儲存未排程的草稿不算審完；只有已在佇列或本次確實排入佇列才標記已審。 */
-export function reviewedAfterPipelineEdit(queueId: string | null, scheduledNow: boolean): boolean {
+/**
+ * 儲存未排程的草稿不算審完；只有已在佇列或本次確實排入佇列才標記已審。
+ *
+ * 2026-11-01：還有第三種情況。改了主稿而且留下待同步的衍生稿時，這一則其實還沒處理完，
+ * 不可以標成已審。待處理中心只撈 reviewed=false，一標已審就等於把它藏起來，
+ * 但同一次存檔的提醒卻寫著「請在待處理中心按同步」，那個按鈕因此永遠按不到。
+ */
+export function reviewedAfterPipelineEdit(queueId: string | null, scheduledNow: boolean, derivativesStale = false): boolean {
+  if (derivativesStale) return false;
   return !!queueId || scheduledNow;
 }
 
