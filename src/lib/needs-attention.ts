@@ -156,6 +156,50 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
     });
   }
 
+  // 2c. 有平台還沒補草稿（不看 reviewed）
+  //
+  // 2026-11-02：流水線時間軸會把這種狀況標成「有平台還沒補草稿」，但待處理中心
+  // 完全沒有這一類，而且兩邊的判斷不一致：時間軸不看 reviewed，待處理中心看。
+  // 結果畫面一邊說有問題、一邊找不到人處理。這一段跟時間軸用同一個條件。
+  const socialByJobId = new Map<string, Set<string>>();
+  const multiJobIds = multi.map((job: any) => job.id);
+  if (multiJobIds.length) {
+    const rows = await safeQuery<any>("social_publish_queue", `job_id=in.(${multiJobIds.join(",")})&status=neq.cancelled&select=job_id,platform`);
+    for (const row of rows) {
+      const set = socialByJobId.get(row.job_id) || new Set<string>();
+      set.add(String(row.platform));
+      socialByJobId.set(row.job_id, set);
+    }
+  }
+  const withinWeek = (at: unknown) => {
+    const time = new Date(String(at || "")).getTime();
+    return Number.isFinite(time) && time > now && time < now + 7 * DAY;
+  };
+  for (const job of multi) {
+    if (brandOf(job.brand_id) === "erick" || !withinWeek(job.scheduled_at)) continue;
+    const results = (job.social_results && typeof job.social_results === "object") ? job.social_results as Record<string, any> : {};
+    const have = socialByJobId.get(job.id) || new Set<string>();
+    // ok === false 是「失敗」，上面那段已經列過，這裡只管從來沒有草稿的
+    const missing = (["website", "instagram", "threads"] as const).filter((platform) => {
+      if (results[platform]?.ok === false) return false;
+      if (platform === "website") return !results.website?.ok && !linkedArticleByQueue.get(job.queue_id);
+      return !have.has(platform);
+    });
+    if (!missing.length) continue;
+    const key = `job:${job.id}`;
+    if (items.some((item) => item.key === key)) continue;
+    items.push({
+      key, kind: "manual", brand: brandOf(job.brand_id), platform: "FB", scheduledAt: job.scheduled_at,
+      reason: `${missing.map((platform) => PLATFORM_LABEL[platform]).join("、")} 還沒補草稿`,
+      text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
+      advice: "到自動流水線的多平台衍生頁，在空著的平台按「生成」，補好這一則就會自動離開清單。FB 不受影響，照原本時間發。不補也可以，那一天就少那幾個平台。",
+      canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null,
+      // 這一段不看 reviewed，所以「標記已審」按了項目也不會消失，那會變成一顆沒作用的按鈕。
+      // 真正讓它離開清單的動作是把草稿補上，入口在多平台衍生頁。
+      canMarkDone: false, canCancel: false, canDismiss: false, stalePlatforms: readStalePlatforms(job.social_results),
+    });
+  }
+
   // 3. FB 排程發送失敗（7 天內）
   const fbRows = await safeQuery<any>("publish_queue", `status=in.(failed,partial)&scheduled_at=gte.${iso(now - 7 * DAY)}&order=scheduled_at.desc&limit=50&select=id,brand_id,content,scheduled_at,status,error,results`);
   for (const row of fbRows) {
