@@ -149,9 +149,10 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
       key, kind: "review", brand: brandOf(job.brand_id), platform: "FB", scheduledAt: job.scheduled_at,
       reason: `主稿改過，${pending.map((platform) => PLATFORM_LABEL[platform]).join("、")} 還是舊內容`,
       text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
-      advice: "讀過主稿沒問題就按同步，其他平台才會換成新版。改錯了就先改主稿再同步。",
+      advice: "讀過主稿沒問題就按同步，其他平台才會換成新版。改錯了就先改主稿再同步。不想同步、願意讓其他平台維持舊內容，就按「我已處理」。",
       canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null,
-      canMarkDone: false, canCancel: false, canDismiss: false, stalePlatforms: pending,
+      // 2026-11-02：這裡原本是 false，結果只靠這段掃描列出來的文章沒有審稿按鈕可按。
+      canMarkDone: true, canCancel: false, canDismiss: false, stalePlatforms: pending,
     });
   }
 

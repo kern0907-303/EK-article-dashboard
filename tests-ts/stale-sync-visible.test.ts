@@ -31,4 +31,15 @@ const sweepAt = attention.indexOf("const pending = readStalePlatforms(job.social
 const multiAt = attention.indexOf("const multi = await safeQuery");
 assert.ok(multiAt > 0 && multiAt < sweepAt, "掃描要用 multi 那份查詢，它沒有 reviewed 與兩天的限制");
 
+// 2026-11-02 回歸：只靠那段掃描列出來的文章沒有審稿按鈕可按。
+// 掃描那段原本把 canMarkDone 設成 false，而排程日較遠的文章只會從那段出現。
+assert.ok(attention.includes("canMarkDone: true, canCancel: false, canDismiss: false, stalePlatforms: pending"),
+  "掃描列出來的文章也要能按審稿");
+
+const api2 = readFileSync(new URL("../src/app/api/needs-attention/route.ts", import.meta.url), "utf8");
+// 按了審稿要把待同步標記清掉，否則掃描會一直列回來，按鈕看起來像壞的
+assert.ok(api2.includes("clearAllStalePlatforms"), "審稿要清掉待同步標記");
+// 讀不到既有結果時絕不可以用空物件覆蓋掉 social_results
+assert.ok(api2.includes("...(cleared ? { social_results: cleared } : {})"), "讀不到就不要碰 social_results");
+
 console.log("stale-sync-visible 測試通過");

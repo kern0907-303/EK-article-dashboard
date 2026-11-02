@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectAttention } from "@/lib/needs-attention";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
+import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { clearAllStalePlatforms } from "@/data/skills/derivative-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -53,9 +55,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "mark_done" && source === "job") {
+      // 讀回目前的衍生結果，只把待同步清單拿掉，其他欄位原封不動。
+      // 讀不到就完全不碰 social_results，絕不可以用空物件覆蓋掉既有的衍生結果。
+      let cleared: Record<string, unknown> | null = null;
+      try {
+        const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `id=eq.${encodeURIComponent(String(id))}&select=social_results&limit=1`);
+        if (rows.length) cleared = clearAllStalePlatforms(rows[0].social_results);
+      } catch { cleared = null; }
       const res = await fetch(`${env.url}/rest/v1/auto_pipeline_jobs?id=eq.${id}&status=in.(manual,failed,scheduled)`, {
         method: "PATCH", headers: supabaseHeaders(env.key, { Prefer: "return=representation" }),
-        body: JSON.stringify({ reviewed: true, updated_at: now }),
+        // 待同步的標記要一起清掉，否則那段掃描會一直把它列回來，按鈕看起來像壞的。
+        // 按下這顆等於接受其他平台維持舊內容，畫面上會先問一次。
+        body: JSON.stringify({ reviewed: true, ...(cleared ? { social_results: cleared } : {}), updated_at: now }),
       });
       if (!res.ok) throw new Error(`標記失敗（${res.status}）`);
       const rows = await res.json();

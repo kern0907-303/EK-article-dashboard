@@ -89,7 +89,11 @@ export default function NeedsAttentionPage() {
     finally { setBusy(false); }
   };
 
-  const markDone = (i: Item) => call("/api/needs-attention", "POST", { action: "mark_done", source: "job", id: i.refId }, "已標記處理，這則離開清單。");
+  const markDone = (i: Item) => {
+    // 還有平台沒同步時，按這顆等於接受它們維持舊內容，先問一次比較保險
+    if (i.stalePlatforms?.length && !window.confirm(`還有 ${i.stalePlatforms.map((p) => DERIVATIVE_LABEL[p]).join("、")} 沒有同步。按下去代表接受它們維持舊內容，確定嗎？`)) return;
+    return call("/api/needs-attention", "POST", { action: "mark_done", source: "job", id: i.refId }, "已標記處理，這則離開清單。");
+  };
   const retry = (i: Item) => {
     if (i.retryRisk && !window.confirm(i.retryRisk)) return;
     const done = i.source === "job" ? "已放回流水線，會重新生成一次，預定發佈時間不變。" : "已重新排入，約 6 分鐘後派發。";

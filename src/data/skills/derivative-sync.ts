@@ -52,6 +52,17 @@ export function markDerivativesStale(socialResults: unknown, hasWebsiteArticle: 
   return next;
 }
 
+/**
+ * 不同步了：把整份待同步清單清掉。
+ * 用在「我已處理」，代表使用者接受其他平台維持舊內容。
+ * 不清掉的話，待處理中心那段掃描會一直把它列回來，按鈕看起來像壞的。
+ */
+export function clearAllStalePlatforms(socialResults: unknown): Record<string, unknown> {
+  const next = { ...asObject(socialResults) };
+  delete next.stale_platforms;
+  return next;
+}
+
 /** 某個平台同步完了：從待同步清單移掉它，其他平台不動。 */
 export function clearStalePlatform(socialResults: unknown, platform: string): Record<string, unknown> {
   const next = { ...asObject(socialResults) };
