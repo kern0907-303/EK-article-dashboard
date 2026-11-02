@@ -50,4 +50,12 @@ assert.ok(multi.includes("不排程以免把母稿原文直接貼到社群"), "�
 // 官網在這之前就處理完了，擋 IG 與 Threads 不會連帶影響官網
 assert.ok(multi.indexOf('want("website")') < multi.indexOf('if (derived.source !== "ai")'), "官網必須在這道閘門之前完成");
 
+// 2026-11-02：又出現一次「AI 回傳格式無法解析」，但這次三家回退沒有全部失敗
+// （completeText 沒有留下紀錄），代表模型確實回了東西，是解析那關過不去。
+// 失敗當下沒有把模型回了什麼記下來，只剩一句話，無從查起。
+assert.ok(multi.includes("[deriveVersions] 解析失敗，模型回傳前 400 字："), "解析失敗要記下模型實際回傳的內容");
+assert.ok(multi.includes("開頭是「"), "通知裡要帶回傳的開頭，不用等人去翻 log");
+assert.ok(multi.includes("AI 回傳內容不足：Threads"), "長度不足要講清楚是哪一項不足");
+assert.ok(!multi.includes('lastError = "AI 回傳內容太短或張數不足"'), "舊的籠統訊息不可以留著");
+
 console.log("derive-fallback 測試通過");

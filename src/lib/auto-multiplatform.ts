@@ -102,11 +102,24 @@ export async function deriveVersions(master: string, avoidWords: string[] = []):
       // 合計約 1500 到 2240 個中文字，中文換算成 token 往往一字超過一個，3000 根本不夠。
       const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + note, 8000);
       const parsed = parseDerived(raw);
-      if (!parsed) { lastError = "AI 回傳格式無法解析"; continue; }
+      if (!parsed) {
+        // 2026-11-02：又出現一次「格式無法解析」，但失敗當下沒有留下模型究竟回了什麼，
+        // 只剩這一句話，無從查起。把回傳的開頭記下來並帶進通知，下次直接看得出來是
+        // 包了程式碼區塊、少了欄位，還是回了完全不同的東西。
+        const peek = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 80);
+        console.warn("[deriveVersions] 解析失敗，模型回傳前 400 字：", String(raw || "").replace(/\s+/g, " ").slice(0, 400));
+        lastError = peek ? `AI 回傳格式無法解析，開頭是「${peek}」` : "AI 回傳空內容";
+        continue;
+      }
       const threads = trimAtBoundary(clean(parsed.threads), THREADS_MAX - 20);
       const instagram = trimAtBoundary(clean(parsed.instagram), INSTAGRAM_MAX - 100);
       const slides = sanitizeSlides(parsed.slides.map(clean), CAROUSEL_TARGET_MAX);
-      if (threads.length < 40 || instagram.length < 80 || slides.length < 2) { lastError = "AI 回傳內容太短或張數不足"; continue; }
+      if (threads.length < 40 || instagram.length < 80 || slides.length < 2) {
+        // 哪一項不足也要講清楚，否則同樣查不出是字數問題還是張數問題
+        lastError = `AI 回傳內容不足：Threads ${threads.length} 字、IG ${instagram.length} 字、輪播 ${slides.length} 張`;
+        console.warn("[deriveVersions]", lastError);
+        continue;
+      }
       return { threads, instagram, slides, source: "ai", note: "" };
     } catch (error) {
       lastError = error instanceof Error ? error.message.slice(0, 120) : "改寫失敗";
