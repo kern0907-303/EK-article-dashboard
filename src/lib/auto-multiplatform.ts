@@ -15,6 +15,7 @@ import { withCoverImage } from "@/lib/article-image.mjs";
 import type { TrafficFunnel } from "@/data/brands/conversion";
 import { allowedCitationFromTitles } from "@/data/skills/citation-rules";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
+import { pointIgLinkToBio } from "@/lib/derivatives-core.mjs";
 import { robustJSONParse } from "@/lib/ai-provider";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
@@ -62,6 +63,8 @@ const SYSTEM_DERIVE =
   "原則：三個版本必須和原文是同一個觀點、同一組事實，只改格式與長度，不可新增原文沒有的觀點、數字、案例或承諾，不可改變原文立場。" +
   "Threads 版：約 400 到 460 字，第一句就是鉤子，口語，一口氣讀完，結尾留一句讓人想回覆的話。" +
   "Instagram 說明版：約 900 到 1500 字，第一行是鉤子（會被截斷預覽，要在前面就吸引人），段落短，保留原文的故事與論點。" +
+  "IG 的連結指路一律寫個人簡介，不可以寫留言區。原文若寫「連結在留言區第一則」，IG 版要改成「連結放在個人簡介」。邀請讀者留言互動的句子不受影響，照原意保留。" +
+  "Threads 版的連結指路維持留言區第一則，不要改。" +
   "輪播圖卡：5 到 7 張，第 1 張是封面鉤子（改寫，不要只複製標題），中間每張只講一個重點，最後一張是溫和收尾或一個問題。每張不超過 40 字，一到兩句，口語。" +
   "說話的人：只能是艾瑞克的第一人稱，或不指名的客觀陳述，品牌名稱不可以當主詞去認為、相信、陪伴、提供、協助，也不可以用「我們」替品牌發言，原文若有這類句子要改寫掉。" +
   "全部文字：不可出現任何破折號（——、—、─、-），不可出現 Markdown 符號（# * 等），不可出現【】標記或括號註記，不要加主題標籤，停頓用逗號或句號。不可用立刻、保證、一定會這類催促或絕對說法。" +
@@ -468,7 +471,9 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
   // Instagram：一定要有圖，圖卡失敗就不發（不發沒有圖的 IG）
   if (want("instagram")) try {
     if (imageUrls.length < 2) throw new Error(`輪播圖卡失敗：${imageError || "張數不足"}`);
-    const content = derived.instagram;
+    // IG 不會貼首則留言（只有 FB 會），所以主稿帶過來的「連結在留言區」要改指個人簡介。
+    // 提示詞也有這條規則，這裡是機械保險，確保漏網的也會被改掉。
+    const content = pointIgLinkToBio(derived.instagram);
     if (content.length > INSTAGRAM_MAX) throw new Error("IG 說明超過 2200 字");
     const guard = inspectForPublish(content, fullBrand, "warm");
     if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);

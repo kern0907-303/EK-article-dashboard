@@ -20,3 +20,4 @@ export function validateDerivativePayload(platform: string, payload?: Record<str
 export function formatDerivativeContent(platform: string, languageVersion: string, payload?: Record<string, any>): string;
 export function deriveChecks(input: { parentText: string; content: string; platform: string; languageVersion: string; rules?: Array<any>; spec?: Record<string, any>; existingGuardrailPassed?: boolean; humanConfirmed?: boolean; extraBlockers?: string[] }): Record<string, any>;
 export function stableParentId(brandId: string, platform: string, content: string): string;
+export declare function pointIgLinkToBio(input: unknown): string;

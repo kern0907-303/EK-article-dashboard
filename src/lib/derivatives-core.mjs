@@ -205,3 +205,31 @@ export function stableParentId(brandId, platform, content) {
   for (let i = 0; i < source.length; i += 1) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
   return `workspace_social:${brandId}:${platform}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
+
+/**
+ * IG 的連結指路改成個人簡介。
+ *
+ * 2026-11-02：IG 與 Threads 的衍生稿是從 FB 主稿改寫的，主稿寫「連結我放在留言區第一則」，
+ * 這句話就原封不動被帶到 IG。但 Threads/IG 的排程執行器根本不會貼留言，
+ * 待發的 72 則 IG 裡有 50 則在叫讀者去看一個不存在的留言。
+ * IG 的慣例本來就是連結放個人簡介，所以 IG 改指個人簡介；Threads 另外補首則留言。
+ *
+ * 只改「指路連結」的句子。像「歡迎在留言區和我聊聊」是邀請互動，不是指路，不可以動。
+ */
+export function pointIgLinkToBio(input) {
+  let text = String(input ?? "");
+  if (!text) return text;
+  const hasPointer = (sentence) => /(連結|網址|資訊|報名|測驗|計算)/.test(sentence);
+  // 逐句處理，只動同時提到留言與連結的句子
+  text = text.replace(/[^。\n]*[。\n]?/g, (chunk) => {
+    if (!/留言/.test(chunk) || !hasPointer(chunk)) return chunk;
+    return chunk
+      .replace(/留言區第一則/g, "個人簡介")
+      .replace(/留言第一則/g, "個人簡介")
+      .replace(/第一則留言/g, "個人簡介")
+      .replace(/留言區/g, "個人簡介")
+      .replace(/留言裡/g, "個人簡介");
+  });
+  // 「放在個人簡介第一則」這種殘留要收乾淨
+  return text.replace(/個人簡介第一則/g, "個人簡介");
+}
