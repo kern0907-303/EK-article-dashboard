@@ -61,11 +61,14 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
   const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
   const items: AttentionItem[] = [];
 
-  // 1. 流水線任務：待人工、失敗、24~48 小時內要發但還沒審的
+  // 1. 流水線任務：待人工、失敗、還沒審的
+  //
+  // 審稿不看日期。原本只撈兩天內要發的，結果排在兩天後的文章在這裡完全看不到，
+  // 審稿按鈕等於消失，只能等時間逼近才出現。需要審就給按鈕，不管多久以後發。
   const jobSelect = "id,brand_id,scheduled_at,status,error_reason,draft_content,prompt,queue_id,reviewed,current_step,social_results";
   const [problemJobs, unreviewedJobs] = await Promise.all([
     safeQuery<any>("auto_pipeline_jobs", `status=in.(manual,failed)&reviewed=eq.false&order=scheduled_at.asc&limit=100&select=${jobSelect}`),
-    safeQuery<any>("auto_pipeline_jobs", `status=eq.scheduled&reviewed=eq.false&scheduled_at=gte.${iso(now)}&scheduled_at=lt.${iso(now + 2 * DAY)}&order=scheduled_at.asc&limit=100&select=${jobSelect}`),
+    safeQuery<any>("auto_pipeline_jobs", `status=eq.scheduled&reviewed=eq.false&scheduled_at=gte.${iso(now)}&order=scheduled_at.asc&limit=200&select=${jobSelect}`),
   ]);
 
   for (const job of problemJobs) {
@@ -92,7 +95,7 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
   for (const job of unreviewedJobs) {
     items.push({
       key: `job:${job.id}`, kind: "review", brand: brandOf(job.brand_id), platform: "FB", scheduledAt: job.scheduled_at,
-      reason: "兩天內要發佈，還沒有審稿",
+      reason: "還沒有審稿",
       text: snippet(job.draft_content || job.prompt), full: String(job.draft_content || job.prompt || ""), source: "job", refId: job.id, jobId: job.id,
       advice: "讀過內容沒問題就標記已審，需要調整就先修改。官網、IG、Threads 衍生稿跟著這一則。",
       canEdit: !!job.draft_content, queued: !!job.queue_id, canRetry: false, retryRisk: null, canMarkDone: true, canCancel: true, canDismiss: false,

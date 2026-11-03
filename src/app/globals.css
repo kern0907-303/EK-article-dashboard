@@ -323,3 +323,38 @@ html {
     min-height: 500px;
   }
 }
+
+/* 按下去要有反應。
+ *
+ * 全站有上百顆 button，大部分是手寫的 <button>，按下去只有顏色微微變，
+ * 在深色底上幾乎看不出來，使用者不知道到底有沒有按到。
+ * 這裡一次給所有按鈕一個實體回饋：按住時縮一點、暗一點，放開彈回來。
+ * 只用 transform 與 filter，不碰顏色與排版，所以不會動到任何既有樣式。
+ */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  transition: transform 90ms ease-out, filter 90ms ease-out;
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.96);
+  filter: brightness(0.85);
+}
+
+/* 停用中的按鈕要看得出來不能按，不要讓人以為是自己沒按到 */
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* 正在跑的按鈕：呼吸式閃爍，讓人知道系統還在處理，不是當掉 */
+button[data-busy="true"],
+button[aria-busy="true"] {
+  animation: ek-button-busy 1.1s ease-in-out infinite;
+}
+
+@keyframes ek-button-busy {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}

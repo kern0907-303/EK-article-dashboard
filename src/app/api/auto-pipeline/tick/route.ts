@@ -5,6 +5,7 @@ import { getDefaultFacebookPage } from "@/lib/facebook-pages";
 import { AUTO_PIPELINE_ENABLED, isSafeToSchedule } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, isQueueEnabled, supabaseHeaders } from "@/lib/publish-queue";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
+import { runAutoRedo } from "@/lib/auto-redo";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
 import { amplifierNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
@@ -69,6 +70,16 @@ export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "未授權" }, { status: 401 });
   const env = getSupabaseEnv();
   if (!env) return NextResponse.json({ error: "Supabase 尚未設定" }, { status: 503 });
+  // 編輯 AI 退稿後被取消的 IG、Threads 自動補做一次。
+  // 包在 try 裡面是故意的：復原失敗絕對不可以害主流程停掉，寧可這次沒補到，
+  // 待處理中心的「有平台還沒補草稿」仍然會把它撈出來讓人看到。
+  let redo: Awaited<ReturnType<typeof runAutoRedo>> = null;
+  try {
+    redo = await runAutoRedo(env);
+    if (redo) console.info("[auto-pipeline] auto redo", JSON.stringify(redo));
+  } catch (e) {
+    console.warn("[auto-pipeline] auto redo failed", e instanceof Error ? e.message : e);
+  }
   try {
     const claimed = await fetch(`${env.url}/rest/v1/rpc/claim_auto_pipeline_job`, {
       method: "POST", headers: supabaseHeaders(env.key), body: "{}", cache: "no-store",
@@ -76,7 +87,7 @@ export async function POST(req: NextRequest) {
     if (!claimed.ok) throw new Error(`認領任務失敗（${claimed.status}）`);
     const rows = await claimed.json();
     const job = Array.isArray(rows) ? rows[0] : rows;
-    if (!job?.id) return NextResponse.json({ success: true, processed: false, reason: "目前沒有待處理項目或另一篇正在執行" });
+    if (!job?.id) return NextResponse.json({ success: true, processed: false, reason: "目前沒有待處理項目或另一篇正在執行", ...(redo ? { autoRedo: redo } : {}) });
 
     const brandName = brandNameOf(String(job.brand_id));
     let draft = "";

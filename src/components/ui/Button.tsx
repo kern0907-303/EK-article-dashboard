@@ -73,6 +73,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       ref={ref}
       type={type}
       disabled={disabled || loading}
+      // aria-busy 讓 globals.css 的呼吸式閃爍生效，使用者才知道系統還在跑
+      aria-busy={loading || undefined}
       className={buttonClass(variant, size, `${activeClass} ${className}`, brand)}
       {...rest}
     >

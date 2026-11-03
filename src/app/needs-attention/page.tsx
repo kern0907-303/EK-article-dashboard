@@ -40,6 +40,7 @@ export default function NeedsAttentionPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState("");
   const [kind, setKind] = useState<Kind | "all">("all");
   const [brand, setBrand] = useState("all");
   const [platform, setPlatform] = useState("全部平台");
@@ -77,8 +78,10 @@ export default function NeedsAttentionPage() {
   const selected = visible.find((i) => i.key === selectedKey) || null;
   const count = (k: Kind) => items.filter((i) => i.kind === k).length;
 
-  const call = async (url: string, method: string, body: unknown, done: string) => {
-    setBusy(true); setNotice("");
+  // 哪一顆按鈕正在跑。原本只有一個 busy，所有按鈕一起變灰，
+  // 按下去的那顆沒有任何變化，使用者看不出到底按到沒有、是哪一顆在動。
+  const call = async (url: string, method: string, body: unknown, done: string, tag = "") => {
+    setBusy(true); setPending(tag); setNotice("");
     try {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
@@ -86,26 +89,26 @@ export default function NeedsAttentionPage() {
       setNotice(done); setEditing(false); setSelectedKey(null);
       await load();
     } catch (e) { setNotice(e instanceof Error ? e.message : "操作失敗"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPending(""); }
   };
 
   const markDone = (i: Item) => {
     // 還有平台沒同步時，按這顆等於接受它們維持舊內容，先問一次比較保險
     if (i.stalePlatforms?.length && !window.confirm(`還有 ${i.stalePlatforms.map((p) => DERIVATIVE_LABEL[p]).join("、")} 沒有同步。按下去代表接受它們維持舊內容，確定嗎？`)) return;
-    return call("/api/needs-attention", "POST", { action: "mark_done", source: "job", id: i.refId }, "已標記處理，這則離開清單。");
+    return call("/api/needs-attention", "POST", { action: "mark_done", source: "job", id: i.refId }, "已標記處理，這則離開清單。", "markDone");
   };
   const retry = (i: Item) => {
     if (i.retryRisk && !window.confirm(i.retryRisk)) return;
     const done = i.source === "job" ? "已放回流水線，會重新生成一次，預定發佈時間不變。" : "已重新排入，約 6 分鐘後派發。";
-    return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, done);
+    return call("/api/needs-attention", "POST", { action: "retry", source: i.source, id: i.refId }, done, "retry");
   };
   const dismiss = (i: Item) => {
     if (i.derivativePlatform) {
       if (!window.confirm("移除這項失敗提醒？只會隱藏提醒，原錯誤紀錄與 FB 貼文都會保留。")) return;
-      return call("/api/needs-attention", "POST", { action: "dismiss_derived", source: "job", id: i.refId, platform: i.derivativePlatform }, "已移除這項提醒，原錯誤紀錄保留。");
+      return call("/api/needs-attention", "POST", { action: "dismiss_derived", source: "job", id: i.refId, platform: i.derivativePlatform }, "已移除這項提醒，原錯誤紀錄保留。", "dismiss");
     }
     if (!window.confirm("放棄這則？它會標記為已取消，不會再發佈，記錄保留。")) return;
-    return call("/api/needs-attention", "POST", { action: "dismiss", source: i.source, id: i.refId }, "已放棄這則。");
+    return call("/api/needs-attention", "POST", { action: "dismiss", source: i.source, id: i.refId }, "已放棄這則。", "dismiss");
   };
   const toLocalInput = (iso: string | null) => {
     const base = iso && new Date(iso).getTime() > Date.now() + 35 * 60 * 1000 ? new Date(iso).getTime() : Date.now() + 60 * 60 * 1000;
@@ -178,7 +181,7 @@ export default function NeedsAttentionPage() {
   };
   /** 儲存文案。schedule 為 true 時，同一個動作把還沒排程的任務排進發佈佇列。 */
   const saveEdit = async (i: Item, schedule: boolean) => {
-    setBusy(true); setNotice(""); setProblems([]);
+    setBusy(true); setPending(schedule ? "saveSchedule" : "save"); setNotice(""); setProblems([]);
     try {
       const body: Record<string, unknown> = { id: i.refId, action: "edit", content: draft, force };
       if (schedule) { body.schedule = true; body.scheduledAt = new Date(`${whenLocal}:00+08:00`).toISOString(); }
@@ -203,11 +206,11 @@ export default function NeedsAttentionPage() {
       setEditing(false); setSelectedKey(null);
       await load();
     } catch (e) { setNotice(e instanceof Error ? e.message : "儲存失敗"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPending(""); }
   };
   /** 重做標題圖卡。圖卡上印的是第一行，標題改了就要重畫。不呼叫 AI。 */
   const remakeCard = async (i: Item) => {
-    setBusy(true); setNotice(""); setCardUrl("");
+    setBusy(true); setPending("card"); setNotice(""); setCardUrl("");
     try {
       const res = await fetch("/api/auto-pipeline", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -218,12 +221,12 @@ export default function NeedsAttentionPage() {
       setCardUrl(String(data.imageUrl || ""));
       setNotice(`圖卡已用現在的標題重做：${String(data.title || "")}`);
     } catch (e) { setNotice(e instanceof Error ? e.message : "圖卡重做失敗"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPending(""); }
   };
 
   const cancel = (i: Item) => {
     if (!window.confirm("確定取消這則排程？")) return;
-    return call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "cancel" }, "已取消。");
+    return call("/api/auto-pipeline", "PATCH", { id: i.refId, action: "cancel" }, "已取消。", "cancel");
   };
 
   return (
@@ -298,19 +301,19 @@ export default function NeedsAttentionPage() {
                 <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-slate-900/70 p-2" aria-label="這則的操作">
                   {selected.derivativePlatform && selected.jobId && <Link href={`/derivatives?jobId=${encodeURIComponent(selected.jobId)}`} className="inline-flex min-h-[44px] items-center rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white">前往衍生頁處理{selected.platform}</Link>}
                   {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
-                    <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{busy ? "處理中…" : "儲存並排程發佈"}</button>
+                    <button disabled={busy || !draft.trim()} aria-busy={pending === "saveSchedule" || undefined} onClick={() => void saveEdit(selected, true)} className="min-h-[48px] rounded-lg bg-emerald-500 px-5 text-base font-bold text-slate-950 disabled:opacity-50">{pending === "saveSchedule" ? "排程中…" : "儲存並排程發佈"}</button>
                   )}
                   {selected.canEdit && selected.source === "job" && selected.jobId && (
                     <button disabled={busy || rewriting || syncing} onClick={() => void rewriteOne(selected)} className="min-h-[48px] rounded-lg bg-violet-500 px-5 text-base font-bold text-white disabled:opacity-50">{rewriting ? "重寫中，約 1 分鐘…" : "一鍵重寫（換例子）"}</button>
                   )}
-                  {selected.canEdit && <button disabled={busy || !draft.trim()} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>}
-                  {selected.canMarkDone && <button disabled={busy} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
-                  {selected.canRetry && <button disabled={busy} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">{selected.source === "job" ? "重新生成" : "重試發佈"}</button>}
-                  {selected.canDismiss && <button disabled={busy} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
+                  {selected.canEdit && <button disabled={busy || !draft.trim()} aria-busy={pending === "save" || undefined} onClick={() => void saveEdit(selected, false)} className={`min-h-[48px] rounded-lg px-4 text-sm font-semibold disabled:opacity-50 ${selected.queued || selected.kind === "review" ? "bg-sky-500 text-white" : "border border-white/20"}`}>{pending === "save" ? "儲存中…" : selected.queued || selected.kind === "review" ? "儲存修改（排程文案同步更新）" : "只儲存，先不發佈"}</button>}
+                  {selected.canMarkDone && <button disabled={busy} aria-busy={pending === "markDone" || undefined} onClick={() => void markDone(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50">{pending === "markDone" ? "處理中…" : selected.kind === "review" ? "標記已審" : "我已處理"}</button>}
+                  {selected.canRetry && <button disabled={busy} aria-busy={pending === "retry" || undefined} onClick={() => void retry(selected)} className="min-h-[44px] rounded-lg bg-sky-500 px-4 text-sm font-semibold text-white disabled:opacity-50">{pending === "retry" ? "處理中…" : selected.source === "job" ? "重新生成" : "重試發佈"}</button>}
+                  {selected.canDismiss && <button disabled={busy} aria-busy={pending === "dismiss" || undefined} onClick={() => void dismiss(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{pending === "dismiss" ? "處理中…" : selected.derivativePlatform ? "移除這項失敗提醒" : "放棄這則"}</button>}
                   {selected.source === "job" && selected.queued && (
-                    <button disabled={busy || rewriting || syncing} onClick={() => void remakeCard(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50" title="圖卡上印的是文章第一行，標題改了要重畫。不花 AI 額度">重做標題圖卡</button>
+                    <button disabled={busy || rewriting || syncing} onClick={() => void remakeCard(selected)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-sm font-semibold disabled:opacity-50" aria-busy={pending === "card" || undefined} title="圖卡上印的是文章第一行，標題改了要重畫。不花 AI 額度">{pending === "card" ? "重畫中…" : "重做標題圖卡"}</button>
                   )}
-                  {selected.canCancel && <button disabled={busy} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">取消這則</button>}
+                  {selected.canCancel && <button disabled={busy} aria-busy={pending === "cancel" || undefined} onClick={() => void cancel(selected)} className="min-h-[44px] rounded-lg border border-rose-400/40 px-4 text-sm font-semibold text-rose-200 disabled:opacity-50">{pending === "cancel" ? "取消中…" : "取消這則"}</button>}
                 </div>
                 {selected.canEdit && selected.source === "job" && selected.jobId && (
                   <div className="flex flex-col gap-2 rounded-lg border border-violet-400/30 bg-violet-400/10 p-3 text-sm">
