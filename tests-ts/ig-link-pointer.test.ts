@@ -1,40 +1,50 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { pointIgLinkToBio } from "../src/lib/derivatives-core.mjs";
+import { pointIgLinkToDm, IG_DM_HINT } from "../src/lib/derivatives-core.mjs";
 
-// 2026-11-02：IG 與 Threads 的衍生稿是從 FB 主稿改寫的，主稿寫「連結我放在留言區第一則」，
-// 這句話原封不動被帶到 IG。但 Threads/IG 的排程執行器根本不貼留言，
-// 待發的 72 則 IG 裡有 50 則在叫讀者去看一個不存在的留言。
-// 決定：IG 改指個人簡介（IG 本來的慣例），Threads 另外補首則留言。
+// IG 的留言與說明欄連結都不能點，個人簡介又只能放一個固定網址，
+// 帶不了每篇不同的追蹤參數。IG 唯一能給可點連結又能分篇追蹤的方式是私訊，
+// 所以說明欄一律改成叫讀者留關鍵字，由 n8n 的 instagram_comment_dm 把連結私訊出去。
 
-// 指路連結的句子要改
-assert.equal(pointIgLinkToBio("詳細資訊與連結我放在留言區第一則。"), "詳細資訊與連結我放在個人簡介。");
-assert.equal(pointIgLinkToBio("連結放在留言裡。"), "連結放在個人簡介。");
-assert.equal(pointIgLinkToBio("小測的網址在第一則留言。"), "小測的網址在個人簡介。");
-// 邀請互動的句子不可以動，那不是指路
-assert.equal(pointIgLinkToBio("歡迎在留言區和我聊聊。"), "歡迎在留言區和我聊聊。");
-assert.equal(pointIgLinkToBio("你也有同樣的狀況嗎？留言告訴我。"), "你也有同樣的狀況嗎？留言告訴我。");
-// 同一段裡兩種都有時，只改指路那一句
+// 指路句一律換成留關鍵字
+assert.equal(pointIgLinkToDm("詳細資訊與連結我放在留言區第一則。"), IG_DM_HINT + "。");
+assert.equal(pointIgLinkToDm("連結放在留言裡。"), IG_DM_HINT + "。");
+assert.equal(pointIgLinkToDm("小測的網址在第一則留言。"), IG_DM_HINT + "。");
+// 上一版改成個人簡介的也要跟著換掉，不能留著舊寫法
+assert.equal(pointIgLinkToDm("連結放在個人簡介。"), IG_DM_HINT + "。");
+assert.equal(pointIgLinkToDm("測驗的網址在個人簡介。"), IG_DM_HINT + "。");
+// 沒有「連結」兩個字也要抓到：提到個人簡介就是指路，沒人會閒聊個人簡介
+assert.equal(pointIgLinkToDm("詳細說明與免費體驗入口，放在個人簡介。"), IG_DM_HINT + "。");
+
+// 邀請互動的句子不是指路，不可以動
+assert.equal(pointIgLinkToDm("歡迎在留言區和我聊聊。"), "歡迎在留言區和我聊聊。");
+assert.equal(pointIgLinkToDm("你也有同樣的狀況嗎？留言告訴我。"), "你也有同樣的狀況嗎？留言告訴我。");
+
+// 混在同一段時只換指路那一句
 assert.equal(
-  pointIgLinkToBio("連結我放在留言區第一則。歡迎在留言區跟我說你的狀況。"),
-  "連結我放在個人簡介。歡迎在留言區跟我說你的狀況。",
+  pointIgLinkToDm("連結我放在留言區第一則。歡迎在留言區跟我說你的狀況。"),
+  IG_DM_HINT + "。歡迎在留言區跟我說你的狀況。"
 );
-// 不要留下「個人簡介第一則」這種殘句
-assert.ok(!pointIgLinkToBio("連結在留言區第一則").includes("第一則"));
-// 空值不要炸
-assert.equal(pointIgLinkToBio(""), "");
-assert.equal(pointIgLinkToBio(null), "");
 
+// 換完不可以還留著舊說法
+const after = pointIgLinkToDm("連結在留言區第一則。測驗網址在個人簡介。");
+assert.ok(!after.includes("第一則"), "不可以還有第一則");
+assert.ok(!after.includes("個人簡介"), "不可以還有個人簡介");
+
+assert.equal(pointIgLinkToDm(""), "");
+assert.equal(pointIgLinkToDm(null), "");
+
+// 發佈路徑要真的套用，而且只套在 IG
 const multi = readFileSync(new URL("../src/lib/auto-multiplatform.ts", import.meta.url), "utf8");
-// IG 發佈前一定要過這道機械修正，光靠提示詞不可靠
-assert.ok(multi.includes("pointIgLinkToBio(derived.instagram)"), "IG 內容要套用機械修正");
-// Threads 不可以被改掉，它會有首則留言
-assert.ok(!multi.includes("pointIgLinkToBio(derived.threads)"), "Threads 維持留言區寫法");
-// 提示詞也要寫清楚，讓模型一開始就寫對
-assert.ok(multi.includes("IG 的連結指路一律寫個人簡介"), "提示詞要有 IG 規則");
-assert.ok(multi.includes("Threads 版的連結指路維持留言區第一則"), "提示詞要說明 Threads 不同");
+assert.ok(multi.includes("pointIgLinkToDm(derived.instagram)"), "IG 內容要套用機械修正");
+assert.ok(!multi.includes("pointIgLinkToDm(derived.threads)"), "Threads 有首則留言，維持留言區寫法");
+assert.ok(!multi.includes("pointIgLinkToBio"), "舊的個人簡介版本要移除乾淨");
 
-const derivatives = readFileSync(new URL("../src/lib/derivatives-ai.ts", import.meta.url), "utf8");
-assert.ok(derivatives.includes("連結放在個人簡介"), "編輯器那條衍生路徑也要有同一條規則");
+// 提示詞要跟機械修正講同一件事，而且要禁止在 IG 寫網址
+assert.ok(multi.includes("IG 的連結不能點"), "系統提示詞要說明 IG 連結不能點");
+const ai = readFileSync(new URL("../src/lib/derivatives-ai.ts", import.meta.url), "utf8");
+assert.ok(ai.includes("不要寫任何網址"), "改寫提示詞要禁止 IG 寫網址");
+assert.ok(ai.includes("我私訊給你"), "改寫提示詞要指向留關鍵字");
+assert.ok(ai.includes("維持母文章的「連結在留言區第一則」寫法"), "Threads 的規則不動");
 
 console.log("ig-link-pointer 測試通過");

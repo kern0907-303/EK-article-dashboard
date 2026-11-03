@@ -153,9 +153,10 @@ export async function generatePlatformPayload({ platform, languageVersion, paren
           : platform === "小紅書"
             ? '{"title":"標題","body":"正文","tags":["標籤文字，不要井字號"],"carousel":["第一張鉤子","中間重點","最後行動呼籲"],"citation_title":"來源精確書名或空字串","citation_author":"來源精確作者或空字串"}'
             : '{"title":"標題","tags":["話題文字，不要井字號"],"scenes":[{"text":"畫面文字","seconds":4,"transition":"轉場"}],"citation_title":"來源精確書名或空字串","citation_author":"來源精確作者或空字串"}';
-  // IG 不會貼首則留言，連結指路要改指個人簡介；Threads 會貼留言，維持原樣。
+  // IG 的留言與說明欄連結都不能點，個人簡介又帶不了每篇不同的追蹤參數，
+  // 所以 IG 一律叫讀者留關鍵字，由 n8n 私訊把可點的連結送出去；Threads 會貼留言，維持原樣。
   const linkPointer = platform === "IG" || platform === "小紅書"
-    ? "\n\n連結指路：這個平台不會有首則留言，母文章若寫「連結在留言區第一則」，這裡要改成「連結放在個人簡介」。邀請讀者留言互動的句子照原意保留，不要改。"
+    ? "\n\n連結指路：這個平台的連結不能點，不要寫任何網址，也不要叫讀者去看個人簡介或留言區。母文章若寫「連結在留言區第一則」，這裡一律改成「在下面留言「連結」兩個字，我私訊給你」。邀請讀者留言互動的句子照原意保留，不要改。"
     : platform === "Threads"
       ? "\n\n連結指路：維持母文章的「連結在留言區第一則」寫法，不要改。"
       : "";

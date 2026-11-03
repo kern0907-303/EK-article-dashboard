@@ -206,30 +206,33 @@ export function stableParentId(brandId, platform, content) {
   return `workspace_social:${brandId}:${platform}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+/** IG 說明欄裡叫讀者去留關鍵字的那句話 */
+export const IG_DM_HINT = "在下面留言「連結」兩個字，我私訊給你";
+
 /**
- * IG 的連結指路改成個人簡介。
+ * IG 的連結指路改成「留關鍵字、我私訊給你」。
  *
  * 2026-11-02：IG 與 Threads 的衍生稿是從 FB 主稿改寫的，主稿寫「連結我放在留言區第一則」，
- * 這句話就原封不動被帶到 IG。但 Threads/IG 的排程執行器根本不會貼留言，
- * 待發的 72 則 IG 裡有 50 則在叫讀者去看一個不存在的留言。
- * IG 的慣例本來就是連結放個人簡介，所以 IG 改指個人簡介；Threads 另外補首則留言。
+ * 這句話原封不動被帶到 IG，但那則留言根本不存在。當時先改指個人簡介。
+ *
+ * 2026-11-03 再改一次：IG 的留言與說明欄連結都不能點，個人簡介又只能放一個固定網址，
+ * 做不到每篇不同、也帶不了追蹤參數。IG 唯一能給可點連結又能分篇追蹤的方式是私訊，
+ * 所以改成叫讀者留關鍵字，由 n8n 的 instagram_comment_dm 流程私訊把連結送出去。
  *
  * 只改「指路連結」的句子。像「歡迎在留言區和我聊聊」是邀請互動，不是指路，不可以動。
  */
-export function pointIgLinkToBio(input) {
+export function pointIgLinkToDm(input) {
   let text = String(input ?? "");
   if (!text) return text;
-  const hasPointer = (sentence) => /(連結|網址|資訊|報名|測驗|計算)/.test(sentence);
-  // 逐句處理，只動同時提到留言與連結的句子
-  text = text.replace(/[^。\n]*[。\n]?/g, (chunk) => {
-    if (!/留言/.test(chunk) || !hasPointer(chunk)) return chunk;
-    return chunk
-      .replace(/留言區第一則/g, "個人簡介")
-      .replace(/留言第一則/g, "個人簡介")
-      .replace(/第一則留言/g, "個人簡介")
-      .replace(/留言區/g, "個人簡介")
-      .replace(/留言裡/g, "個人簡介");
+  const hasPointer = (sentence) => /(連結|網址|資訊|報名|測驗|計算|入口)/.test(sentence);
+  // 逐句處理。
+  // 提到「個人簡介」的句子一律算指路：沒有人會在文案裡閒聊個人簡介，
+  // 「詳細說明與免費體驗入口，放在個人簡介」這種沒有連結兩個字的句子也要被抓到。
+  // 「留言」不一樣，它常常是邀請互動（歡迎留言跟我說），所以必須同時有指路字眼才改。
+  return text.replace(/[^。\n]*[。\n]?/g, (chunk) => {
+    const isBioPointer = /個人簡介/.test(chunk);
+    if (!isBioPointer && (!/留言/.test(chunk) || !hasPointer(chunk))) return chunk;
+    const tail = /[。\n]$/.test(chunk) ? chunk.slice(-1) : "";
+    return IG_DM_HINT + (tail || "。");
   });
-  // 「放在個人簡介第一則」這種殘留要收乾淨
-  return text.replace(/個人簡介第一則/g, "個人簡介");
 }
