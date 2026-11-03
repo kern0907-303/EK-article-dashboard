@@ -130,6 +130,14 @@ export default function PipelineTimeline() {
                 <div className="grid flex-[1_1_380px] grid-cols-2 gap-2 sm:grid-cols-4">
                   {cell("FB", r.fb)}{cell("官網", r.website)}{cell("IG", r.instagram)}{cell("Threads", r.threads)}
                 </div>
+                {/* 這張卡片以前完全沒有出口。看到「有平台還沒補草稿」卻不知道去哪裡補，
+                    只能自己猜要開哪一頁。多平台衍生頁本來就吃 ?jobId=，但沒有人把連結放出來。 */}
+                <Link
+                  href={`/derivatives?jobId=${r.id}`}
+                  className={`inline-flex min-h-[44px] shrink-0 items-center rounded-lg px-4 text-sm font-bold ${r.needsYou ? "bg-rose-500 text-white" : "border border-white/20 bg-white/5 text-slate-200"}`}
+                >
+                  {r.needsYou ? "去處理" : "打開這一篇"}
+                </Link>
               </div>
             ))}
           </div>

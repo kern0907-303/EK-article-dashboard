@@ -376,6 +376,16 @@ export default function NeedsAttentionPage() {
                   </div>
                 )}
                 <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-6 text-amber-100">建議做法：{selected.advice}</div>
+                {/* 「到多平台衍生頁補草稿」這句話以前沒有連結，等於叫人自己去找那一頁。
+                    多平台衍生頁吃 ?jobId=，直接把連結放出來，按了就載入這一篇。 */}
+                {selected.jobId && (
+                  <a
+                    href={`/derivatives?jobId=${encodeURIComponent(selected.jobId)}`}
+                    className="inline-flex min-h-[44px] items-center rounded-lg bg-sky-500 px-4 text-sm font-bold text-white"
+                  >
+                    開啟多平台衍生頁，補這一篇的草稿
+                  </a>
+                )}
                 {selected.canEdit && selected.source === "job" && !selected.queued && selected.kind !== "review" && (
                   <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-slate-900/60 p-3 text-sm">
                     <label className="flex flex-wrap items-center gap-2">發佈時間（台北時間）<input type="datetime-local" value={whenLocal} onChange={(e) => setWhenLocal(e.target.value)} className="min-h-[44px] rounded-lg border border-white/20 bg-slate-900 px-3 text-slate-100" /></label>
