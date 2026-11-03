@@ -6,6 +6,7 @@ import {
   undoKnowledgeImportBatch,
 } from "../src/lib/knowledge-import-core.mjs";
 import { contentMd5 } from "../src/lib/knowledge-note-core.mjs";
+import { KNOWLEDGE_DOMAIN_LABELS } from "../src/data/skills/story-argument";
 
 let passed = 0;
 let failed = 0;
@@ -16,7 +17,7 @@ function t(name: string, condition: boolean) {
 function quote(value: string) { return JSON.stringify(value); }
 function markdown(options: Record<string, string> = {}, body = "筆記正文內容。") {
   const fields = [
-    ["domain", "emotions-psychology"], ["title_en", "Book " + (options.title_en || "A")], ["author_en", "Author"],
+    ["domain", options.domain || "emotions-psychology"], ["title_en", "Book " + (options.title_en || "A")], ["author_en", "Author"],
     ["title_zh", options.title_zh ?? "中文書名"], ["title_zh_subtitle", options.title_zh_subtitle ?? ""],
     ["author_zh", options.author_zh ?? "中文作者"], ["translator_zh", ""], ["publisher_zh", ""],
     ["zh_source_url", options.zh_source_url ?? "https://source.example/book"], ["zh_status", options.zh_status || "confirmed"],
@@ -59,6 +60,16 @@ const existingRows = [
 ];
 const classified: any[] = classifyKnowledgeImportFiles([...inserts, ...updates, ...skips], existingRows);
 t("兩筆新書均分類為新增", classified.slice(0, 2).every((row: any) => row.classification === "insert"));
+t("natural-science 領域筆記可分類為新增", classifyKnowledgeImportFiles([
+  { filename: "natural-science.md", content: markdown({ domain: "natural-science", title_en: "Natural Science", source_file: "natural-science.md" }) },
+], [])[0].classification === "insert");
+t("natural-science 在文章引用領域選單顯示為自然科學且排在最後", KNOWLEDGE_DOMAIN_LABELS["natural-science"] === "自然科學" && Object.keys(KNOWLEDGE_DOMAIN_LABELS).at(-1) === "natural-science");
+t("既有四個知識領域仍可分類為新增", ["business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning"].every((domain, index) => {
+  const row = classifyKnowledgeImportFiles([
+    { filename: `existing-domain-${index}.md`, content: markdown({ domain, title_en: `Existing ${index}`, source_file: `existing-domain-${index}.md` }) },
+  ], [])[0];
+  return row.classification === "insert" && row.problems.length === 0;
+}));
 t("兩筆既有書目內容或欄位不同均分類為更新", classified.slice(2, 4).every((row: any) => row.classification === "update"));
 t("兩筆既有書目校驗碼與欄位相同均分類為跳過", classified.slice(4).every((row: any) => row.classification === "skip"));
 

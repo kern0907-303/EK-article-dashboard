@@ -69,6 +69,7 @@ export const KNOWLEDGE_DOMAIN_LABELS: Record<string, string> = {
   "life-philosophy": "生命哲學",
   "shenxinling-planning": "身心靈規劃",
   "business-strategy": "商業策略",
+  "natural-science": "自然科學",
 };
 
 export const STORY_ARGUMENT_GENRE_NOTICE =

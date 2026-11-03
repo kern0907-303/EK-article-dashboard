@@ -8,7 +8,7 @@ export const KNOWLEDGE_IMPORT_FIELDS = [
 const LEGACY_FIELDS = ["domain", "title_en", "author_en", "domain_tags", "subdomain", "source_file"];
 const LEGACY_ALIASES = ["domain", "title", "author", "domain_tags", "subdomain", "source_file"];
 export const KNOWLEDGE_IMPORT_DOMAINS = [
-  "business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning",
+  "business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning", "natural-science",
 ];
 export const KNOWLEDGE_ZH_STATUSES = ["confirmed", "unverified", "no_zh_edition"];
 const IMPORT_COMPARE_FIELDS = [
@@ -125,7 +125,7 @@ export function applyKnowledgeImportOverrides(record, override = {}) {
 export function validateKnowledgeImportRecord(record) {
   const problems = [];
   if (!record || typeof record !== "object") return ["資料區無法解析。"];
-  if (!KNOWLEDGE_IMPORT_DOMAINS.includes(record.domain)) problems.push("domain 不在允許的四個領域內。");
+  if (!KNOWLEDGE_IMPORT_DOMAINS.includes(record.domain)) problems.push("domain 不在允許的領域清單內。");
   if (!record.title?.trim()) problems.push("title_en 不可空白。");
   if (!record.source_file?.trim()) problems.push("source_file 不可空白。");
   if (!record.content?.trim()) problems.push("正文不可空白。");

@@ -15,7 +15,7 @@ type NoteRow = {
   publisher_zh: string | null; zh_source_url: string | null; zh_status: string | null; import_batch_id: string | null;
 };
 type BatchRow = { batch_id: string; created_at: string; summary: Record<string, unknown>; undone_at: string | null };
-const DOMAINS = [["", "全部領域"], ["business-strategy", "商業策略"], ["emotions-psychology", "情緒心理"], ["life-philosophy", "生命哲學"], ["shenxinling-planning", "身心靈規劃"]] as const;
+const DOMAINS = [["", "全部領域"], ["business-strategy", "商業策略"], ["emotions-psychology", "情緒心理"], ["life-philosophy", "生命哲學"], ["shenxinling-planning", "身心靈規劃"], ["natural-science", "自然科學"]] as const;
 const STATUSES = ["", "confirmed", "unverified", "no_zh_edition"] as const;
 const LABELS: Record<string, string> = { insert: "新增", update: "更新", skip: "跳過", problem: "有問題" };
 const EDIT_FIELDS = ["title_zh", "title_zh_subtitle", "author_zh", "translator_zh", "publisher_zh", "zh_source_url", "zh_status"] as const;
