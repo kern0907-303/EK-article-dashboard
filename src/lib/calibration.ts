@@ -120,10 +120,24 @@ export function nextCandidate(brand: string, experiments: FinishedExperiment[], 
 
 // ───────────── 警示 ─────────────
 
-export interface CalibrationAlert { code: "stagnant" | "control_beats_treated" | "no_untested_pairs"; brand: ExperimentBrand | "all"; message: string }
+export interface CalibrationAlert {
+  code: "stagnant" | "control_beats_treated" | "no_untested_pairs";
+  brand: ExperimentBrand | "all";
+  message: string;
+  /**
+   * 同一段話但不帶品牌名。三個品牌常常同時觸發同一種警示（實驗是同時開、同時到期的），
+   * 分三則推播等於同樣的字看三次。有這個欄位時，通知端會把品牌名併成一行、只推一則。
+   */
+  shared?: string;
+}
 
 const BRAND_NAME: Record<ExperimentBrand, string> = { nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問" };
 export const brandName = (brand: ExperimentBrand) => BRAND_NAME[brand];
+
+const STAGNANT_TEXT =
+  "連續兩個 14 天窗口，成效提升都不到 10%。實驗只能調整寫法，改不了有沒有人看到。建議你選一個方向：一、換題材（看題材成效標籤與海巡素材）；二、檢查發文時間與圖卡；三、暫停實驗，回到原本流程。";
+const NO_PAIRS_TEXT =
+  "目前可測的臂組合都測完了，沒有新的實驗可以自動開。需要你決定要新增什麼測試變數（例如長度、行動呼籲、圖卡風格）。";
 
 export function buildAlerts(input: {
   brandStatus: Record<ExperimentBrand, BrandTrendStatus>;
@@ -134,14 +148,48 @@ export function buildAlerts(input: {
   const alerts: CalibrationAlert[] = [];
   for (const brand of EXPERIMENT_BRANDS) {
     if (input.brandStatus[brand] === "stagnant") {
-      alerts.push({ code: "stagnant", brand, message: `${BRAND_NAME[brand]}連續兩個 14 天窗口，成效提升都不到 10%。實驗只能調整寫法，改不了有沒有人看到。建議你選一個方向：一、換題材（看題材成效標籤與海巡素材）；二、檢查發文時間與圖卡；三、暫停實驗，回到原本流程。` });
+      alerts.push({ code: "stagnant", brand, shared: STAGNANT_TEXT, message: `${BRAND_NAME[brand]}連續兩個 14 天窗口，成效提升都不到 10%。實驗只能調整寫法，改不了有沒有人看到。建議你選一個方向：一、換題材（看題材成效標籤與海巡素材）；二、檢查發文時間與圖卡；三、暫停實驗，回到原本流程。` });
     }
     if (!input.hasRunning[brand] && input.candidates[brand] === null) {
-      alerts.push({ code: "no_untested_pairs", brand, message: `${BRAND_NAME[brand]}目前可測的臂組合都測完了，沒有新的實驗可以自動開。需要你決定要新增什麼測試變數（例如長度、行動呼籲、圖卡風格）。` });
+      alerts.push({ code: "no_untested_pairs", brand, shared: NO_PAIRS_TEXT, message: `${BRAND_NAME[brand]}目前可測的臂組合都測完了，沒有新的實驗可以自動開。需要你決定要新增什麼測試變數（例如長度、行動呼籲、圖卡風格）。` });
     }
   }
   if (input.controlBeatsTreated) {
     alerts.push({ code: "control_beats_treated", brand: "all", message: "連續兩個 14 天窗口，沒有套用實驗指令的對照貼文，成效都比有套用的高出 10% 以上。實驗指令可能沒有幫助，建議你考慮暫停所有實驗指令，回到原本流程。" });
   }
   return alerts;
+}
+
+export interface AlertNotice {
+  code: CalibrationAlert["code"];
+  brands: (ExperimentBrand | "all")[];
+  text: string;
+}
+
+/**
+ * 把警示整理成要推播的通知。同一種警示只推一則，品牌名併成一行。
+ *
+ * 2026-11-04 加的。三個品牌的實驗是同時開、同時到期的，所以同一種警示幾乎永遠三個品牌一起觸發，
+ * 原本一個品牌推一則，收到的是三則一模一樣的字，看起來像系統壞了在重複發。
+ * 只有在同一種警示的每一筆都帶著同一段 shared 文字時才合併，否則照原樣分開推，不會把不同的內容併掉。
+ */
+export function groupAlertsForNotice(alerts: CalibrationAlert[]): AlertNotice[] {
+  const order: CalibrationAlert["code"][] = [];
+  const byCode = new Map<CalibrationAlert["code"], CalibrationAlert[]>();
+  for (const alert of alerts) {
+    if (!byCode.has(alert.code)) {
+      byCode.set(alert.code, []);
+      order.push(alert.code);
+    }
+    byCode.get(alert.code)!.push(alert);
+  }
+  return order.map((code) => {
+    const group = byCode.get(code)!;
+    const brands = group.map((alert) => alert.brand);
+    const shared = group[0].shared;
+    const mergeable = group.length > 1 && !!shared && group.every((alert) => alert.shared === shared);
+    if (!mergeable) return { code, brands, text: group.map((alert) => alert.message).join("\n\n") };
+    const names = group.map((alert) => (alert.brand === "all" ? "全部品牌" : BRAND_NAME[alert.brand])).join("、");
+    return { code, brands, text: `${names}：${shared}` };
+  });
 }

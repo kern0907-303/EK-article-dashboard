@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import {
-  MATURE_HOURS, MAX_DAYS, MIN_DAYS, STRUCTURE_ARMS, addDays, armDirective, judgeExperiment, latestSyncTime, mean, parseDecision,
-  probBBeatsA, relativeReward, rewardOf, seededRandom, taipeiDate,
+  EXPERIMENT_BRANDS, MATURE_HOURS, MAX_DAYS, MIN_DAYS, MIN_MATURE_POSTS_PER_ARM, STRUCTURE_ARMS, addDays, armDirective,
+  judgeExperiment, latestSyncTime, mean, parseDecision, probBBeatsA, relativeReward, rewardOf, seededRandom, taipeiDate,
 } from "../src/lib/experiment-arms";
+import { brandName, groupAlertsForNotice } from "../src/lib/calibration";
 
 const DAY = 24 * 60 * 60 * 1000;
 const start = new Date("2026-10-17T00:00:00Z");
@@ -96,3 +97,43 @@ assert.equal(latestSyncTime([{ platform: "threads", account_id: "285722423924461
 assert.equal(Number.isNaN(Date.parse("2026-10-14T02:30:46+0000")), false);
 
 console.log("experiment tests passed");
+
+// ───────────── 警示合併（2026-11-04）─────────────
+// 三個品牌的實驗同時開、同時到期，同一種警示幾乎永遠三個一起觸發。
+// 分三則推播等於同樣的字看三次，所以同一種警示要併成一則。
+{
+  const three = EXPERIMENT_BRANDS.map((brand) => ({
+    code: "no_untested_pairs" as const,
+    brand,
+    shared: "目前可測的臂組合都測完了。",
+    message: `${brandName(brand)}目前可測的臂組合都測完了。`,
+  }));
+  const merged = groupAlertsForNotice(three);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].brands.length, 3);
+  assert.equal(merged[0].text, "平衡空間、艾伯林量子調頻、初八企業顧問：目前可測的臂組合都測完了。");
+
+  // 只有一個品牌觸發時不要加品牌前綴，照原本的句子推
+  const one = groupAlertsForNotice([three[0]]);
+  assert.equal(one.length, 1);
+  assert.equal(one[0].text, three[0].message);
+
+  // 不同種類的警示不能併在一起
+  const mixed = groupAlertsForNotice([
+    three[0],
+    { code: "control_beats_treated" as const, brand: "all" as const, message: "對照組比較好。" },
+  ]);
+  assert.equal(mixed.length, 2);
+  assert.equal(mixed[1].text, "對照組比較好。");
+
+  // 沒有 shared 文字的不合併，避免把不同內容併掉
+  const noShared = groupAlertsForNotice(
+    EXPERIMENT_BRANDS.map((brand) => ({ code: "stagnant" as const, brand, message: `${brandName(brand)}停滯了。` }))
+  );
+  assert.equal(noShared.length, 1);
+  assert.equal(noShared[0].text.split("\n\n").length, 3);
+}
+
+// 門檻放寬後，5 天內本來湊不到的樣本現在還有時間累積
+assert.ok(MAX_DAYS >= 14, "最長觀察天數要夠長，否則每臂永遠湊不到成熟貼文");
+assert.ok(MIN_MATURE_POSTS_PER_ARM <= 3);

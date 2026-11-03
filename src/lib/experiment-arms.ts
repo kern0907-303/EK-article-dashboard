@@ -82,10 +82,17 @@ export function armDirective(variable: string, arm: string): string | null {
 
 /** 最少觀察天數（含）：開始後滿這麼久才能下結論，給話題發酵的時間 */
 export const MIN_DAYS = 3;
-/** 最長觀察天數：到了就必須收斂，樣本不足就標記為 inconclusive，不亂切 */
-export const MAX_DAYS = 5;
-/** 每個臂至少要有幾篇「已成熟」的貼文才能判定勝負 */
-export const MIN_MATURE_POSTS_PER_ARM = 4;
+/**
+ * 最長觀察天數：到了就必須收斂，樣本不足就標記為 inconclusive，不亂切。
+ *
+ * 2026-11-04 從 5 天放寬到 14 天。原本 5 天搭配「每臂 4 篇成熟貼文」根本湊不到樣本——
+ * 貼文要發滿 72 小時才算成熟，5 天的窗口裡每個品牌每個平台只能累積一兩篇，
+ * 結果 10/17 到 11/02 開的 9 個實驗全部到期標記 inconclusive，一個結論都沒有。
+ * 放寬到 14 天後，每臂才有機會真的累積到可判定的樣本。
+ */
+export const MAX_DAYS = 14;
+/** 每個臂至少要有幾篇「已成熟」的貼文才能判定勝負（2026-11-04 從 4 篇降到 3 篇，配合發文頻率） */
+export const MIN_MATURE_POSTS_PER_ARM = 3;
 /** 發文後至少幾小時才算成熟（成效讀數要在發文 72 小時之後才採用） */
 export const MATURE_HOURS = 72;
 /** 勝出機率門檻：領先臂真的比較好的機率需達此值才宣告勝出，否則 inconclusive */

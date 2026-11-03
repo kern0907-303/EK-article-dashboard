@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { getSocialMetrics, type SocialPost } from "@/lib/social-metrics-server";
 import {
-  VARIABLE_ORDER, brandName, brandTrendStatus, buildAlerts, controlVsTreated, isControlDay, nextCandidate, trendFor,
+  VARIABLE_ORDER, brandName, brandTrendStatus, buildAlerts, controlVsTreated, groupAlertsForNotice, isControlDay, nextCandidate, trendFor,
   type BrandTrendStatus, type CalibrationAlert, type RewardPost,
 } from "@/lib/calibration";
 import {
@@ -285,13 +285,24 @@ export async function sendCalibrationAlerts(now = new Date()): Promise<{ alerts:
     const state = await loadState(now);
     const alerts: CalibrationAlert[] = computeCalibration(state, now).alerts;
     let sent = 0; let skipped = 0;
+
+    // 先把還在冷卻期的篩掉，剩下的才合併成通知，這樣合併出來的品牌名單一定跟真正要推的一致
+    const due: CalibrationAlert[] = [];
     for (const alert of alerts) {
       const existing = await pipelineDb<{ sent_at: string }[]>("calibration_alerts", `code=eq.${alert.code}&brand=eq.${alert.brand}&select=sent_at&limit=1`);
       if (existing[0] && now.getTime() - Date.parse(existing[0].sent_at) < ALERT_COOLDOWN_DAYS * DAY_MS) { skipped += 1; continue; }
-      const ok = await sendTelegram(`成效回流警示（${taipeiDate(now)}）\n${alert.message}`);
-      if (!ok) { skipped += 1; continue; }
-      await pipelineDb("calibration_alerts", "on_conflict=code,brand", { method: "POST", body: JSON.stringify([{ code: alert.code, brand: alert.brand, sent_at: now.toISOString() }]), headers: { Prefer: "resolution=merge-duplicates,return=representation" } });
-      sent += 1;
+      due.push(alert);
+    }
+
+    for (const notice of groupAlertsForNotice(due)) {
+      const ok = await sendTelegram(`成效回流警示（${taipeiDate(now)}）\n${notice.text}`);
+      if (!ok) { skipped += notice.brands.length; continue; }
+      await pipelineDb("calibration_alerts", "on_conflict=code,brand", {
+        method: "POST",
+        body: JSON.stringify(notice.brands.map((brand) => ({ code: notice.code, brand, sent_at: now.toISOString() }))),
+        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      });
+      sent += notice.brands.length;
     }
     return { alerts: alerts.length, sent, skipped };
   } catch (error) {
