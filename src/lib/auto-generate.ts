@@ -17,7 +17,8 @@ import {
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
-import { applyMechanicalFixes, brandSubjectHits, fictionAsRealClient, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
+import { applyMechanicalFixes, brandSubjectHits, fictionAsRealClient, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, stripUnapprovedCitations, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
+import { loadApprovedCitationTitles } from "@/lib/citation-library";
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
@@ -283,6 +284,19 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     const voiceFix = rewriteBrandSubject(draft, brandId);
     draft = voiceFix.text;
     mechanical = { text: draft, fixes: [...mechanical.fixes, ...voiceFix.fixes] };
+  }
+
+  // 重寫三次還是引到核可清單以外的書，就把那幾句拿掉讓文章照發。
+  // 這是他 2026-11-03 的決定：自動拿掉引用，不要為了一句出處把整篇擋成待人工處理。
+  // 母稿清乾淨，官網、IG、Threads 才不會跟著把那本書帶出去。
+  const approvedTitles = await loadApprovedCitationTitles();
+  const stripped = stripUnapprovedCitations(draft, approvedTitles);
+  if (stripped.removed.length) {
+    draft = stripped.text;
+    mechanical = {
+      text: draft,
+      fixes: [...mechanical.fixes, `移除不在知識庫的引用：${stripped.removed.map((title) => `《${title}》`).join("、")}`],
+    };
   }
 
   const meta = { genre: "breakdown" as const, funnel: "warm" as const, prompt_version: PROMPT_VERSION };

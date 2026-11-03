@@ -79,7 +79,12 @@ assert.equal(allowedCitationFromTitles([]), null, "母稿沒引用時衍生稿�
 assert.equal(allowedCitationFromTitles(["心流", "自我慈悲"]), null, "母稿兩本以上無法判斷哪本查證過");
 
 const multi = readFileSync("src/lib/auto-multiplatform.ts", "utf8");
-assert.ok(multi.includes("allowedCitationFromTitles(citedBookTitles(master))"), "衍生稿要以母稿為引用依據");
+// 2026-11-03 改規則：衍生稿不再以母稿為準。母稿自己就可能寫出知識庫沒有的書
+// （查到時有 3 篇 FB、16 篇 IG／Threads、15 篇官網草稿中招），
+// 所以查證標準改成知識庫已確認的書名，母稿只決定「可以沿用哪一本」。
+assert.ok(multi.includes("allowedCitationFromTitles(citedBookTitles(master), approved)"), "衍生稿要以知識庫為引用依據");
+assert.ok(multi.includes("loadApprovedCitationTitles"), "要真的去載入知識庫的核可清單");
+assert.ok(!/allowedCitationFromMaster\(master\)/.test(multi), "不可以留下只看母稿的呼叫");
 assert.ok(multi.includes("unverifiedCitations(written.article, allowedCitation)"), "官網文章要比對引用");
 assert.ok(/官網文章引用未經查證/.test(multi), "官網未查證引用要擋稿，不是只提醒");
 assert.ok(multi.includes("unverifiedCitations(optimizedText, allowedCitation)"), "SEO 優化版也要比對引用");

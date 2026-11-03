@@ -72,6 +72,41 @@ export function unverifiedCitations(text: string, allowed: { title: string } | n
   return titles.filter((title) => title !== allowed.title);
 }
 
+/**
+ * 最後一道保險：把引用到核可清單以外的書的整句移除。
+ *
+ * 2026-11-03：生成時發現引用違規會要求模型重寫，但最多三次，三次改不掉就照樣出稿，
+ * 結果待發內容裡累積了三十幾篇引用庫外的書。他選擇自動拿掉引用、文章照發。
+ *
+ * approved 是知識庫已確認的書名。空陣列代表清單讀取失敗，這時什麼都不動，
+ * 不要在資料庫不通的時候把每一篇的引用都拔光。
+ */
+export function stripUnapprovedCitations(
+  text: string,
+  approved: readonly string[],
+): { text: string; removed: string[] } {
+  const body = String(text || "");
+  if (!approved.length || !body) return { text: body, removed: [] };
+  const allowed = new Set(approved.map((title) => title.trim()));
+  const removed = new Set<string>();
+  const kept: string[] = [];
+  for (const line of body.split("\n")) {
+    if (!BOOK_TITLE.test(line)) { BOOK_TITLE.lastIndex = 0; kept.push(line); continue; }
+    BOOK_TITLE.lastIndex = 0;
+    const sentences = line.split(/(?<=[。！？])/);
+    const stay = sentences.filter((sentence) => {
+      const bad = citedBookTitles(sentence).filter((title) => !allowed.has(title));
+      bad.forEach((title) => removed.add(title));
+      return bad.length === 0;
+    });
+    const rest = stay.join("").trim();
+    if (rest) kept.push(rest);
+  }
+  if (!removed.size) return { text: body, removed: [] };
+  const out = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return { text: out, removed: [...removed] };
+}
+
 /** 沒有指名出處的研究宣稱。不擋稿，只提醒，因為有時是在轉述常識。 */
 const VAGUE_RESEARCH = /(研究(顯示|指出|發現|證實)|根據研究|科學家(發現|指出)|專家(表示|指出)|有(一項)?研究)/;
 

@@ -14,6 +14,7 @@ import { articleUpdateUrl, existingArticleQuery, pickExistingId } from "@/lib/pu
 import { withCoverImage } from "@/lib/article-image.mjs";
 import type { TrafficFunnel } from "@/data/brands/conversion";
 import { allowedCitationFromTitles } from "@/data/skills/citation-rules";
+import { loadApprovedCitationTitles } from "@/lib/citation-library";
 import { CAROUSEL_TARGET_MAX, parseSlidesJson, sanitizeSlides, splitArticleToSlides } from "@/lib/carousel-slides.mjs";
 import { pointIgLinkToDm } from "@/lib/derivatives-core.mjs";
 import { robustJSONParse } from "@/lib/ai-provider";
@@ -215,8 +216,8 @@ const safe = (error: unknown): string => (error instanceof Error ? error.message
  * 2026-10-28 發現的洞：引用查證原本只做在 FB 主稿，官網文章是另一支 callWebArticle
  * 獨立改寫的，可以自己憑記憶長出一本書，官網上因此有十幾篇掛著沒查證的引用。
  */
-export function allowedCitationFromMaster(master: string): { title: string } | null {
-  return allowedCitationFromTitles(citedBookTitles(master));
+export function allowedCitationFromMaster(master: string, approved?: readonly string[]): { title: string } | null {
+  return allowedCitationFromTitles(citedBookTitles(master), approved);
 }
 
 export function brandVoiceSentences(article: string, brandId?: string): string[] {
@@ -228,8 +229,11 @@ async function publishWebsite(input: MultiplatformInput, forceArticleId?: string
   const { env, brandShort, brandName, master, coverUrl } = input;
   const fullBrand = FULL_BRAND_IDS[brandShort];
   const provider = process.env.AI_PROVIDER;
-  // 衍生稿只能沿用主稿查證過的出處，不可以自己長出一本新書
-  const allowedCitation = allowedCitationFromMaster(master);
+  // 衍生稿只能沿用主稿查證過的出處，不可以自己長出一本新書。
+  // 2026-11-03：以前只比對母稿，母稿寫出庫外的書時三個平台一起跟著引，
+  // 所以現在拿知識庫已確認的書名當標準。清單讀不到時退回舊行為，不誤殺。
+  const approvedTitles = await loadApprovedCitationTitles();
+  const allowedCitation = allowedCitationFromMaster(master, approvedTitles);
   let written = await callWebArticle(master, brandName, [], undefined, provider);
   if (written.is_local_check) throw new Error("AI 服務未啟用，無法產生官網文章");
   // 品牌名稱不可當主詞發言：發現就帶著問題句子要求重寫，最多再試三次
@@ -351,7 +355,7 @@ export async function rewriteSocialPost(input: {
   if (!guard.passed) throw new Error(`未通過品牌紅線：${guard.violatedWords.slice(0, 5).join("、")}`);
   const gate = gateBlockers(runQualityGate(content, { platform, master }));
   if (gate.length) throw new Error(`品管未通過：${gateMessage(gate)}`);
-  const socialCites = unverifiedCitations(content, allowedCitationFromMaster(master));
+  const socialCites = unverifiedCitations(content, allowedCitationFromMaster(master, await loadApprovedCitationTitles()));
   if (socialCites.length) throw new Error(`引用未經查證：${socialCites.map((title) => `《${title}》`).join("、")}。只能沿用主稿查證過的出處`);
 
   // IG 的輪播圖卡文字跟著主稿換，重新渲染；渲染失敗就沿用舊圖，只換文字
@@ -419,7 +423,7 @@ export async function runMultiplatform(input: MultiplatformInput): Promise<Multi
   }
   if (!want("instagram") && !want("threads")) return result;
 
-  const socialAllowedCitation = allowedCitationFromMaster(master);
+  const socialAllowedCitation = allowedCitationFromMaster(master, await loadApprovedCitationTitles());
   const citeBlock = (text: string): string => {
     const bad = unverifiedCitations(text, socialAllowedCitation);
     if (!bad.length) return "";

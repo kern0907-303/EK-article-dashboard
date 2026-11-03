@@ -50,6 +50,13 @@ export function buildCitationDirective(citation: VerifiedCitation | null, noteCo
  * 衍生稿（官網、IG、Threads）只能沿用那一本或完全不引用，不需要再呼叫 AI 查一次。
  * 母稿引了兩本以上時無法判斷哪一本經過查證，一律回 null，衍生稿就不准引用。
  */
-export function allowedCitationFromTitles(titles: string[]): { title: string } | null {
-  return titles.length === 1 ? { title: titles[0] } : null;
+export function allowedCitationFromTitles(titles: string[], approved?: readonly string[]): { title: string } | null {
+  if (titles.length !== 1) return null;
+  const title = titles[0];
+  // 2026-11-03：以前只看母稿引了哪一本，母稿寫錯書名、或憑記憶長出一本庫外的書，
+  // 官網、IG、Threads 就一起跟著引，知識庫從頭到尾沒被問過。
+  // approved 是知識庫裡已確認的書名；給了就以它為準。
+  // 空陣列代表清單讀取失敗，這時跳過這層檢查，不要把每一篇都判成違規。
+  if (approved && approved.length && !approved.includes(title)) return null;
+  return { title };
 }
