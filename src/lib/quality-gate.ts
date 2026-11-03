@@ -27,6 +27,10 @@ const TRAILING_BAD = /[，、：；,:;（(「『“]\s*$/;
 
 // 免責聲明類句子：品牌規則「文章裡不放故事情境為示意這類聲明」。含這些字樣的整句會被移除。
 const DISCLAIMER = /(故事)?情境(僅)?為示意|以上(故事|內容|情境)?(皆|均)?為虛構|純屬虛構|僅為示意|虛構情境|情境為虛構/;
+// 跨篇預告：他明確說過不要出這種系列文。讀者多半只會看到其中一篇，
+// 被預告的那一篇他不會記得，也不一定讀得到，等於把結尾浪費在一個不會兌現的承諾上。
+// 提示詞已經禁止，這裡是機械保險，漏網的整句移除。
+const NEXT_POST_TEASER = /(下一篇|下篇|下一回|下次(再|我)?(聊|說|談|講))/;
 // 對外品牌名稱一律用全名，不寫縮寫。前面是英數字或 # 的不處理（例如主題標籤）。
 const BRAND_ABBREV = /(?<![A-Za-z0-9#])(ABL|NAS|I8)(?![A-Za-z0-9])/g;
 const BRAND_FULL: Record<string, string> = { ABL: "艾伯林量子調頻", NAS: "平衡空間", I8: "初八企業顧問" };
@@ -157,7 +161,7 @@ export function rewriteBrandSubject(text: string, brandId?: string): { text: str
 
 /**
  * 機械式自動修正：不改變原意，只處理有明確規則的問題。回傳修正後文字與修正清單。
- * 1. 移除含免責聲明的整句  2. 品牌縮寫改全名  3. 清掉只剩標點的殘行  4. 壓縮多餘空行
+ * 1. 移除含免責聲明的整句  2. 移除跨篇預告整句  3. 品牌縮寫改全名  4. 清掉只剩標點的殘行  5. 壓縮多餘空行
  */
 export function applyMechanicalFixes(text: string): { text: string; fixes: string[] } {
   const fixes: string[] = [];
@@ -173,6 +177,16 @@ export function applyMechanicalFixes(text: string): { text: string; fixes: strin
     if (rest) kept.push(rest);
   }
   if (removed) { fixes.push(`移除 ${removed} 句免責聲明`); out = kept.join("\n"); }
+  // 跨篇預告整句移除，規則與免責聲明同一套
+  let teasers = 0;
+  out = out.split("\n").map((line) => {
+    if (!NEXT_POST_TEASER.test(line)) return line;
+    const sentences = line.split(/(?<=[。！？])/);
+    const stay = sentences.filter((sentence) => !NEXT_POST_TEASER.test(sentence));
+    teasers += sentences.length - stay.length;
+    return stay.join("").trim();
+  }).join("\n");
+  if (teasers) fixes.push(`移除 ${teasers} 句下一篇預告`);
   let abbrev = 0;
   out = out.replace(BRAND_ABBREV, (_m, code: string) => { abbrev++; return BRAND_FULL[code]; });
   if (abbrev) fixes.push(`品牌縮寫改全名 ${abbrev} 處`);

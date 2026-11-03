@@ -190,6 +190,7 @@ export function buildStoryArgumentPrompt(
     rhythmRule,
     hashtagRule,
     "【品牌格式與事實】社群文案只輸出純文字，不得出現 Markdown 符號或任何破折號、橫線；只有文末主題標籤行可使用必要的 #。停頓使用逗號或句號。遵守既有品牌規範與禁用詞，不得把一句話論點併入 social_copy 作為額外標籤。",
+    "【單篇成立】不預告下一篇。不要寫「下一篇我會談…」「下次再聊…」這類跨篇預告，也不要寫成需要看前一篇才懂的系列。每一篇都要能單獨看完、單獨成立。",
     genreRule,
     "【輸出格式】只輸出合法 JSON 物件，不要程式碼區塊或前後說明。story_thesis 是供介面展示的一句話論點，不屬於文章；social_copy 只放可編輯的文章正文。",
     `{ "story_thesis": "一句話論點", "social_copy": "依規則完成的純文字文章"${citationJsonFields} }`,
