@@ -203,6 +203,37 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
     });
   }
 
+  // 2d. 任務還在排程、FB 母稿卻已經不是待發（空殼）
+  //
+  // 2026-11-03：三篇 ABL 系列文被取消後又被放回排程，但只有流水線任務改回 scheduled，
+  // FB、IG、Threads 三個排程列還停在 cancelled。結果時間軸照常顯示、時間也在未來，
+  // 實際上那天什麼都不會發；按補齊還會被擋，因為補齊要求 FB 必須是待發。
+  // 任務狀態和排程列狀態是兩套，可以各走各的，所以一定要有東西盯著兩邊對不對得上。
+  const ghostQueueIds = [...new Set(multi.map((job: any) => job.queue_id).filter(Boolean))];
+  const fbStatusByQueue = new Map<string, string>();
+  if (ghostQueueIds.length) {
+    const rows = await safeQuery<any>("publish_queue", `id=in.(${ghostQueueIds.join(",")})&select=id,status`);
+    for (const row of rows) fbStatusByQueue.set(String(row.id), String(row.status || ""));
+  }
+  for (const job of multi) {
+    if (!job.queue_id) continue;
+    const time = new Date(String(job.scheduled_at || "")).getTime();
+    if (!Number.isFinite(time) || time <= now) continue;
+    const fbStatus = fbStatusByQueue.get(String(job.queue_id));
+    // 查不到那一列就不要亂報，可能只是查詢失敗
+    if (!fbStatus || fbStatus === "pending" || fbStatus === "sending" || fbStatus === "sent") continue;
+    const key = `ghost:${job.id}`;
+    if (items.some((item) => item.key === key)) continue;
+    items.push({
+      key, kind: "manual", brand: brandOf(job.brand_id), platform: "FB", scheduledAt: job.scheduled_at,
+      reason: `排程上看得到，但 FB 母稿是「${fbStatus === "cancelled" ? "已取消" : fbStatus}」，那天不會發`,
+      text: snippet(job.draft_content), full: String(job.draft_content ?? ""), source: "job", refId: job.id, jobId: job.id,
+      advice: "這一則在時間軸上看起來正常，實際上不會發出去。要留就到多平台衍生頁把 FB 改回待發再補其他平台；不要了就按「放棄這則」，不要讓它繼續佔著版位。",
+      canEdit: !!job.draft_content, queued: true, canRetry: false, retryRisk: null,
+      canMarkDone: false, canCancel: true, canDismiss: false, stalePlatforms: [],
+    });
+  }
+
   // 3. FB 排程發送失敗（7 天內）
   const fbRows = await safeQuery<any>("publish_queue", `status=in.(failed,partial)&scheduled_at=gte.${iso(now - 7 * DAY)}&order=scheduled_at.desc&limit=50&select=id,brand_id,content,scheduled_at,status,error,results`);
   for (const row of fbRows) {

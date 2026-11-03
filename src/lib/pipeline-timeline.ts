@@ -108,10 +108,15 @@ export async function collectTimeline(): Promise<TimelineRow[]> {
     const failed = cells.some((cell) => cell.state === "failed");
     const missing = brand !== "erick" && job.status === "scheduled" && cells.some((cell) => cell.state === "none");
     const unreviewed = job.status === "scheduled" && !job.reviewed && job.scheduled_at && new Date(job.scheduled_at).getTime() - Date.now() < 48 * HOUR && new Date(job.scheduled_at).getTime() > Date.now();
-    const note = failed ? "有平台失敗" : missing ? "有平台還沒補草稿" : unreviewed ? "還沒審稿" : job.status === "manual" ? String(job.error_reason || "待人工處理").slice(0, 60) : null;
+    // 空殼：任務還排著、時間也在未來，但 FB 母稿已經被取消或失敗，那天其實什麼都不會發。
+    // 2026-11-03 三篇 ABL 系列文就是這樣：畫面正常、實際不會發，而且按補齊會被擋。
+    // 任務狀態與排程列狀態是兩套，可以各走各的，所以一定要在這裡對一次。
+    const futureJob = job.status === "scheduled" && !!job.scheduled_at && new Date(job.scheduled_at).getTime() > Date.now();
+    const ghost = futureJob && (fb.state === "cancelled" || fb.state === "failed");
+    const note = ghost ? "FB 母稿已取消，那天不會發" : failed ? "有平台失敗" : missing ? "有平台還沒補草稿" : unreviewed ? "還沒審稿" : job.status === "manual" ? String(job.error_reason || "待人工處理").slice(0, 60) : null;
     return {
       id: job.id, brand, title: titleOf(job.draft_content, job.prompt), scheduledAt: job.scheduled_at, jobStatus: job.status,
-      reviewed: !!job.reviewed, note, needsYou: failed || missing || !!unreviewed || job.status === "manual",
+      reviewed: !!job.reviewed, note, needsYou: ghost || failed || missing || !!unreviewed || job.status === "manual",
       fb, website, instagram, threads,
     };
   });
