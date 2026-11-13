@@ -241,3 +241,9 @@ export function cancelOwnedPipelineRows<T extends { source?: string | null; stat
 export function isAutoPipelineEnabled(value: string | undefined = process.env.AUTO_PIPELINE_ENABLED): boolean {
   return value === "true";
 }
+
+
+/** FB 排程列已經送出（全部或部分粉專成功）就算已發佈。流水線頁不再顯示已發佈的文章。 */
+export function isPublishedQueueStatus(status: string | null | undefined): boolean {
+  return status === "sent" || status === "partial";
+}

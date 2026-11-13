@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Platform = "facebook" | "website" | "instagram" | "threads";
 const PLATFORMS: Array<{ id: Platform; label: string }> = [
@@ -84,6 +84,15 @@ export default function ReoptimizePanel() {
     if (!res.ok) throw new Error(data.error || "操作失敗");
     return data;
   };
+
+  // 一打開頁面就先算一次 FB 主稿有幾篇是舊規則，不用先按「看看有幾篇要改」才知道
+  const autoChecked = useRef(false);
+  useEffect(() => {
+    if (autoChecked.current) return;
+    autoChecked.current = true;
+    const timer = window.setTimeout(() => { void call(true, "facebook"); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [call]);
 
   /** 一鍵：FB 主稿確認是新規則之後，依序把官網、IG、Threads 的舊規則稿全部重寫 */
   const runAll = useCallback(async () => {
@@ -175,7 +184,7 @@ export default function ReoptimizePanel() {
         <button disabled={busy || autoRunning || staleCount === 0} onClick={() => void call(false, platform)} className="min-h-[44px] rounded-lg bg-amber-500 px-4 text-sm font-bold text-slate-950 disabled:opacity-40">
           {busy ? "處理中…" : `重寫 ${Math.min(batch, staleCount || batch)} 篇${label}`}
         </button>
-        {rulesVersion && <span className="text-xs text-slate-400">目前規則版本：{rulesVersion}</span>}
+        <span className="text-xs text-slate-400">目前規則版本：{rulesVersion || "讀取中…"}</span>
       </div>
 
       <div className="space-y-2 rounded-xl border border-sky-400/40 bg-sky-400/10 p-3">

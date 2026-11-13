@@ -95,3 +95,9 @@ assert.notEqual(rotated.structure, plan.structure, "上一篇用過的結構這�
 
 assert.ok(buildFlowStructureCatalog().includes("J1 人物一句開場"));
 console.log("flow-structures ok");
+
+// 流水線頁：FB 已送出（全部或部分成功）的文章不再顯示
+import { isPublishedQueueStatus } from "../src/lib/auto-pipeline";
+assert.equal(isPublishedQueueStatus("sent"), true);
+assert.equal(isPublishedQueueStatus("partial"), true);
+for (const s of ["pending", "sending", "failed", "cancelled", null, undefined]) assert.equal(isPublishedQueueStatus(s as string | null | undefined), false);
