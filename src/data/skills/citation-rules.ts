@@ -32,7 +32,9 @@ export function buildCitationDirective(citation: VerifiedCitation | null, noteCo
     `可以引用的書：《${citation.title}》，作者${citation.author}`,
     "引用時要在句子裡寫明歸屬，格式是「《主書名》作者某某提出，（觀點）」，一句只歸屬一個觀點。",
     "故事與其他內容不可以寫成書裡的內容。",
-    "書名與作者名只能用上面給的中文寫法，一個英文字母都不可以出現，也不可以加副標題或英文原名對照。",
+    /[A-Za-z]/.test(citation.title)
+      ? "這本書沒有台灣中文版，書名與作者名一律照上面的英文原名逐字寫，不可以翻譯成中文，也不可以自創中文譯名或加副標題。"
+      : "書名與作者名只能用上面給的中文寫法，不可以改成其他譯名，也不可以加副標題或英文原名對照。",
     "動詞用「提出」，不要用「核心概念是」這類評價說法。",
     `文末單獨一行：文中引用的觀點，出自${citation.author}所著《${citation.title}》。`,
     (CITE_EXPECTED_GENRES as readonly string[]).includes(String(genre || ""))

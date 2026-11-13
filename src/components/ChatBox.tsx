@@ -6,7 +6,7 @@ import { Send, Trash2, Bot, Sparkles, User, Copy, Settings2 } from "lucide-react
 import { resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
 import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChatHistory, subscribeToWorkspace } from "@/lib/storage";
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
-import { getWritingFrameworkOptions, getStoryArgumentSelectionError, isStoryArgumentCitationEligible, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
+import { getWritingFrameworkOptions, getCitationName, getStoryArgumentSelectionError, isStoryArgumentCitationEligible, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
 import type { KnowledgeNoteDirectoryEntry } from "@/lib/knowledge-note-utils";
 import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
@@ -71,7 +71,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     let error = getStoryArgumentSelectionError(selection);
     if (!error && selection?.version === "full" && selection.citationMode === "selected") {
       const selected = knowledgeNotes.find((note) => note.id === selection.noteId);
-      if (!isStoryArgumentCitationEligible(selected)) error = "指定書籍模式請先選擇一筆中文資料已確認的筆記。";
+      if (!isStoryArgumentCitationEligible(selected)) error = "指定書籍模式請先選擇一筆已查證的筆記。";
     }
     setStorySelectionError(error || "");
     return !error;
@@ -1208,12 +1208,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                     {[...new Set(knowledgeNotes.map((note) => note.domain))].map((domain) => (
                       <optgroup key={domain} label={KNOWLEDGE_DOMAIN_LABELS[domain] || domain}>
                         {knowledgeNotes.filter((note) => note.domain === domain).map((note) => {
-                          const eligible = isStoryArgumentCitationEligible(note);
+                          const name = getCitationName(note);
                           return (
-                            <option key={note.id} value={note.id} disabled={!eligible}>
-                              {eligible
-                                ? `《${note.title_zh}》，${note.author_zh}`
-                                : `${note.title || "未提供英文書名"}（缺中文書名或作者）`}
+                            <option key={note.id} value={note.id} disabled={!name}>
+                              {name
+                                ? `《${name.title}》，${name.author}`
+                                : `${note.title || "未提供英文書名"}（中文版還沒查證）`}
                             </option>
                           );
                         })}

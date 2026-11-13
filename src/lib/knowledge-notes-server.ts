@@ -6,7 +6,7 @@ import {
   type KnowledgeNoteDirectoryEntry,
   type KnowledgeNoteRecord,
 } from "@/lib/knowledge-note-utils";
-import { isStoryArgumentCitationEligible, KNOWLEDGE_DOMAIN_LABELS } from "@/data/skills/story-argument";
+import { getCitationName, isStoryArgumentCitationEligible, KNOWLEDGE_DOMAIN_LABELS } from "@/data/skills/story-argument";
 import { rankStoryArgumentNoteDirectory } from "@/lib/story-argument-reselection";
 
 async function fetchKnowledgeRows<T>(query: string): Promise<T[]> {
@@ -71,20 +71,22 @@ export async function getStoryArgumentKnowledgeCandidates(idea: string, limit = 
   const selected = rankStoryArgumentNoteDirectory(eligible, idea, limit);
   const candidates = await Promise.all(selected.map(async (entry) => {
     const note = await getKnowledgeNoteById(entry.id);
-    if (!note || !isStoryArgumentCitationEligible(note)) return null;
+    const name = getCitationName(note);
+    if (!note || !name) return null;
     return {
       id: entry.id,
       domain: KNOWLEDGE_DOMAIN_LABELS[entry.domain] || entry.domain,
       subdomain: entry.subdomain,
-      title_zh: entry.title_zh,
-      author_zh: entry.author_zh,
+      // 沒有中文版的書，這兩欄放英文原名，畫面與文章看到的是同一個寫法
+      title_zh: name.title,
+      author_zh: name.author,
       zh_status: entry.zh_status,
       selectable: true,
       highlight: extractKnowledgeNoteHighlight(note.content),
     };
   }));
   const selectable = candidates.filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
-  const pending = directory.filter((entry) => !isStoryArgumentCitationEligible(entry)).map((entry) => ({
+  const pending = directory.filter((entry) => !getCitationName(entry)).map((entry) => ({
     id: entry.id,
     domain: KNOWLEDGE_DOMAIN_LABELS[entry.domain] || entry.domain,
     subdomain: entry.subdomain,

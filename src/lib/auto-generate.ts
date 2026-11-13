@@ -22,6 +22,7 @@ import { applyMechanicalFixes, brandSubjectHits, fictionAsRealClient, gateBlocke
 import { loadApprovedCitationTitles } from "@/lib/citation-library";
 import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
+import { getCitationName } from "@/data/skills/story-argument";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
 import { buildExampleRewritePrompt } from "@/data/skills/example-rewrite-prompt";
 import { allowedCitationFromMaster, brandVoiceSentences } from "@/lib/auto-multiplatform";
@@ -65,26 +66,26 @@ export const BRAND_NAMES = { nas: "平衡空間", abl: "艾伯林量子調頻", 
 /**
  * 取查證過的出處。
  *
- * 一律用中文書名與中文作者名：艾瑞克的規則是「文章裡的引用與文末出處，作者名和書名要用中文，
- * 不要出現英文原名」，而且「只寫主書名，不要副標題」。資料表的 title_zh 本來就不含副標題，
- * 所以用中文欄位同時滿足兩條。
+ * 有台灣中文版的書（zh_status = confirmed）用中文書名與中文作者名，只寫主書名。
+ * 2026-11-13 起，沒有中文版的書（zh_status = no_zh_edition）直接用英文原書名與英文作者，
+ * 不讓模型自己翻譯書名。之前 Atlas of the Heart 被翻成《心的地圖集》，引了一本不存在的書。
  *
- * 中文欄位缺、或 zh_status 還沒 confirmed 的，寧可這篇不引用，也不要掛英文原名出去。
- * 知識庫暫時不可用時回 null，該篇就不准引用，不會因此生成失敗。
+ * 其他狀態（還沒查證）寧可這篇不引用。知識庫暫時不可用時回 null，該篇就不准引用，不會因此生成失敗。
  */
 export async function loadCitationSource(topic: string): Promise<{ citation: VerifiedCitation | null; content: string; banned: string[]; reason: string }> {
   try {
     const source = await chooseKnowledgeSource(topic, await getPipelineProvider());
     if (!source.citation) return { citation: null, content: "", banned: [], reason: source.reason || "選書步驟沒有回傳出處" };
-    const note = source.note as { title_zh?: string; author_zh?: string; zh_status?: string } | null;
-    const title = String(note?.title_zh || "").trim();
-    const author = String(note?.author_zh || "").trim();
-    if (!title || !author || note?.zh_status !== "confirmed") {
-      return { citation: null, content: "", banned: [], reason: `選到的書中文欄位不完整或未確認（書名「${title || "空"}」、作者「${author || "空"}」、狀態 ${note?.zh_status || "空"}）` };
+    const note = source.note as { title?: string; author?: string; title_zh?: string | null; author_zh?: string | null; zh_status?: string | null } | null;
+    const name = getCitationName(note ? { title: note.title, author: note.author, title_zh: note.title_zh ?? null, author_zh: note.author_zh ?? null, zh_status: note.zh_status } : null);
+    if (!name) {
+      return { citation: null, content: "", banned: [], reason: `選到的書還沒查證中文版（書名「${String(note?.title_zh || note?.title || "空")}」、狀態 ${note?.zh_status || "空"}）` };
     }
-    // 英文原名與英文作者名不可以出現在文章裡，出現了就當成未查證的引用處理
-    const banned = [source.citation.title, source.citation.author].map((value) => String(value || "").trim()).filter((value) => value.length > 3);
-    return { citation: { title, author }, content: source.content, banned, reason: "" };
+    // 用中文時，英文原名不可以出現；用英文時，資料表裡沒查證過的中文譯名不可以出現
+    const banned = (name.lang === "zh" ? [source.citation.title, source.citation.author] : [note?.title_zh, note?.author_zh])
+      .map((value) => String(value || "").trim())
+      .filter((value) => value.length > 1 && value !== name.title && value !== name.author);
+    return { citation: { title: name.title, author: name.author }, content: source.content, banned, reason: "" };
   } catch (error) {
     return { citation: null, content: "", banned: [], reason: error instanceof Error ? error.message.slice(0, 160) : "取出處失敗" };
   }
@@ -229,7 +230,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   /** 未查證的引用，外加文章裡出現的英文原名 */
   const citationProblems = (text: string): string[] => [
     ...unverifiedCitations(text, source.citation),
-    ...source.banned.filter((name) => text.includes(name)).map((name) => `英文原名「${name}」`),
+    ...source.banned.filter((name) => text.includes(name)).map((name) => `不可使用的書名或作者寫法「${name}」`),
   ];
 
   const generated = await retry(async () => {

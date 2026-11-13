@@ -1,7 +1,5 @@
 import {
-  getStoryArgumentChineseAuthor,
-  getStoryArgumentChineseBookTitle,
-  isStoryArgumentCitationEligible,
+  getCitationName,
   normalizeStoryArgumentCopy,
 } from "@/data/skills/story-argument";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
@@ -404,7 +402,7 @@ export function applyValidatedKnowledgeCitation(
   input: string,
   citedTitle: unknown,
   citedAuthor: unknown,
-  note: Pick<KnowledgeNoteRecord, "title_zh" | "author_zh" | "zh_status"> | null,
+  note: (Pick<KnowledgeNoteRecord, "title_zh" | "author_zh" | "zh_status"> & { title?: string | null; author?: string | null }) | null,
   required: boolean
 ): { content: string; valid: boolean; citationTitle: string | null; citationAuthor: string | null; reminder: string | null } {
   const lines = normalizeStoryArgumentCopy(input).split("\n");
@@ -421,9 +419,10 @@ export function applyValidatedKnowledgeCitation(
     };
   }
 
-  const titleZh = note ? getStoryArgumentChineseBookTitle(note.title_zh) : null;
-  const authorZh = note ? getStoryArgumentChineseAuthor(note.author_zh) : null;
-  const eligible = isStoryArgumentCitationEligible(note);
+  const name = getCitationName(note);
+  const titleZh = name?.title ?? null;
+  const authorZh = name?.author ?? null;
+  const eligible = name !== null;
   const citationLines = bodyLines.filter(isCitationLine);
   const expectedPhrase = titleZh && authorZh ? `${authorZh}在《${titleZh}》提出` : "";
   const citedTitles = citationLines.flatMap((line) => [...line.matchAll(/《([^》]+)》/gu)].map((match) => match[1].trim()));

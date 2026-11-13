@@ -55,7 +55,7 @@ assert.ok(gen.includes("citationDirective"), "引用規則要進提示詞");
 // 違反「書名作者一律用中文」與「只寫主書名不要副標題」兩條規則
 const zh = buildCitationDirective({ title: "自我慈悲", author: "克莉絲汀·聶夫" }, "筆記");
 assert.ok(zh.includes("《自我慈悲》") && zh.includes("克莉絲汀·聶夫"));
-assert.ok(zh.includes("一個英文字母都不可以出現"), "要明講不可以出現英文原名");
+assert.ok(zh.includes("不可以加副標題或英文原名對照"), "要明講不可以出現英文原名");
 assert.ok(!/Self-Compassion|Kristin/.test(zh), "指令裡不可以夾帶英文原名");
 
 // 英文原名若出現在文章裡，要被當成違規抓出來
@@ -64,10 +64,10 @@ assert.ok(unverifiedCitations(enInBody, { title: "自我慈悲" }).length > 0, "
 // 中文正確寫法要放行
 assert.deepEqual(unverifiedCitations("《自我慈悲》作者克莉絲汀·聶夫提出，善待自己是可以練的。", { title: "自我慈悲" }), []);
 
-// 取出處時必須用中文欄位，而且中文沒確認就不准引用
+// 取出處時走 getCitationName：有中文版用中文，沒有中文版用英文原名，沒查證就不准引用
 const gen2 = readFileSync("src/lib/auto-generate.ts", "utf8");
 assert.ok(gen2.includes("note?.title_zh") && gen2.includes("note?.author_zh"), "要用中文欄位");
-assert.ok(gen2.includes('note?.zh_status !== "confirmed"'), "中文沒確認就不准引用");
+assert.ok(gen2.includes("getCitationName(") && gen2.includes("if (!name)"), "中文沒確認就不准引用");
 assert.ok(gen2.includes("citationProblems"), "英文原名要納入違規判定");
 
 // 2026-10-28 回歸案例：引用查證原本只做在 FB 主稿。

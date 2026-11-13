@@ -12,7 +12,7 @@ import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
 import { COPYWRITING_FRAMEWORKS, flowStructureOfFramework } from "../data/skills/frameworks";
 import { buildFlowCheckPrompt, buildFlowStructureDirective, FLOW_DIRECTIVE_MARK, FLOW_STRUCTURE_VERSION, FLOW_STRUCTURES, flowStructureFromText, normalizeFlowCheck, pickFlowStructure, readFlowStructureFromPrompt, type FlowCheckResult } from "../data/skills/flow-structures";
-import { buildStoryArgumentPrompt, isStoryArgumentCitationEligible, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
+import { buildStoryArgumentPrompt, getCitationName, isStoryArgumentCitationEligible, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
 import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
 import { getKnowledgeNoteById, getKnowledgeNoteDirectory, getKnowledgeNoteSelectionDirectory } from "@/lib/knowledge-notes-server";
 import { chooseStoryArgumentNote, replaceStoryArgumentSupportParagraph } from "@/lib/story-argument-reselection";
@@ -312,10 +312,10 @@ async function resolveStoryArgumentKnowledge(
   if (!required) return { required: false, note: null, content: "" };
 
   if (citationMode === "selected") {
-    if (!selection.noteId?.trim()) throw new Error("指定書籍模式請先選擇一筆中文資料已確認的筆記。");
+    if (!selection.noteId?.trim()) throw new Error("指定書籍模式請先選擇一筆已查證的筆記。");
     const selected = await getKnowledgeNoteById(selection.noteId);
     if (!isStoryArgumentCitationEligible(selected)) {
-      throw new Error("指定書籍的中文書名與作者尚未確認，請改選已確認的筆記。");
+      throw new Error("指定書籍的中文版還沒查證，請改選已確認的筆記。");
     }
     return { required, note: selected, content: selectRelevantKnowledgeContent(selected.content, topic, 20_000) };
   }
@@ -326,9 +326,9 @@ async function resolveStoryArgumentKnowledge(
       const directory = (await getKnowledgeNoteDirectory()).filter(isStoryArgumentCitationEligible);
       if (directory.length > 0) {
         // 只把中文書目與分類交給選書模型，全文只在選定後由伺服器讀取。
-        const catalog = directory.map(({ id, title_zh, author_zh, domain, subdomain }) => ({ id, title_zh, author_zh, domain, subdomain }));
+        const catalog = directory.map((entry) => ({ id: entry.id, title: getCitationName(entry)?.title, author: getCitationName(entry)?.author, domain: entry.domain, subdomain: entry.subdomain }));
         const selectionPrompt = [
-          "請從以下知識筆記目錄挑選一本最貼近使用者主題且有中文書名與作者的筆記。目錄不含全文。若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。",
+          "請從以下知識筆記目錄挑選一本最貼近使用者主題的筆記。目錄不含全文。若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。",
           "若有合適筆記，只回傳 JSON：{\"matched\":true,\"id\":\"目錄中的 id\"}。",
           `文章主題與任務：${topic.slice(0, 10000)}`,
           `可選目錄：${JSON.stringify(catalog)}`,
@@ -372,7 +372,7 @@ async function resolveReselectionKnowledge(
       .map((entry) => entry.source_file);
     const eligible = directory.filter((entry) => chooseStoryArgumentNote([entry], excludedSourceFiles) !== null);
     if (!eligible.length) return { note: null, error: "no_available_notes", topic };
-    const catalog = eligible.map(({ id, title_zh, author_zh, domain, subdomain }) => ({ id, title_zh, author_zh, domain, subdomain }));
+    const catalog = eligible.map((entry) => ({ id: entry.id, title: getCitationName(entry)?.title, author: getCitationName(entry)?.author, domain: entry.domain, subdomain: entry.subdomain }));
     const selectionPrompt = [
       "你是故事論點框架的知識來源挑選器。僅依據目錄欄位判斷是否有筆記能支持使用者的想法，不得憑記憶補充來源。",
       "若沒有明確合適的筆記，回傳 {\"matched\":false}，不要硬選。若有，只回傳 {\"matched\":true,\"id\":\"目錄中的 id\"}。只輸出 JSON。",
@@ -444,7 +444,8 @@ async function callStoryArgumentReselection(
     };
   }
 
-  const notePrompt = { title_zh: resolved.note.title_zh, author_zh: resolved.note.author_zh, zh_status: resolved.note.zh_status, content: noteContent };
+  const notePrompt = { title: resolved.note.title, author: resolved.note.author, title_zh: resolved.note.title_zh, author_zh: resolved.note.author_zh, zh_status: resolved.note.zh_status, content: noteContent };
+  const citeName = getCitationName(resolved.note);
   const basePrompt = buildStoryArgumentPrompt(activeSelection, { knowledgeNote: notePrompt, citationRequired: true });
   const taskPrompt = request.rewriteFull
     ? [
@@ -458,8 +459,8 @@ async function callStoryArgumentReselection(
         `原文章論點：${selection.thesis}`,
         `原文章（僅供理解論點與故事，不得重寫或輸出）：\n<current_article>\n${request.currentCopy}\n</current_article>`,
         `唯一可用的知識筆記全文節錄：\n<knowledge_note_excerpt>\n${noteContent}\n</knowledge_note_excerpt>`,
-        `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「作者欄位原文在《title_zh 欄位原文》提出」句型，使用 ${activeSelection.noteId} 所代表筆記的 title_zh 與 author_zh。不得輸出出處行；伺服器會驗證後補上。引用欄位即使含英文字母也必須逐字保留；引用以外的內容不得另加英文姓名或書名。不得輸出評價詞、Markdown 符號或破折號。若筆記沒有可驗證的來源，不得改用其他來源或自行翻譯。`,
-        "只輸出 JSON：{\"support_paragraph\":\"單一論點支持段\",\"citation_title\":\"知識庫 title_zh\",\"citation_author\":\"知識庫 author_zh\"}。citation_title 與 citation_author 必須逐字填入所附筆記的 title_zh 與 author_zh 欄位。",
+        `請只依筆記內容產出一段「論點支持」，只含一個概念，包含引用、白話轉譯、回扣故事。引用只能使用「${citeName?.author ?? "作者"}在《${citeName?.title ?? "書名"}》提出」句型，書名與作者逐字照寫，不得翻譯成中文或自創譯名。不得輸出出處行；伺服器會驗證後補上。引用以外的內容不得另加其他人名或書名。不得輸出評價詞、Markdown 符號或破折號。若筆記沒有可驗證的來源，不得改用其他來源或自行翻譯。`,
+        `只輸出 JSON：{"support_paragraph":"單一論點支持段","citation_title":"書名","citation_author":"作者"}。citation_title 與 citation_author 必須逐字填入「${citeName?.title ?? ""}」與「${citeName?.author ?? ""}」。`,
       ].join("\n\n");
 
   const raw = await runQueryWithFallback(`${brandContext}\n\n${taskPrompt}`, config, true, "anthropic", { maxTokens: 12000, timeoutMs: 120000 });
@@ -1251,6 +1252,8 @@ ${brandContext}`;
         genreMode: Boolean(genre?.settings),
         citationRequired: storyKnowledge.required,
         knowledgeNote: storyKnowledge.note ? {
+          title: storyKnowledge.note.title,
+          author: storyKnowledge.note.author,
           title_zh: storyKnowledge.note.title_zh,
           author_zh: storyKnowledge.note.author_zh,
           zh_status: storyKnowledge.note.zh_status,

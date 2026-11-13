@@ -10,12 +10,13 @@
 // 這支負責把知識庫裡已確認的中文書名拿出來，讓查證有一個真正的標準。
 
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
+import { getCitationName } from "@/data/skills/story-argument";
 
 const TTL_MS = 10 * 60 * 1000;
 let cache: { at: number; titles: string[] } | null = null;
 
 /**
- * 知識庫裡已確認、可以引用的中文書名。
+ * 知識庫裡可以引用的書名：有中文版的用中文書名，沒有中文版的用英文主書名。
  *
  * 查不到就回空陣列，呼叫端看到空的要跳過這層檢查。
  * 這是刻意的：資料庫暫時不通時，寧可少擋一次，也不要把每一篇都判成違規，
@@ -27,14 +28,14 @@ export async function loadApprovedCitationTitles(): Promise<string[]> {
   if (!env) return cache?.titles ?? [];
   try {
     const response = await fetch(
-      `${env.url}/rest/v1/knowledge_notes?select=title_zh&zh_status=eq.confirmed&limit=10000`,
+      `${env.url}/rest/v1/knowledge_notes?select=title,author,title_zh,author_zh,zh_status&zh_status=in.(confirmed,no_zh_edition)&limit=10000`,
       { headers: supabaseHeaders(env.key), cache: "no-store" },
     );
     if (!response.ok) throw new Error(`知識庫查詢失敗（${response.status}）`);
     const rows = await response.json();
     const titles = [...new Set(
       (Array.isArray(rows) ? rows : [])
-        .map((row: any) => String(row?.title_zh ?? "").trim())
+        .map((row: any) => getCitationName(row)?.title ?? "")
         .filter((title: string) => title.length > 0),
     )];
     // 回空的通常是查詢出問題，不是真的一本書都沒有，所以保留上一次的結果

@@ -101,3 +101,37 @@ import { isPublishedQueueStatus } from "../src/lib/auto-pipeline";
 assert.equal(isPublishedQueueStatus("sent"), true);
 assert.equal(isPublishedQueueStatus("partial"), true);
 for (const s of ["pending", "sending", "failed", "cancelled", null, undefined]) assert.equal(isPublishedQueueStatus(s as string | null | undefined), false);
+
+// 2026-11-13：沒有台灣中文版的書直接用英文原名，不讓模型自己翻譯書名
+import { getCitationName, englishMainTitle } from "../src/data/skills/story-argument";
+import { buildCitationDirective } from "../src/data/skills/citation-rules";
+{
+  const en = getCitationName({ title: "Atlas of the Heart: Mapping Meaningful Connection", author: "Brené Brown", title_zh: "心的地圖集", author_zh: "布芮妮·布朗", zh_status: "no_zh_edition" });
+  assert.ok(en?.title === "Atlas of the Heart" && en?.author === "Brené Brown" && en?.lang === "en", "沒有中文版用英文主書名與英文作者");
+  const zh = getCitationName({ title: "Daring Greatly", author: "Brené Brown", title_zh: "脆弱的力量", author_zh: "布芮尼·布朗", zh_status: "confirmed" });
+  assert.ok(zh?.title === "脆弱的力量" && zh?.author === "布芮尼·布朗" && zh?.lang === "zh", "有中文版用中文書名與作者");
+  assert.ok(getCitationName({ title: "X", author: "Y", title_zh: "某書", author_zh: "某人", zh_status: "unverified" }) === null, "還沒查證的不可引用");
+  assert.ok(englishMainTitle("Burnout: The Secret") === "Burnout", "英文主書名去掉副標題");
+  const directive = buildCitationDirective({ title: "Atlas of the Heart", author: "Brené Brown" }, "筆記");
+  assert.ok(directive.includes("不可以自創中文譯名") && directive.includes("《Atlas of the Heart》"), "英文書的引用指令要求照寫英文、不可自創譯名");
+}
+
+// 2026-11-13：整批往後延發佈
+import { normalizePostponeDays, selectPostponeJobs, shiftIso, taipeiDayStartIso } from "../src/lib/postpone";
+{
+  assert.equal(shiftIso("2026-11-14T12:00:00.000Z", 7), "2026-11-21T12:00:00.000Z");
+  assert.equal(normalizePostponeDays(0), null);
+  assert.equal(normalizePostponeDays(31), null);
+  assert.equal(normalizePostponeDays(7), 7);
+  assert.equal(taipeiDayStartIso("2026-11-14"), "2026-11-13T16:00:00.000Z");
+  const jobs = [
+    { id: "a", brand_id: "nas", status: "scheduled", scheduled_at: "2026-11-14T12:00:00Z", queue_id: "q1" },
+    { id: "b", brand_id: "abl", status: "scheduled", scheduled_at: "2026-11-15T12:00:00Z", queue_id: "q2" },
+    { id: "c", brand_id: "nas", status: "scheduled", scheduled_at: "2026-11-16T12:00:00Z", queue_id: "q3", published: true },
+    { id: "d", brand_id: "nas", status: "cancelled", scheduled_at: "2026-11-16T12:00:00Z", queue_id: null },
+    { id: "e", brand_id: "nas", status: "scheduled", scheduled_at: "2026-11-10T12:00:00Z", queue_id: "q5" },
+  ];
+  const picked = selectPostponeJobs(jobs, { brandId: "nas", fromIso: "2026-11-13T16:00:00Z", nowIso: "2026-11-13T14:00:00Z" });
+  assert.deepEqual(picked.map((job) => job.id), ["a"], "只延該品牌、還沒發、起始日之後的");
+  assert.equal(selectPostponeJobs(jobs, { fromIso: "2026-11-13T16:00:00Z", nowIso: "2026-11-13T14:00:00Z" }).length, 2);
+}

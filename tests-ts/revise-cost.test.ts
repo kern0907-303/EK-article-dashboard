@@ -15,7 +15,7 @@ assert.ok(revise.includes("不可以引用任何書籍"), "沒有出處時要禁
 // 有出處時只准引那一本，而且是中文
 const withCite = buildRevisePrompt(draft, ["引用有問題：《心流》"], { title: "自我慈悲", author: "克莉絲汀·聶夫" });
 assert.ok(withCite.includes("只能引用《自我慈悲》"));
-assert.ok(withCite.includes("一個英文字母都不可以出現"));
+assert.ok(withCite.includes("不可以翻譯或改成其他譯名"));
 
 // 成本：修改提示詞必須明顯短於第一稿那一包。第一稿光是書籍筆記就吃掉大半
 const firstDraftCitation = buildCitationDirective({ title: "自我慈悲", author: "克莉絲汀·聶夫" }, "筆".repeat(9000));

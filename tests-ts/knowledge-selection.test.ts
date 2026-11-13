@@ -78,6 +78,6 @@ assert.ok(!/catch \{\s*\n\s*\/\/ 知識來源暫時不可用/.test(ai), "catch �
 const gen = readFileSync("src/lib/auto-generate.ts", "utf8");
 assert.ok(/reason: source\.reason \|\| "選書步驟沒有回傳出處"/.test(gen), "取不到時要帶原因");
 assert.ok(gen.includes("本篇沒有取到知識庫出處，已禁止引用。原因："), "warnings 要寫出原因");
-assert.ok(/中文欄位不完整或未確認/.test(gen), "中文欄位沒過也要說清楚是哪一欄");
+assert.ok(/還沒查證中文版/.test(gen), "中文欄位沒過也要說清楚是哪一欄");
 
 console.log("knowledge-selection 測試通過");
