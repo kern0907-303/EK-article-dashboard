@@ -99,6 +99,8 @@ export interface WorkspaceData {
   suggested_schedule_at?: string | null;
   /** 故事論點框架的一句話論點，獨立顯示，不屬於社群文案正文 */
   story_argument_meta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
+  /** 這篇用了哪一型流量結構（2026-11-13 起所有新生成的文章都有），對照檢視會用到 */
+  flow_structure_meta?: { id: string; name: string; family: string; prompt_version: string } | null;
   /** 各平台社群文案的時間戳記：generated_at = AI 生成/改寫時間，edited_at = 手動編輯儲存時間（毫秒） */
   social_copy_meta?: Record<string, { generated_at?: number; edited_at?: number }>;
 }

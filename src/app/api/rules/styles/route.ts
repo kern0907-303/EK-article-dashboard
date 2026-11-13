@@ -6,6 +6,7 @@ import {
 import { OPENING_STYLE_IDS, OPENING_STYLES } from "@/data/skills/opening-styles";
 import { buildCopyTypeBlock, COPY_TYPE_IDS } from "@/data/skills/copy-types";
 import { RULES_VERSION } from "@/lib/auto-generate";
+import { buildFlowStructureCatalog, FLOW_STRUCTURE_IDS, FLOW_STRUCTURE_VERSION } from "@/data/skills/flow-structures";
 
 /**
  * 寫作規則的唯讀端點，給 n8n 的海巡批次流程用。
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
   ].join("\n");
 
   const openingBlock = [
-    "【開場型清單，每篇必須挑一型，決定文章第一句怎麼寫】",
+    "【開場型清單，選填。2026-11-13 起每篇都照流量結構寫，結構本身決定第一句；只有想指定開場時才寫【本篇開場型】】",
     ...OPENING_STYLE_IDS.map((id) => `${OPENING_STYLES[id].name}：${OPENING_STYLES[id].rule}`),
   ].join("\n");
 
@@ -57,11 +58,15 @@ export async function GET(req: NextRequest) {
     titleNegatives: TITLE_NEGATIVES,
     mix,
     copyTypeBlock: buildCopyTypeBlock(),
+    // 流量結構庫：批次提示詞可以寫「【流量結構】J3」指定；不寫就由系統依品牌與文體輪替
+    structureBlock: buildFlowStructureCatalog(),
+    structureVersion: FLOW_STRUCTURE_VERSION,
     categoryWeight: CATEGORY_WEIGHT,
     counts: {
       titleStyles: TITLE_STYLE_IDS.length,
       openingStyles: OPENING_STYLE_IDS.length,
       copyTypes: COPY_TYPE_IDS.length,
+      flowStructures: FLOW_STRUCTURE_IDS.length,
     },
   });
 }

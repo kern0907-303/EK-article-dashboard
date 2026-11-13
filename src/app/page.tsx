@@ -230,6 +230,9 @@ export default function DashboardPage() {
               <Link href="/knowledge-import" onClick={() => setIsDrawerOpen(false)} className="flex items-center gap-2 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/15">
                 <BookOpen className="h-4 w-4" />知識庫匯入
               </Link>
+              <Link href="/structure-check" onClick={() => setIsDrawerOpen(false)} className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-200 transition active:scale-95 hover:bg-violet-500/15">
+                <BookOpen className="h-4 w-4" />流量結構對照檢視
+              </Link>
               <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-400 bg-slate-950/30 border border-slate-850 rounded-xl">
                 <Network className="w-3.5 h-3.5 text-slate-500" />
                 <div className="truncate">
@@ -349,6 +352,9 @@ export default function DashboardPage() {
           <div className="space-y-2 mt-auto">
             <Link href="/knowledge-import" className="flex items-center gap-2 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/15">
               <BookOpen className="h-4 w-4" />知識庫匯入
+            </Link>
+            <Link href="/structure-check" className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-200 transition active:scale-95 hover:bg-violet-500/15">
+              <BookOpen className="h-4 w-4" />流量結構對照檢視
             </Link>
             <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-400 bg-slate-950/30 border border-slate-850 rounded-xl">
               <Network className="w-3.5 h-3.5 text-slate-500" />

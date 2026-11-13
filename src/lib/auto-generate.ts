@@ -16,6 +16,7 @@ import {
   pickOpeningStyle, readOpeningStyleFromPrompt, repeatedOpeningWarning, type OpeningStyleId,
 } from "@/data/skills/opening-styles";
 import { buildSubheadDirective, subheadWarning } from "@/data/skills/subhead-rules";
+import { buildFlowStructureDirective, FLOW_STRUCTURES, flowStructureNote, pickFlowStructure, readFlowStructureFromPrompt, readFlowStructureNote } from "@/data/skills/flow-structures";
 import { amplifierFromText, pickAmplifier, readAmplifierFromPrompt, TITLE_AMPLIFIERS, type AmplifierId } from "@/data/skills/title-amplifiers";
 import { applyMechanicalFixes, brandSubjectHits, fictionAsRealClient, gateBlockers, gateWarnings, hardToReadTitle, rewriteBrandSubject, runQualityGate, stripUnapprovedCitations, unverifiedCitations, vagueResearchClaim } from "@/lib/quality-gate";
 import { loadApprovedCitationTitles } from "@/lib/citation-library";
@@ -35,7 +36,7 @@ import { getPipelineProvider } from "@/lib/ai-setting-server";
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
  * 會寫進任務的 warnings，用來分辨哪些已排程的文章還是用舊規則寫的。
  */
-export const RULES_VERSION = "rules-2026-10-27e";
+export const RULES_VERSION = "rules-2026-11-13";
 export const RULES_VERSION_PREFIX = "規則版本：";
 export const rulesVersionNote = (version = RULES_VERSION): string => `${RULES_VERSION_PREFIX}${version}`;
 
@@ -128,6 +129,8 @@ export interface StyleHistory {
   titles: Array<TitleStyleId | null>;
   openings: Array<OpeningStyleId | null>;
   amplifiers: Array<AmplifierId | null>;
+  /** 同品牌最近幾篇用過的流量結構代號，由近到遠。舊資料沒有就是空陣列 */
+  structures?: Array<string | null>;
 }
 
 /** 同品牌最近幾篇的標題與開場句型，由近到遠。讀不到就當作沒有，不影響生成。 */
@@ -139,14 +142,15 @@ export async function recentStyleHistory(brandId: string, excludeJobId?: string)
       titles: rows.map((row) => detectTitleStyle(firstLine(row.draft_content))),
       openings: rows.map((row) => detectOpeningStyle(firstParagraph(row.draft_content))),
       amplifiers: rows.map((row) => readAmplifierNote(row.warnings)),
+      structures: rows.map((row) => readFlowStructureNote(row.warnings)),
     };
-  } catch { return { titles: [], openings: [], amplifiers: [] }; }
+  } catch { return { titles: [], openings: [], amplifiers: [], structures: [] }; }
 }
 
-export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; directive: string }
+export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; structure: string; directive: string }
 
 /** 決定這一篇用哪個標題型與開場型，並組出附加指令。題目階段指定的優先。 */
-export function planStyles(prompt: string, seed: string, history: StyleHistory): StylePlan {
+export function planStyles(prompt: string, seed: string, history: StyleHistory, brandId = ""): StylePlan {
   const titleStyle = readTitleStyleFromPrompt(prompt) || pickTitleStyle(history.titles, seed);
   // 需要真實素材的開場型（引用權威、客戶原話）只有在提示詞帶了素材時才可能被挑中。
   // 「素材」兩個字太泛（「沒有附素材」也會中），只認明確的字樣，而且前面不能是否定詞。
@@ -155,16 +159,30 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory):
   // 標題強化手法：Schwartz 的 38 種挑出 14 種，疊在標題型上面加力道，一次只用一個
   const amplifier = readAmplifierFromPrompt(prompt) || pickAmplifier(history.amplifiers, seed, titleStyle);
   const genre = readGenreFromPrompt(prompt);
+  // 流量結構（2026-11-13）：每篇都照 22 型之一寫。題目指定的優先，否則依品牌與文體輪替。
+  // 結構本身就規定了開場，所以只有題目明確指定開場型時才保留開場型指令，避免兩套開場互相打架。
+  const explicitOpening = Boolean(readOpeningStyleFromPrompt(prompt));
+  const structure = readFlowStructureFromPrompt(prompt) || pickFlowStructure({
+    brand: brandId || prompt,
+    genre,
+    recent: history.structures || [],
+    seed,
+    hasMaterial,
+  });
   return {
-    titleStyle, openingStyle, amplifier,
+    titleStyle, openingStyle, amplifier, structure,
     directive: [
       buildTitleDirective(titleStyle, amplifier),
-      buildOpeningDirective(openingStyle, titleStyle),
+      explicitOpening ? buildOpeningDirective(openingStyle, titleStyle) : "",
       buildSubheadDirective("facebook"),
       genre ? buildGenreDirective(genre) : "",
+      buildFlowStructureDirective(structure, brandId || prompt, { keepOpening: explicitOpening }),
     ].filter(Boolean).join("\n\n"),
   };
 }
+
+/** 寫進任務 warnings，下一篇輪替用，對照檢視也靠它知道這篇用哪一型 */
+export const structureNote = (id: string): string => flowStructureNote(id);
 
 export interface GenerateInput {
   brandId: string;
@@ -189,6 +207,8 @@ export interface GenerateResult {
   titleStyle: TitleStyleId;
   openingStyle: OpeningStyleId;
   amplifier: AmplifierId;
+  /** 流量結構代號 */
+  structure: string;
   guardrailHits: ReturnType<typeof checkGenreText>["guardrailHits"];
   cancelled?: true;
 }
@@ -200,7 +220,7 @@ export interface GenerateResult {
 export async function generateFacebookDraft(input: GenerateInput): Promise<GenerateResult> {
   const { brandId, prompt, seed, history, experimentDirective, onFirstDraft, retry } = input;
   const brandName = brandNameOf(brandId);
-  const plan = planStyles(prompt, seed, history);
+  const plan = planStyles(prompt, seed, history, brandId);
   const base = experimentDirective ? `${prompt}\n\n${experimentDirective}` : prompt;
   const irisPrompt = `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${prompt}`;
   // 引經據典只能用知識庫。拿不到出處就整篇禁止引用，不讓模型憑記憶補一本書上去。
@@ -228,7 +248,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   if (onFirstDraft && !await onFirstDraft(draft)) {
     return {
       draft, postReminders, styleNotes: [], fixes: [], warnNotes: [], blockedReason: "",
-      titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier,
+      titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier, structure: plan.structure,
       guardrailHits: checkGenreText("", { genre: "breakdown", funnel: "warm", prompt_version: PROMPT_VERSION }).guardrailHits,
       cancelled: true,
     };
@@ -310,7 +330,8 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   const styleNotes = [
     finalTitle && finalTitle !== plan.titleStyle ? `本篇指定標題型「${TITLE_STYLES[plan.titleStyle].name}」，實際寫出來比較像「${TITLE_STYLES[finalTitle].name}」。` : "",
     repeatedStyleWarning(finalTitle, history.titles),
-    finalOpening && finalOpening !== plan.openingStyle ? `本篇指定開場型「${OPENING_STYLES[plan.openingStyle].name}」，實際寫出來比較像「${OPENING_STYLES[finalOpening].name}」。` : "",
+    readOpeningStyleFromPrompt(prompt) && finalOpening && finalOpening !== plan.openingStyle ? `本篇指定開場型「${OPENING_STYLES[plan.openingStyle].name}」，實際寫出來比較像「${OPENING_STYLES[finalOpening].name}」。` : "",
+    FLOW_STRUCTURES[plan.structure] ? `本篇流量結構：${plan.structure} ${FLOW_STRUCTURES[plan.structure].name}，可到「對照檢視」看每一步有沒有做到。` : "",
     repeatedOpeningWarning(finalOpening, history.openings),
     bannedOpeningWarning(firstParagraph(draft)),
     subheadWarning(draft, "facebook"),
@@ -335,7 +356,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     draft, postReminders, styleNotes,
     fixes: mechanical.fixes,
     warnNotes: [...issues.filter((issue) => issue.level === "warn").map((issue) => issue.message), ...gateWarnings(gateIssues).map((issue) => issue.message)],
-    blockedReason, titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier,
+    blockedReason, titleStyle: plan.titleStyle, openingStyle: plan.openingStyle, amplifier: plan.amplifier, structure: plan.structure,
     guardrailHits: issues.guardrailHits,
   };
 }

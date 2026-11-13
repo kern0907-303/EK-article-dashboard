@@ -10,7 +10,8 @@ import { NAS_BRAND_CONTEXT, NAS_WRITING_PROMPT } from "../data/brands/nas";
 import { ABL_BRAND_CONTEXT } from "../data/brands/abl";
 import { ERICK_BRAND_CONTEXT } from "../data/brands/erick";
 import { ERICK_PERSONA_SKILL } from "../data/brands/persona";
-import { COPYWRITING_FRAMEWORKS } from "../data/skills/frameworks";
+import { COPYWRITING_FRAMEWORKS, flowStructureOfFramework } from "../data/skills/frameworks";
+import { buildFlowCheckPrompt, buildFlowStructureDirective, FLOW_DIRECTIVE_MARK, FLOW_STRUCTURE_VERSION, FLOW_STRUCTURES, flowStructureFromText, normalizeFlowCheck, pickFlowStructure, readFlowStructureFromPrompt, type FlowCheckResult } from "../data/skills/flow-structures";
 import { buildStoryArgumentPrompt, isStoryArgumentCitationEligible, normalizeStoryArgumentCopy, resolveStoryArgumentThesis, shouldIncludeMayaDiagram, STORY_ARGUMENT_PROMPT_VERSION, type StoryArgumentReselectRequest, type StoryArgumentSelection } from "../data/skills/story-argument";
 import { applyValidatedKnowledgeCitation, selectRelevantKnowledgeContent, type KnowledgeNoteRecord } from "@/lib/knowledge-note-utils";
 import { getKnowledgeNoteById, getKnowledgeNoteDirectory, getKnowledgeNoteSelectionDirectory } from "@/lib/knowledge-notes-server";
@@ -1266,6 +1267,32 @@ ${brandContext}`;
      * 一篇文章最多重寫三次，省下來的是三次 Maya 加三次 Iris。
      */
     const reviseMode = typeof subPromptsInput === "object" && subPromptsInput !== null && subPromptsInput.reviseMode === true;
+    // 流量結構（2026-11-13）：所有新生成的文章都照 22 型流量結構寫。
+    // 手動生成看寫作框架下拉選單（預設自動挑選）；自動流水線在提示詞裡已帶好結構指令，就不重複加；
+    // 修改模式是照指示改句子，故事論點有自己的四段流程，這兩種都不加。
+    const assignedMayaText = typeof subPromptsInput === "string"
+      ? subPromptsInput
+      : typeof subPromptsInput?.maya === "string" ? subPromptsInput.maya : "";
+    let flowStructureId: string | null = null;
+    if (assignedMayaText.includes(FLOW_DIRECTIVE_MARK)) {
+      const markLine = assignedMayaText.slice(assignedMayaText.indexOf(FLOW_DIRECTIVE_MARK)).split("\n")[0];
+      flowStructureId = flowStructureFromText(markLine.replace(FLOW_DIRECTIVE_MARK, ""));
+    } else if (!reviseMode && !storyArgument) {
+      const choice = flowStructureOfFramework(copywritingFramework);
+      if (choice) {
+        const userText = history.filter((message) => message.role === "user").map((message) => message.content).join("\n");
+        const explicit = readFlowStructureFromPrompt(`${assignedMayaText}\n${userText}`);
+        flowStructureId = choice !== "auto"
+          ? choice
+          : explicit || pickFlowStructure({
+              brand: brandName,
+              genre: genre?.settings?.genre || null,
+              seed: `${brandName}-${Date.now()}`,
+              hasMaterial: /(?<!(沒有|未|不|無|缺))(逐字稿|口述|原話|我的經歷|親身經歷)/.test(`${assignedMayaText}\n${userText}`),
+            });
+        if (flowStructureId) finalMayaPrompt += `\n\n${buildFlowStructureDirective(flowStructureId, brandName)}`;
+      }
+    }
     const mayaPreferred: "anthropic" | "gemini" = reviseMode ? "gemini" : "anthropic";
     console.log(`[callErickCOO] ${reviseMode ? `Revise mode: Maya only (${mayaPreferred})` : `Running Iris (gemini) and Maya (anthropic${genre?.settings ? ", genre=" + genre.settings.genre : ""}) concurrently...`}`);
     const runMayaWithJSONRetry = async (): Promise<{ result: any; response: string }> => {
@@ -1390,6 +1417,14 @@ ${brandContext}`;
               funnel: genre.settings.funnel,
               prompt_version: PROMPT_VERSION,
               model_version: mayaReport.model || undefined,
+            }
+          : null,
+        flow_structure_meta: flowStructureId && FLOW_STRUCTURES[flowStructureId]
+          ? {
+              id: flowStructureId,
+              name: FLOW_STRUCTURES[flowStructureId].name,
+              family: FLOW_STRUCTURES[flowStructureId].family,
+              prompt_version: FLOW_STRUCTURE_VERSION,
             }
           : null,
         story_argument_meta: storyArgument
@@ -2555,4 +2590,25 @@ checks 請涵蓋 SEO、AEO、GEO 各至少 2 項；faq 3 到 5 題。`;
     geo_notes: Array.isArray(r.geo_notes) ? r.geo_notes : [],
     is_local_check: false,
   };
+}
+
+
+/**
+ * 對照檢視：檢查一篇文章有沒有照指定的流量結構寫。
+ * 程式規則（紅線、像但不模仿、流量筆法）一定會跑；逐步判定交給 AI，AI 不可用時只回程式規則，不報錯。
+ * 跟其他 AI 功能一樣走 runQueryWithFallback，Claude 沒額度會自動轉到其他供應商。
+ */
+export async function callFlowStructureCheck(text: string, structureId: string, overrideProvider?: string): Promise<FlowCheckResult> {
+  if (!FLOW_STRUCTURES[structureId]) throw new Error(`沒有這個流量結構：${structureId}`);
+  const config = getAIConfig();
+  const provider = resolveProvider(config, overrideProvider);
+  config.provider = provider;
+  if (provider === "mock") return normalizeFlowCheck(structureId, null, text, false);
+  try {
+    const raw = await runQueryWithFallback(buildFlowCheckPrompt(structureId, text), config, true, "anthropic", { maxTokens: 3000, timeoutMs: 90000 });
+    return normalizeFlowCheck(structureId, robustJSONParse(raw), text, true);
+  } catch (error) {
+    console.error("[callFlowStructureCheck] AI 判定失敗，只回程式規則：", normalizeAIError(error));
+    return normalizeFlowCheck(structureId, null, text, false);
+  }
 }

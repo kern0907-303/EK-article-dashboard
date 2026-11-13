@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     const social = markDerivativesStale(job.social_results, Boolean(queued?.article_id));
 
     const keepVersion = Array.isArray(job.warnings)
-      ? job.warnings.filter((item: unknown) => typeof item === "string" && (item.startsWith(RULES_VERSION_PREFIX) || item.startsWith("標題強化：") || item.startsWith("發文前提醒")))
+      ? job.warnings.filter((item: unknown) => typeof item === "string" && (item.startsWith(RULES_VERSION_PREFIX) || item.startsWith("標題強化：") || item.startsWith("流量結構：") || item.startsWith("發文前提醒")))
       : [];
     const hasDerivative = stalePlatforms.length > 0;
     const nextWarnings = [...new Set([

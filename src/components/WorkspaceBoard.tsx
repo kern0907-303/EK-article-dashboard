@@ -29,6 +29,8 @@ import { checkGenreText } from "@/lib/genre-check";
 import { evaluateGuardrails, formatGuardrailBlock, formatGuardrailWarning } from "@/lib/guardrail-core";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL } from "@/lib/brand-guard";
 import { GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreMeta } from "@/data/skills/genres";
+import { FAMILY_SHORT } from "@/data/skills/flow-structures";
+import { openStructureCheck } from "@/lib/structure-check-client";
 import { SeoOptimization, SeoScore, faqToPlainText, buildFaqJsonLd, isScoreStale, healthHash } from "@/lib/seo-optimizer";
 import { useAutoHealthCheck, useAutoHealthSetting } from "@/lib/use-auto-health";
 import { getProjectName, resolveEffectiveBrandId, subscribeToProjects } from "@/lib/projects-store";
@@ -346,6 +348,7 @@ function WorkspaceBoardInner({ activeBrandId, aiProvider }: WorkspaceBoardProps)
                 copyMeta={data.social_copy_meta}
                 genreMeta={data.genre_meta}
                 storyArgumentMeta={data.story_argument_meta}
+                flowStructureMeta={data.flow_structure_meta}
                 postReminders={data.post_reminders}
                 suggestedScheduleAt={data.suggested_schedule_at}
                 webArticle={data.web_article}
@@ -435,6 +438,7 @@ const SocialTabContent = memo(function SocialTabContent({
   copyMeta,
   genreMeta,
   storyArgumentMeta,
+  flowStructureMeta,
   postReminders,
   suggestedScheduleAt,
   webArticle,
@@ -455,6 +459,7 @@ const SocialTabContent = memo(function SocialTabContent({
   copyMeta?: Record<string, { generated_at?: number; edited_at?: number }>;
   genreMeta?: GenreMeta | null;
   storyArgumentMeta?: import("@/data/skills/story-argument").StoryArgumentMeta | null;
+  flowStructureMeta?: { id: string; name: string; family: string; prompt_version: string } | null;
   postReminders?: string[];
   suggestedScheduleAt?: string | null;
   webArticle?: string;
@@ -2478,6 +2483,23 @@ const SocialTabContent = memo(function SocialTabContent({
         <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-200">
           <span className="font-bold">發文前提醒（不在文章裡，不會被發出去）</span>
           {postReminders.map((item, i) => <p key={i} className="mt-1">{item}</p>)}
+        </div>
+      )}
+      {(flowStructureMeta || val.trim()) && !activeStoryArgumentMeta && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 p-3 text-[11px] text-violet-100">
+          <span>
+            {flowStructureMeta
+              ? <>本篇流量結構：<b>{flowStructureMeta.id} {flowStructureMeta.name}</b>（{FAMILY_SHORT[flowStructureMeta.family as keyof typeof FAMILY_SHORT] || flowStructureMeta.family}）</>
+              : "這篇沒有記錄流量結構（可能是舊稿），對照時請自己選一型。"}
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!val.trim()}
+            onClick={() => openStructureCheck({ text: val, structureId: flowStructureMeta?.id || null, brand: brandId, from: "主工作區" })}
+          >
+            對照檢視
+          </Button>
         </div>
       )}
       {activeStoryArgumentMeta?.thesis && (
