@@ -49,6 +49,14 @@ export async function getKnowledgeImportOverview() {
   return { notes: notes || [], batches: batches || [] };
 }
 
+export async function getKnowledgeImportNoteContent(id: string) {
+  const rows = await supabaseRequest<Array<{ id: string; content: string }>>(
+    "knowledge_notes",
+    "select=id,content&id=eq." + encodeURIComponent(id) + "&limit=1",
+  );
+  return rows?.[0] || null;
+}
+
 export async function getKnowledgeImportNotes() {
   return supabaseRequest<any[]>("knowledge_notes", "select=" + NOTE_SELECT + "&order=domain.asc,title.asc&limit=10000");
 }

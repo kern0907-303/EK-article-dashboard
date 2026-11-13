@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
+import KnowledgeNoteReader from "@/components/KnowledgeNoteReader";
 
 type PreviewRow = {
   row_key: string; file_name: string; title_en: string; author_en: string; title_zh: string;
@@ -40,6 +41,11 @@ export default function KnowledgeImportWorkspace() {
   const [domainFilter, setDomainFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
+  const [localPreviewContents, setLocalPreviewContents] = useState<Record<string, string>>({});
+  const [localPreviewLoading, setLocalPreviewLoading] = useState<Record<string, boolean>>({});
+  const [storedContents, setStoredContents] = useState<Record<string, string>>({});
+  const [storedLoading, setStoredLoading] = useState<Record<string, boolean>>({});
+  const [storedErrors, setStoredErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -54,6 +60,30 @@ export default function KnowledgeImportWorkspace() {
   const visibleRows = useMemo(() => rows.filter((row) => category === "all" || (category === "warning" ? row.warnings.length > 0 : row.classification === category)), [rows, category]);
   const filteredNotes = useMemo(() => notes.filter((row) => (!domainFilter || row.domain === domainFilter) && (!statusFilter || row.zh_status === statusFilter)), [notes, domainFilter, statusFilter]);
   const selectedWarning = rows.some((row) => selected.includes(row.row_key) && row.warnings.length > 0);
+  const loadLocalPreview = async (row: PreviewRow) => {
+    if (Object.hasOwn(localPreviewContents, row.row_key) || localPreviewLoading[row.row_key]) return;
+    const file = files[Number(row.row_key)];
+    if (!file) return;
+    setLocalPreviewLoading((current) => ({ ...current, [row.row_key]: true }));
+    try {
+      const content = await file.text();
+      setLocalPreviewContents((current) => ({ ...current, [row.row_key]: content }));
+    }
+    finally { setLocalPreviewLoading((current) => ({ ...current, [row.row_key]: false })); }
+  };
+  const loadStoredReader = async (note: NoteRow) => {
+    if (Object.hasOwn(storedContents, note.id) || storedLoading[note.id]) return;
+    setStoredLoading((current) => ({ ...current, [note.id]: true }));
+    setStoredErrors((current) => { const next = { ...current }; delete next[note.id]; return next; });
+    try {
+      const response = await fetch("/api/knowledge-import?content_id=" + encodeURIComponent(note.id), { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "讀取筆記內容失敗。");
+      setStoredContents((current) => ({ ...current, [note.id]: String(data.note?.content || "") }));
+    } catch (error) {
+      setStoredErrors((current) => ({ ...current, [note.id]: error instanceof Error ? error.message : "讀取筆記內容失敗。" }));
+    } finally { setStoredLoading((current) => ({ ...current, [note.id]: false })); }
+  };
   const overridesFor = (currentRows: PreviewRow[], currentEdits: Record<string, Record<string, string>>) => {
     const result = { ...currentEdits };
     currentRows.forEach((row) => {
@@ -132,14 +162,14 @@ export default function KnowledgeImportWorkspace() {
     {notice && <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">{notice}</div>}
     {tab === "import" ? <div className="space-y-6">
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"><h2 className="font-semibold">選擇 Markdown 檔案</h2><p className="mt-1 text-xs leading-5 text-slate-400">最多 50 個檔案，每個不超過 500 KB。資料區需為新版 13 欄或相容的舊版格式。</p>
-        <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" accept=".md,text/markdown" multiple onChange={(event) => { setFiles(Array.from(event.target.files || [])); setRows([]); setEdits({}); }} className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-slate-100" /><Button variant="primary" disabled={!files.length || busy} onClick={() => void preview()}>{busy ? "處理中…" : "產生伺服器預覽"}</Button><span className="text-xs text-slate-400">已選 {files.length} 個</span></div>
+        <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" accept=".md,text/markdown" multiple onChange={(event) => { setFiles(Array.from(event.target.files || [])); setRows([]); setEdits({}); setLocalPreviewContents({}); }} className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-slate-100" /><Button variant="primary" disabled={!files.length || busy} onClick={() => void preview()}>{busy ? "處理中…" : "產生伺服器預覽"}</Button><span className="text-xs text-slate-400">已選 {files.length} 個</span></div>
       </section>
       {rows.length > 0 && <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">預覽結果</h2><p className="mt-1 text-xs text-slate-400">批次編號：{batchId}。警告可匯入，但必須先確認；有問題的檔案不能匯入。</p></div><span className="rounded-lg bg-slate-950 px-3 py-2 text-xs text-slate-300">共 {rows.length} 筆</span></div>
         <div className="mt-4 flex flex-wrap gap-2">{categoryOptions.map(([value, label]) => <button key={value} onClick={() => setCategory(value)} className={"rounded-full border px-3 py-1.5 text-xs " + (category === value ? "border-indigo-400 bg-indigo-400/15 text-indigo-200" : "border-slate-700 text-slate-400")}>{label}</button>)}</div>
         <div className="mt-4 max-h-[65vh] overflow-auto rounded-xl border border-slate-800"><table className="min-w-[1100px] w-full border-collapse text-left text-xs"><thead className="sticky top-0 bg-slate-950 text-slate-400"><tr>{["匯入", "檔名", "書名（中／英）", "作者", "zh_status", "領域", "分類", "警告與問題"].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr></thead>
           <tbody>{visibleRows.map((row) => <tr key={row.row_key} className="border-t border-slate-800 align-top">
             <td className="px-3 py-3"><input aria-label={"選擇 " + row.file_name} type="checkbox" disabled={row.problems.length > 0} checked={selected.includes(row.row_key)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, row.row_key] : current.filter((key) => key !== row.row_key))} /></td>
-            <td className="max-w-44 break-all px-3 py-3 text-slate-300">{row.file_name}</td>
+            <td className="max-w-44 break-all px-3 py-3 text-slate-300"><div>{row.file_name}</div><details className="mt-2 min-w-80 break-words" onToggle={(event) => { if (event.currentTarget.open) void loadLocalPreview(row); }}><summary className="cursor-pointer text-indigo-300">閱讀 Markdown 預覽</summary><div className="mt-2 max-h-[55vh] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3">{localPreviewContents[row.row_key] !== undefined ? <KnowledgeNoteReader content={localPreviewContents[row.row_key]} /> : <p className="text-xs text-slate-500">{localPreviewLoading[row.row_key] ? "讀取中…" : "展開後從已選取的本機檔案讀取。"}</p>}</div></details></td>
             <td className="min-w-64 px-3 py-3"><p className="font-medium text-slate-100">{row.title_zh || "（中文書名空白）"}</p><p className="mt-1 text-slate-500">{row.title_en || "（英文書名空白）"}</p>{row.zh_status === "unverified" && <>
               <input aria-label={"中文書名 " + row.file_name} value={row.title_zh} onChange={(event) => editPreview(row, "title_zh", event.target.value)} onBlur={() => void preview(files, overridesFor(rows, edits))} placeholder="補充中文書名" className="mt-2 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5" />
               <input aria-label={"中文作者 " + row.file_name} value={row.author_zh} onChange={(event) => editPreview(row, "author_zh", event.target.value)} onBlur={() => void preview(files, overridesFor(rows, edits))} placeholder="補充中文作者" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5" />
@@ -162,7 +192,7 @@ export default function KnowledgeImportWorkspace() {
       </div></div>
       <div className="mt-4 max-h-[72vh] overflow-auto rounded-xl border border-slate-800"><table className="min-w-[1200px] w-full border-collapse text-left text-xs"><thead className="sticky top-0 bg-slate-950 text-slate-400"><tr>{["書名（中／英）", "作者", "領域", "zh_status", "批次編號", "中文書目欄位編輯"].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr></thead>
         <tbody>{filteredNotes.map((note) => { const values = { ...note, ...(edits[note.id] || {}) } as NoteRow; return <tr key={note.id} className="border-t border-slate-800 align-top">
-          <td className="min-w-56 px-3 py-3"><p className="font-medium text-slate-100">{note.title_zh || "（中文書名空白）"}</p><p className="mt-1 text-slate-500">{note.title}</p></td>
+          <td className="min-w-56 px-3 py-3"><p className="font-medium text-slate-100">{note.title_zh || "（中文書名空白）"}</p><p className="mt-1 text-slate-500">{note.title}</p><details className="mt-2 min-w-80" onToggle={(event) => { if (event.currentTarget.open) void loadStoredReader(note); }}><summary className="cursor-pointer text-indigo-300">閱讀已匯入全文</summary><div className="mt-2 max-h-[55vh] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3">{storedContents[note.id] !== undefined ? <KnowledgeNoteReader content={storedContents[note.id]} /> : <p className="text-xs text-slate-500">{storedErrors[note.id] || (storedLoading[note.id] ? "讀取中…" : "展開後由伺服器讀取已匯入筆記。")}</p>}</div></details></td>
           <td className="px-3 py-3"><p>{note.author_zh || "（中文作者空白）"}</p><p className="mt-1 text-slate-500">{note.author}</p></td><td className="px-3 py-3 text-slate-300">{DOMAINS.find(([id]) => id === note.domain)?.[1] || note.domain}</td>
           <td className="px-3 py-3">{note.zh_status || "unverified"}</td><td className="px-3 py-3 text-slate-400">{note.import_batch_id || "—"}</td>
           <td className="min-w-[520px] px-3 py-3">{note.zh_status === "unverified" ? <div className="grid grid-cols-2 gap-2">{EDIT_FIELDS.map((field) => field === "zh_status" ? <select key={field} aria-label={field + " " + note.title} value={values.zh_status || "unverified"} onChange={(event) => editNote(note, field, event.target.value)} className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5"><option value="confirmed">confirmed</option><option value="unverified">unverified</option><option value="no_zh_edition">no_zh_edition</option></select> : <input key={field} aria-label={field + " " + note.title} value={String(values[field] || "")} onChange={(event) => editNote(note, field, event.target.value)} placeholder={field} className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5" />)}<Button variant="secondary" size="sm" disabled={busy || !edits[note.id]} onClick={() => void saveNote(note)} className="col-span-2 justify-self-start">儲存中文欄位</Button></div> : <span className="text-slate-600">唯讀</span>}</td>

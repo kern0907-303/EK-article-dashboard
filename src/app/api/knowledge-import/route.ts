@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getKnowledgeImportOverview,
+  getKnowledgeImportNoteContent,
   isKnowledgeImportAuthorized,
   KNOWLEDGE_IMPORT_PATCH_FIELDS,
   safeKnowledgeImportError,
@@ -16,6 +17,13 @@ function unauthorized() {
 export async function GET(request: NextRequest) {
   if (!(await isKnowledgeImportAuthorized(request))) return unauthorized();
   try {
+    const contentId = request.nextUrl.searchParams.get("content_id");
+    if (contentId !== null) {
+      if (!/^[0-9a-f-]{36}$/iu.test(contentId)) return NextResponse.json({ error: "筆記 ID 格式無效。" }, { status: 400 });
+      const note = await getKnowledgeImportNoteContent(contentId);
+      if (!note) return NextResponse.json({ error: "找不到這筆知識筆記。" }, { status: 404 });
+      return NextResponse.json({ note });
+    }
     return NextResponse.json(await getKnowledgeImportOverview());
   } catch (error) {
     const result = safeKnowledgeImportError(error);
