@@ -21,6 +21,8 @@ export default function PostponePanel({ onDone }: { onDone?: () => void }) {
   const [busy, setBusy] = useState<"" | "preview" | "apply">("");
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
+  // 試算後每篇預設都延，取消勾選的那篇就保留原本時間
+  const [keep, setKeep] = useState<Record<string, boolean>>({});
 
   const run = async (dryRun: boolean) => {
     setBusy(dryRun ? "preview" : "apply");
@@ -28,11 +30,12 @@ export default function PostponePanel({ onDone }: { onDone?: () => void }) {
     try {
       const res = await fetch("/api/auto-pipeline/postpone", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId, fromDate, days, dryRun }),
+        body: JSON.stringify({ brandId, fromDate, days, dryRun, ...(dryRun ? {} : { jobIds: (result?.items || []).filter((item) => !keep[item.jobId]).map((item) => item.jobId) }) }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "延後失敗"); setResult(null); return; }
       setResult(data);
+      if (dryRun) setKeep({});
       if (!dryRun) onDone?.();
     } catch {
       setError("連線失敗，請再按一次");
@@ -41,7 +44,9 @@ export default function PostponePanel({ onDone }: { onDone?: () => void }) {
     }
   };
 
-  const reset = () => setResult(null);
+  const reset = () => { setResult(null); setKeep({}); };
+  const postponeCount = (result?.items || []).filter((item) => !keep[item.jobId]).length;
+  const keepCount = (result?.items.length || 0) - postponeCount;
 
   return <section className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-4 sm:p-6 space-y-3">
     <div>
@@ -57,14 +62,18 @@ export default function PostponePanel({ onDone }: { onDone?: () => void }) {
     {error && <p role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">{error}</p>}
     {result && <div className="space-y-2">
       {result.dryRun
-        ? <p className="text-xs text-sky-200">{result.count ? `會延後 ${result.count} 篇，每篇往後 ${result.days} 天。還沒改任何資料，確認沒問題再按下面的按鈕。` : "這個範圍裡沒有還沒發的文章。"}</p>
+        ? <p className="text-xs text-sky-200">{result.count ? `範圍內有 ${result.count} 篇，每篇往後 ${result.days} 天。要保留原本時間的，把那篇前面的勾拿掉。還沒改任何資料。` : "這個範圍裡沒有還沒發的文章。"}</p>
         : <p className="text-xs text-emerald-300">已延後 {result.count} 篇，每篇往後 {result.days} 天。下方總覽已重新整理。</p>}
       {result.items.length > 0 && <div className="max-h-72 overflow-auto rounded-lg border border-slate-800">
-        <table className="w-full text-xs"><thead className="bg-slate-900 text-slate-400"><tr><th className="px-2 py-1 text-left">品牌</th><th className="px-2 py-1 text-left">文章</th><th className="px-2 py-1 text-left">原本</th><th className="px-2 py-1 text-left">延後後</th><th className="px-2 py-1 text-left">IG／Threads</th></tr></thead>
-          <tbody>{result.items.map((item) => <tr key={item.jobId} className="border-t border-slate-800"><td className="px-2 py-1">{item.brandName}</td><td className="px-2 py-1">{item.title}</td><td className="px-2 py-1 text-slate-400">{item.before}</td><td className="px-2 py-1 text-sky-200">{item.after}</td><td className="px-2 py-1">{item.social ? `一起延 ${item.social} 則` : "無"}</td></tr>)}</tbody></table>
+        <table className="w-full text-xs"><thead className="bg-slate-900 text-slate-400"><tr>{result.dryRun && <th className="px-2 py-1 text-left">延後</th>}<th className="px-2 py-1 text-left">品牌</th><th className="px-2 py-1 text-left">文章</th><th className="px-2 py-1 text-left">原本</th><th className="px-2 py-1 text-left">延後後</th><th className="px-2 py-1 text-left">IG／Threads</th></tr></thead>
+          <tbody>{result.items.map((item) => <tr key={item.jobId} className={`border-t border-slate-800 ${result.dryRun && keep[item.jobId] ? "opacity-50" : ""}`}>{result.dryRun && <td className="px-2 py-1"><input type="checkbox" aria-label={`延後「${item.title}」`} checked={!keep[item.jobId]} onChange={(e) => setKeep((all) => ({ ...all, [item.jobId]: !e.target.checked }))} className="h-4 w-4 cursor-pointer accent-sky-400" /></td>}<td className="px-2 py-1">{item.brandName}</td><td className="px-2 py-1">{item.title}</td><td className="px-2 py-1 text-slate-400">{item.before}</td><td className="px-2 py-1 text-sky-200">{result.dryRun && keep[item.jobId] ? <span className="text-emerald-300">保留原本時間</span> : item.after}</td><td className="px-2 py-1">{item.social ? `一起延 ${item.social} 則` : "無"}</td></tr>)}</tbody></table>
       </div>}
       {result.skipped && result.skipped.length > 0 && <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">{result.skipped.map((item, index) => <p key={index}>{item.title}：{item.reason}</p>)}</div>}
-      {result.dryRun && result.count > 0 && <Button variant="primary" size="sm" disabled={!!busy} onClick={() => void run(false)}>{busy === "apply" ? "延後中…" : `確認延後這 ${result.count} 篇`}</Button>}
+      {result.dryRun && result.count > 0 && <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" disabled={!!busy} onClick={() => setKeep({})}>全部勾選</Button>
+        <Button variant="secondary" size="sm" disabled={!!busy} onClick={() => setKeep(Object.fromEntries(result.items.map((item) => [item.jobId, true])))}>全部取消</Button>
+        <Button variant="primary" size="sm" disabled={!!busy || postponeCount === 0} onClick={() => void run(false)}>{busy === "apply" ? "延後中…" : postponeCount === 0 ? "沒有勾選要延後的文章" : `確認延後 ${postponeCount} 篇${keepCount ? `，保留 ${keepCount} 篇` : ""}`}</Button>
+      </div>}
     </div>}
   </section>;
 }

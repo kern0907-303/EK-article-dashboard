@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
     const fromIso = taipeiDayStartIso(body.fromDate);
     if (!fromIso) return NextResponse.json({ error: "請選擇從哪一天開始延後" }, { status: 400 });
     const dryRun = body.dryRun !== false;
+    // 正式執行時只延勾選的那幾篇；沒給清單就是試算範圍內全部
+    const onlyIds = Array.isArray(body.jobIds) ? new Set(body.jobIds.filter((id: unknown): id is string => typeof id === "string")) : null;
+    if (!dryRun && onlyIds && onlyIds.size === 0) return NextResponse.json({ error: "沒有勾選要延後的文章" }, { status: 400 });
     const nowIso = new Date().toISOString();
 
     const rows = await pipelineDb<JobRow[]>(
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
     const candidates = selectPostponeJobs(rows.map((row) => {
       const fb = row.queue_id ? fbById.get(row.queue_id) : undefined;
       return { ...row, published: Boolean(fb && fb.status !== "pending") };
-    }), { brandId, fromIso, nowIso });
+    }), { brandId, fromIso, nowIso }).filter((job) => dryRun || !onlyIds || onlyIds.has(job.id));
     const socialRows = candidates.length
       ? await pipelineDb<QueueRow[]>("social_publish_queue", `job_id=in.(${idList(candidates.map((job) => job.id))})&status=eq.pending&select=id,job_id,platform,status,scheduled_at`)
       : [];
