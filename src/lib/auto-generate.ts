@@ -132,20 +132,52 @@ export interface StyleHistory {
   amplifiers: Array<AmplifierId | null>;
   /** 同品牌最近幾篇用過的流量結構代號，由近到遠。舊資料沒有就是空陣列 */
   structures?: Array<string | null>;
+  /** 前面最近幾篇有沒有引用書，由近到遠 */
+  cites?: boolean[];
 }
 
-/** 同品牌最近幾篇的標題與開場句型，由近到遠。讀不到就當作沒有，不影響生成。 */
-export async function recentStyleHistory(brandId: string, excludeJobId?: string): Promise<StyleHistory> {
+/**
+ * 同品牌鄰近幾篇的寫法，由近到遠。讀不到就當作沒有，不影響生成。
+ *
+ * 2026-11-14：以前取的是「排程最晚的六篇」，重寫一批時看到的不是這篇前後的文章，
+ * 結果一批 11 篇有 7 篇都是 J1。給了 aroundIso 就改看這篇前面最近的六篇，
+ * 結構另外再加上後面最近的四篇，前後都不重複。
+ */
+type HistoryRow = { draft_content: string | null; warnings: unknown };
+
+export async function recentStyleHistory(brandId: string, excludeJobId?: string, aroundIso?: string | null): Promise<StyleHistory> {
   try {
     const exclude = excludeJobId ? `&id=neq.${encodeURIComponent(excludeJobId)}` : "";
-    const rows = await pipelineDb<any[]>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled${exclude}&order=scheduled_at.desc&limit=6&select=draft_content,warnings`);
+    const base = `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled${exclude}&select=draft_content,warnings`;
+    const around = aroundIso && Number.isFinite(new Date(aroundIso).getTime()) ? new Date(aroundIso).toISOString() : null;
+    const before = await pipelineDb<HistoryRow[]>("auto_pipeline_jobs", `${base}${around ? `&scheduled_at=lte.${encodeURIComponent(around)}` : ""}&order=scheduled_at.desc&limit=6`);
+    const after = around ? await pipelineDb<HistoryRow[]>("auto_pipeline_jobs", `${base}&scheduled_at=gt.${encodeURIComponent(around)}&order=scheduled_at.asc&limit=4`) : [];
+    // 結構：前後交錯排，越近越前面
+    const structures: Array<string | null> = [];
+    for (let i = 0; i < Math.max(before.length, after.length); i += 1) {
+      if (before[i]) structures.push(readFlowStructureNote(before[i].warnings));
+      if (after[i]) structures.push(readFlowStructureNote(after[i].warnings));
+    }
     return {
-      titles: rows.map((row) => detectTitleStyle(firstLine(row.draft_content))),
-      openings: rows.map((row) => detectOpeningStyle(firstParagraph(row.draft_content))),
-      amplifiers: rows.map((row) => readAmplifierNote(row.warnings)),
-      structures: rows.map((row) => readFlowStructureNote(row.warnings)),
+      titles: before.map((row) => detectTitleStyle(firstLine(row.draft_content))),
+      openings: before.map((row) => detectOpeningStyle(firstParagraph(row.draft_content))),
+      amplifiers: before.map((row) => readAmplifierNote(row.warnings)),
+      structures,
+      cites: before.map((row) => /《[^》]+》/.test(String(row.draft_content || ""))),
     };
-  } catch { return { titles: [], openings: [], amplifiers: [], structures: [] }; }
+  } catch { return { titles: [], openings: [], amplifiers: [], structures: [], cites: [] }; }
+}
+
+/**
+ * 這一篇要不要給書。艾瑞克的規則是「不用每篇都有引用」。
+ * 前面最近兩篇只要有一篇引用過，這篇就不給書，大約三篇引用一次。
+ * 題目明確寫了【引用】就一定給；寫了【不引用】就一定不給。
+ */
+export function shouldOfferCitation(prompt: string, cites: boolean[] | undefined): boolean {
+  const text = String(prompt || "");
+  if (/【不引用】/.test(text)) return false;
+  if (/【引用】/.test(text)) return true;
+  return !(cites || []).slice(0, 2).some(Boolean);
 }
 
 export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; structure: string; directive: string }
@@ -225,7 +257,10 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   const base = experimentDirective ? `${prompt}\n\n${experimentDirective}` : prompt;
   const irisPrompt = `依據以下社群文案主題整理關鍵字，不得增加未提供事實：${prompt}`;
   // 引經據典只能用知識庫。拿不到出處就整篇禁止引用，不讓模型憑記憶補一本書上去。
-  const source = await loadCitationSource(prompt);
+  const offerCitation = shouldOfferCitation(prompt, history.cites);
+  const source = offerCitation
+    ? await loadCitationSource(prompt)
+    : { citation: null, content: "", banned: [] as string[], reason: "輪空" };
   const citationDirective = buildCitationDirective(source.citation, source.content, readGenreFromPrompt(prompt) || undefined);
   /** 未查證的引用，外加文章裡出現的英文原名 */
   const citationProblems = (text: string): string[] => [
@@ -341,7 +376,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
       ? draft.includes(`《${source.citation.title}》`)
         ? `本篇已引用《${source.citation.title}》，${source.citation.author}`
         : `本篇取到出處《${source.citation.title}》，${source.citation.author}，但正文沒有用到它`
-      : `本篇沒有取到知識庫出處，已禁止引用。原因：${source.reason || "未記錄"}`,
+      : offerCitation ? `本篇沒有取到知識庫出處，已禁止引用。原因：${source.reason || "未記錄"}` : "",
   ].filter(Boolean);
 
   const leftover = draft.match(/【需補[^】]*】/g);

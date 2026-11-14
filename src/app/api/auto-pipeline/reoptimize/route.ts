@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
           if (!fresh.length) { skipped.push({ jobId: row.id, reason: "排程已不是待發狀態" }); continue; }
           if (new Date(fresh[0].scheduled_at).getTime() < cutoff) { skipped.push({ jobId: row.id, reason: "距離發佈時間太近" }); continue; }
 
-          const history = await recentStyleHistory(String(row.brand_id), String(row.id));
+          const history = await recentStyleHistory(String(row.brand_id), String(row.id), String(fresh[0].scheduled_at || row.scheduled_at));
           const generated = await generateFacebookDraft({
             brandId: String(row.brand_id), prompt: String(row.prompt), seed: `${row.id}-reopt`, history, retry: retryOnce,
           });

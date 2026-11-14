@@ -520,8 +520,12 @@ export function pickFlowStructure(input: PickFlowInput): string {
     s.brands.includes(brand) && !s.needsCitation && (input.hasMaterial || !s.firstPersonReal));
   const byGenre = input.genre ? allowed.filter((s) => s.genres.includes(input.genre as FlowGenre)) : allowed;
   let pool = byGenre.length ? byGenre : allowed;
-  const fresh = pool.filter((s) => !recent.slice(0, 3).includes(s.id));
-  if (fresh.length) pool = fresh;
+  // 2026-11-14：只避開前三篇時，同一型（J1）在一批裡出現七次。
+  // 改成看前後鄰近的篇數，先挑「最近用得最少」的那幾型，再換家族，最後才用種子決定。
+  const window = recent.slice(0, 8);
+  const usage = (id: string): number => window.filter((used) => used === id).length;
+  const minUsage = Math.min(...pool.map((s) => usage(s.id)));
+  pool = pool.filter((s) => usage(s.id) === minUsage);
   const lastFamily = recent[0] ? FLOW_STRUCTURES[recent[0]].family : null;
   const otherFamily = pool.filter((s) => s.family !== lastFamily);
   if (otherFamily.length) pool = otherFamily;

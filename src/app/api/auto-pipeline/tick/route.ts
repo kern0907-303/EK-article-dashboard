@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     // 成效回流實驗（EXPERIMENT_ENABLED=true 才會生效）：依預定發文日查當天的結構臂，查不到就照原流程
     let experiment: ExperimentAssignment | null = null;
     // 標題型、開場型與文體由共用核心決定，與「重新優化」走同一份規則
-    const history = await recentStyleHistory(String(job.brand_id), String(job.id));
+    const history = await recentStyleHistory(String(job.brand_id), String(job.id), job.scheduled_at ? String(job.scheduled_at) : null);
     try {
       experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await generateFacebookDraft({

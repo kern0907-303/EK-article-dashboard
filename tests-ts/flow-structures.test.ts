@@ -135,3 +135,26 @@ import { normalizePostponeDays, selectPostponeJobs, shiftIso, taipeiDayStartIso 
   assert.deepEqual(picked.map((job) => job.id), ["a"], "只延該品牌、還沒發、起始日之後的");
   assert.equal(selectPostponeJobs(jobs, { fromIso: "2026-11-13T16:00:00Z", nowIso: "2026-11-13T14:00:00Z" }).length, 2);
 }
+
+// 2026-11-14：一批 11 篇不可以集中在同一型；引用大約三篇一次
+import { shouldOfferCitation } from "../src/lib/auto-generate";
+{
+  for (const brand of ["nas", "abl", "i8"]) {
+    const used: string[] = [];
+    for (let i = 0; i < 11; i += 1) {
+      used.unshift(pickFlowStructure({ brand, genre: undefined, recent: used.slice(0, 8), seed: `job-${i}-reopt` }));
+    }
+    const counts = used.reduce<Record<string, number>>((all, id) => ({ ...all, [id]: (all[id] || 0) + 1 }), {});
+    assert.ok(Math.max(...Object.values(counts)) <= 2, `${brand} 同一型不可超過兩次：${JSON.stringify(counts)}`);
+    assert.ok(Object.keys(counts).length >= 6, `${brand} 一批至少要用到六型`);
+  }
+  assert.equal(shouldOfferCitation("題目", []), true);
+  assert.equal(shouldOfferCitation("題目", [true]), false);
+  assert.equal(shouldOfferCitation("題目", [false, true]), false);
+  assert.equal(shouldOfferCitation("題目", [false, false, true]), true);
+  assert.equal(shouldOfferCitation("【引用】題目", [true]), true);
+  assert.equal(shouldOfferCitation("【不引用】題目", []), false);
+  const cites: boolean[] = [];
+  for (let i = 0; i < 12; i += 1) cites.unshift(shouldOfferCitation("題目", cites));
+  assert.equal(cites.filter(Boolean).length, 4, "12 篇引用 4 篇");
+}
