@@ -7,7 +7,7 @@
 // 若日後要接回 Firestore，請在此新增 adapter 並改為動態 import，
 // 不要再用靜態 import 把 SDK 拉進前端。
 import { DEFAULT_MOCK_WORKSPACE, DEFAULT_MOCK_CHATS } from "@/data/seed/defaults";
-import { getProjectName } from "@/lib/projects-store";
+import { getProjectName, pushProjectToServer } from "@/lib/projects-store";
 
 export { DEFAULT_MOCK_WORKSPACE, DEFAULT_MOCK_CHATS };
 
@@ -264,7 +264,35 @@ export async function saveWorkspace(
 
   if (brandId.startsWith("project_")) {
     void syncProjectToSheet(brandId, finalData);
+    // 專案事實表改了就推回雲端，讓手機、其他電腦與自動流水線讀到同一份
+    if (typeof updatedFields.brand_guidelines === "string" && updatedFields.brand_guidelines !== current.brand_guidelines) {
+      void pushProjectToServer({ id: brandId, guidelines: updatedFields.brand_guidelines });
+    }
   }
+}
+
+/**
+ * 把雲端的專案事實表寫進本機工作區快取（不回推雲端、不寫 Google Sheet）。
+ * 本機還沒有這個專案的工作區時，用空白工作區建立，避免沿用別的品牌種子資料。
+ */
+export function applyServerProjectGuidelines(projectId: string, guidelines: string): void {
+  if (typeof window === "undefined" || !projectId.startsWith("project_")) return;
+  const storageKey = WORKSPACE_KEY(projectId);
+  let current: WorkspaceData | null = null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    current = raw ? (JSON.parse(raw) as WorkspaceData) : null;
+  } catch {
+    current = null;
+  }
+  if (current && current.brand_guidelines === guidelines) return;
+  const base: WorkspaceData = current || {
+    ...seedWorkspace(projectId),
+    social_copy: "", web_architecture: "", seo_keywords: [], ad_data: [], aeo_schema: "", aeo_faq: "",
+  };
+  const next = { ...base, brand_guidelines: guidelines };
+  localStorage.setItem(storageKey, JSON.stringify(next));
+  localEmitter.emit(`workspace_update_${projectId}`, next);
 }
 
 /** 階段專案：把看板內容經由 /api/projects 代理寫回 Google Sheet（背景執行，不阻塞 UI） */

@@ -8,6 +8,7 @@ import { pipelineDb } from "@/lib/auto-pipeline-server";
 import { runAutoRedo } from "@/lib/auto-redo";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
+import { getProjectGuidelines } from "@/lib/projects-server";
 import { amplifierNote, structureNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
 
 function authorized(req: NextRequest): boolean {
@@ -95,10 +96,13 @@ export async function POST(req: NextRequest) {
     let experiment: ExperimentAssignment | null = null;
     // 標題型、開場型與文體由共用核心決定，與「重新優化」走同一份規則
     const history = await recentStyleHistory(String(job.brand_id), String(job.id), job.scheduled_at ? String(job.scheduled_at) : null);
+    // 屬於階段專案的題目，附上雲端的專案事實表（查不到就照原流程）
+    const projectGuidelines = await getProjectGuidelines(job.project_id ? String(job.project_id) : "");
     try {
       experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await generateFacebookDraft({
         brandId: String(job.brand_id), prompt: String(job.prompt), seed: String(job.id), history, retry: retryOnce,
+        ...(projectGuidelines ? { projectGuidelines } : {}),
         ...(experiment ? { experimentDirective: experiment.directive } : {}),
         onFirstDraft: (first) => updateJob(job.id, { status: "optimizing", current_step: "自動健檢與 SEO 優化", draft_content: first }, "generating"),
       });

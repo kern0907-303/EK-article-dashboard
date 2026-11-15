@@ -32,6 +32,7 @@ import { AUTO_PIPELINE_CARD_SIZE } from "@/lib/card-layout.mjs";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { uploadPublicJpeg } from "@/lib/social-image-server";
 import { getPipelineProvider } from "@/lib/ai-setting-server";
+import { buildProjectFactsDirective } from "@/lib/projects-server";
 
 /**
  * 規則版本。改了標題型、開場型、小標規則或說話的人規則時要調高。
@@ -224,6 +225,8 @@ export interface GenerateInput {
   history: StyleHistory;
   /** 成效回流實驗的附加指令，沒有就不帶 */
   experimentDirective?: string;
+  /** 階段專案事實表（雲端 dashboard_projects），有就附在 Maya 指令最後，價格與規則以此為準 */
+  projectGuidelines?: string;
   /** 生成完第一版、還沒做 SEO 優化時呼叫，讓流水線可以先把草稿存起來。回傳 false 代表中止。 */
   onFirstDraft?: (draft: string) => Promise<boolean>;
   retry: <T>(run: () => Promise<T>) => Promise<T>;
@@ -251,7 +254,8 @@ export interface GenerateResult {
  * Maya 生成 → SEO 優化（社群模式）→ 機械式修正 → 品牌當主詞與禁用詞重寫（最多兩次）→ 文體與品管檢查。
  */
 export async function generateFacebookDraft(input: GenerateInput): Promise<GenerateResult> {
-  const { brandId, prompt, seed, history, experimentDirective, onFirstDraft, retry } = input;
+  const { brandId, prompt, seed, history, experimentDirective, projectGuidelines, onFirstDraft, retry } = input;
+  const projectFacts = buildProjectFactsDirective(projectGuidelines);
   const brandName = brandNameOf(brandId);
   const plan = planStyles(prompt, seed, history, brandId);
   const base = experimentDirective ? `${prompt}\n\n${experimentDirective}` : prompt;
@@ -270,7 +274,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
 
   const generated = await retry(async () => {
     const result = await callErickCOO([], brandName, await getPipelineProvider(), "expert", "maya_iris", {
-      maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n${citationDirective}`,
+      maya: `${base}\n\n${plan.directive}\n\n${VOICE_DIRECTIVE}\n\n${citationDirective}${projectFacts ? `\n\n${projectFacts}` : ""}`,
       iris: irisPrompt,
     }, undefined, undefined, "facebook");
     const text = result.dispatchData?.social_copy;

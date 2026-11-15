@@ -1,4 +1,5 @@
 import { readFunnelFromPrompt } from "@/data/brands/conversion";
+import { getProjectGuidelines } from "@/lib/projects-server";
 import { NextRequest, NextResponse } from "next/server";
 import { AUTO_PIPELINE_ENABLED } from "@/lib/auto-pipeline";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
@@ -51,7 +52,7 @@ const derivedRulesVersion = (socialResults: unknown, platform: Platform): string
 
 interface Row {
   id: string; brand_id: string; prompt: string; scheduled_at: string; queue_id: string;
-  draft_content: string | null; warnings: unknown; social_results: unknown;
+  draft_content: string | null; warnings: unknown; social_results: unknown; project_id?: string | null;
 }
 interface Candidate {
   row: Row;
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
       "status=eq.scheduled", "queue_id=not.is.null",
       `scheduled_at=gt.${encodeURIComponent(new Date(Date.now() - 24 * 3600 * 1000).toISOString())}`,
       brand ? `brand_id=eq.${brand}` : "", onlyJobId ? `id=eq.${onlyJobId}` : "",
-      "order=scheduled_at.asc&limit=120&select=id,brand_id,prompt,scheduled_at,queue_id,draft_content,warnings,social_results",
+      "order=scheduled_at.asc&limit=120&select=id,brand_id,prompt,scheduled_at,queue_id,draft_content,warnings,social_results,project_id",
     ].filter(Boolean).join("&"));
 
     const queueRows = jobs.length
@@ -170,6 +171,7 @@ export async function POST(req: NextRequest) {
           const history = await recentStyleHistory(String(row.brand_id), String(row.id), String(fresh[0].scheduled_at || row.scheduled_at));
           const generated = await generateFacebookDraft({
             brandId: String(row.brand_id), prompt: String(row.prompt), seed: `${row.id}-reopt`, history, retry: retryOnce,
+            projectGuidelines: await getProjectGuidelines(row.project_id || ""),
           });
           if (generated.blockedReason) { skipped.push({ jobId: row.id, reason: `新稿沒通過品管，保留舊稿：${generated.blockedReason}` }); continue; }
 

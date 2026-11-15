@@ -5,11 +5,12 @@ import {
   ChevronDown, Settings, Plus, RefreshCw, Check, 
   Loader2, AlertCircle, HelpCircle, ExternalLink, Sheet, Folder 
 } from "lucide-react";
-import { saveWorkspace } from "@/lib/storage";
+import { saveWorkspace, applyServerProjectGuidelines } from "@/lib/storage";
 import Button from "@/components/ui/Button";
 import {
   readProjects, writeProjects, PARENT_BRAND_OPTIONS,
-  getProjectParentBrand, setProjectParentBrand, subscribeToProjects
+  getProjectParentBrand, setProjectParentBrand, subscribeToProjects,
+  loadProjectsFromServer, pushProjectToServer
 } from "@/lib/projects-store";
 
 export interface ProjectData {
@@ -120,8 +121,13 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
     const savedUrl = localStorage.getItem("google_sheets_apps_script_url") || "";
     setScriptUrl(savedUrl);
 
-    // 載入本地快取的專案清單
+    // 先顯示本地快取，再從雲端補齊（手機、其他電腦建立的專案也看得到）
     setProjects(readProjects<ProjectData>());
+    void loadProjectsFromServer().then((server) => {
+      if (!server) return;
+      for (const p of server) applyServerProjectGuidelines(p.id, p.guidelines);
+      setProjects(readProjects<ProjectData>());
+    });
   }, []);
 
   // 2. 當專案載入/更新時寫回 LocalStorage 並廣播給其他元件
@@ -281,6 +287,13 @@ export default function ProjectSelector({ activeProjectId, onChangeProject }: Pr
       // 2. 更新本地快取清單
       const updatedList = [...projects, newProject];
       updateProjectsList(updatedList);
+
+      // 2.5 存到雲端（Supabase），其他裝置與自動流水線都讀得到
+      const saved = await pushProjectToServer(newProject);
+      if (!saved) {
+        setSyncStatus("error");
+        setStatusMessage("專案已建立在這台裝置，但雲端儲存失敗，稍後修改事實表時會再試一次");
+      }
 
       // 3. 如果設定了 Google Sheet URL，同步推送到試算表
       const savedUrl = localStorage.getItem("google_sheets_apps_script_url");
