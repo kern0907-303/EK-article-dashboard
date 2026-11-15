@@ -146,6 +146,9 @@ export async function collectAttention(): Promise<{ items: AttentionItem[] }> {
   for (const job of multi) {
     const pending = readStalePlatforms(job.social_results);
     if (!pending.length) continue;
+    // 2026-11-15 艾瑞克：已經過了發文時間的文章不要再列（FB 與其他平台都已照原本內容發出，同步也沒用了）
+    const due = new Date(String(job.scheduled_at || "")).getTime();
+    if (!Number.isFinite(due) || due <= now) continue;
     const key = `job:${job.id}`;
     if (alreadyListed.has(key)) continue;
     items.push({
