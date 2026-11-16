@@ -68,8 +68,18 @@ function parseFrontMatter(text) {
   }
 
   let legacy = false;
-  if (keys.length === KNOWLEDGE_IMPORT_FIELDS.length && keys.every((key, index) => key === KNOWLEDGE_IMPORT_FIELDS[index])) {
+  const currentFieldsMatch = KNOWLEDGE_IMPORT_FIELDS.every((key, index) => keys[index] === key);
+  const hasV2StoryRatio = currentFieldsMatch
+    && keys.length === KNOWLEDGE_IMPORT_FIELDS.length + 1
+    && keys.at(-1) === "story_unassigned_ratio";
+  if ((keys.length === KNOWLEDGE_IMPORT_FIELDS.length && currentFieldsMatch) || hasV2StoryRatio) {
     // Current 13-column format.
+    if (hasV2StoryRatio) {
+      const ratio = Number(values.story_unassigned_ratio);
+      if (!Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+        return { error: "story_unassigned_ratio 必須介於 0 與 1。" };
+      }
+    }
   } else if (
     (keys.length === LEGACY_FIELDS.length && keys.every((key, index) => key === LEGACY_FIELDS[index])) ||
     (keys.length === LEGACY_ALIASES.length && keys.every((key, index) => key === LEGACY_ALIASES[index]))

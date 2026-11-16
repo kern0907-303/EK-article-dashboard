@@ -38,6 +38,12 @@ const legacy = classifyKnowledgeImportFiles([{ filename: "legacy.md", content: l
 t("舊格式可讀取，且一律預設 zh_status 為 unverified", legacy.record?.title === "Legacy Book" && legacy.record?.author === "Legacy Author" && legacy.record?.zh_status === "unverified" && legacy.legacy);
 t("資料區欄位數量或順序錯誤會列為問題", classifyKnowledgeImportFiles([{ filename: "bad.md", content: legacyText.replace("domain: emotions-psychology\n", "") }], [])[0].problems.length > 0);
 t("13 欄名稱順序不符時不會被當成新版格式", classifyKnowledgeImportFiles([{ filename: "order.md", content: markdown().replace("domain: \"emotions-psychology\"\ntitle_en: \"Book A\"", "title_en: \"Book A\"\ndomain: \"emotions-psychology\"") }], [])[0].problems.length > 0);
+t("v2 故事未分配比例作為末尾擴充欄位可解析", classifyKnowledgeImportFiles([
+  { filename: "v2-ratio.md", content: markdown().replace("source_file: \"book.md\"\n---", "source_file: \"book.md\"\nstory_unassigned_ratio: 0.125\n---") },
+], [])[0].classification === "insert");
+t("v2 故事未分配比例超出 0 到 1 會被拒絕", classifyKnowledgeImportFiles([
+  { filename: "v2-ratio-invalid.md", content: markdown().replace("source_file: \"book.md\"\n---", "source_file: \"book.md\"\nstory_unassigned_ratio: 1.25\n---") },
+], [])[0].problems.some((problem: string) => problem.includes("story_unassigned_ratio")));
 
 const inserts = [
   { filename: "new-a.md", content: markdown({ title_en: "New Alpha", source_file: "new-a.md" }) },
