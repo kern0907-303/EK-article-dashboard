@@ -171,7 +171,7 @@ const undone = await undoKnowledgeImportBatch(store, "imp-20261008-101010", "202
 t("撤銷會刪除本批 inserted_ids、還原更新快照且保留批次外筆記", undone.batch.undone_at !== null && state.notes.length === 2 && state.notes.find((row) => row.id === "update-target")?.content === "舊內容" && state.notes.find((row) => row.id === "update-target")?.title === "" && state.notes.some((row) => row.id === "unrelated-note"));
 t("撤銷只刪本批新增 ID，與批次外同類資料無關", !state.notes.some((row) => afterFirstCommit.find((saved) => saved.id.startsWith("inserted-"))?.id === row.id) && state.notes.some((row) => row.id === "unrelated-note"));
 
-const preserveTitleState = { notes: [nonemptyTitleTarget], batches: [] as any[] };
+const preserveTitleState: { notes: Record<string, any>[]; batches: any[] } = { notes: [nonemptyTitleTarget], batches: [] };
 const preserveTitleStore = {
   async listNotes() { return structuredClone(preserveTitleState.notes); },
   async getBatch() { return null; },

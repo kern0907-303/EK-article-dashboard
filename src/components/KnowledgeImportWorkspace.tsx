@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import KnowledgeNoteReader from "@/components/KnowledgeNoteReader";
+import { knowledgeImportFileSizeError } from "@/lib/knowledge-import-limits";
 
 type PreviewRow = {
   row_key: string; file_name: string; title_en: string; author_en: string; title_zh: string;
@@ -94,6 +95,11 @@ export default function KnowledgeImportWorkspace() {
 
   const preview = async (sourceFiles = files, overrideValues = edits) => {
     if (!sourceFiles.length) { setNotice("請先選擇 .md 檔案。"); return; }
+    const oversized = sourceFiles.find((file) => knowledgeImportFileSizeError(file));
+    if (oversized) {
+      setRows([]); setSelected([]); setBatchId(""); setNotice(knowledgeImportFileSizeError(oversized)!);
+      return;
+    }
     setBusy(true); setNotice("");
     try {
       const response = await fetch("/api/knowledge-import/preview", { method: "POST", body: makeForm(sourceFiles, overrideValues) });
@@ -161,7 +167,7 @@ export default function KnowledgeImportWorkspace() {
     </header>
     {notice && <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">{notice}</div>}
     {tab === "import" ? <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"><h2 className="font-semibold">選擇 Markdown 檔案</h2><p className="mt-1 text-xs leading-5 text-slate-400">最多 50 個檔案，每個不超過 500 KB。資料區需為新版 13 欄或相容的舊版格式。</p>
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"><h2 className="font-semibold">選擇 Markdown 檔案</h2><p className="mt-1 text-xs leading-5 text-slate-400">最多 50 個檔案，每個不超過 700 KB。資料區需為新版 13 欄或相容的舊版格式。</p>
         <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" accept=".md,text/markdown" multiple onChange={(event) => { setFiles(Array.from(event.target.files || [])); setRows([]); setEdits({}); setLocalPreviewContents({}); }} className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-slate-100" /><Button variant="primary" disabled={!files.length || busy} onClick={() => void preview()}>{busy ? "處理中…" : "產生伺服器預覽"}</Button><span className="text-xs text-slate-400">已選 {files.length} 個</span></div>
       </section>
       {rows.length > 0 && <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">預覽結果</h2><p className="mt-1 text-xs text-slate-400">批次編號：{batchId}。警告可匯入，但必須先確認；有問題的檔案不能匯入。</p></div><span className="rounded-lg bg-slate-950 px-3 py-2 text-xs text-slate-300">共 {rows.length} 筆</span></div>

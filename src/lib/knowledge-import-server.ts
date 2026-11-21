@@ -2,6 +2,7 @@ import "server-only";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, isGateEnabled, isValidToken } from "@/lib/auth";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
+import { KNOWLEDGE_IMPORT_MAX_FILE_BYTES, knowledgeImportFileSizeError } from "@/lib/knowledge-import-limits";
 import {
   commitKnowledgeImportBatch,
   createKnowledgeImportBatchId,
@@ -102,7 +103,7 @@ function parseOverrides(value: FormDataEntryValue | null): Record<string, Record
   } catch { return {}; }
 }
 
-async function getInputFiles(form: FormData) {
+export async function getKnowledgeImportInputFiles(form: FormData) {
   const files = asFileParts(form);
   if (!files.length) throw new KnowledgeImportValidationError("請至少選擇一個 .md 檔。");
   if (files.length > 50) throw new KnowledgeImportValidationError("單次最多上傳 50 個檔案。");
@@ -110,8 +111,9 @@ async function getInputFiles(form: FormData) {
   const input = await Promise.all(files.map(async (file, index) => {
     const problems: string[] = [];
     if (!file.name.toLowerCase().endsWith(".md")) problems.push("只接受 .md 檔案。");
-    if (file.size > 500 * 1024) problems.push("單檔不可超過 500 KB。");
-    const content = file.size <= 500 * 1024 ? await file.text() : "";
+    const sizeProblem = knowledgeImportFileSizeError(file);
+    if (sizeProblem) problems.push(sizeProblem);
+    const content = file.size <= KNOWLEDGE_IMPORT_MAX_FILE_BYTES ? await file.text() : "";
     return {
       filename: file.name,
       content,
@@ -123,7 +125,7 @@ async function getInputFiles(form: FormData) {
 }
 
 export async function previewKnowledgeImport(form: FormData) {
-  const input = await getInputFiles(form);
+  const input = await getKnowledgeImportInputFiles(form);
   const existing = await supabaseRequest<any[]>(
     "knowledge_notes",
     "select=id,domain,title,author,domain_tags,subdomain,source_file,chars,content_md5,title_zh,title_zh_subtitle,author_zh,translator_zh,publisher_zh,zh_source_url,zh_status,import_batch_id&limit=10000",
@@ -209,7 +211,7 @@ function makeKnowledgeImportStore() {
 export async function commitKnowledgeImport(form: FormData) {
   const batchId = String(form.get("batch_id") || "");
   if (!/^imp-\d{8}-\d{6}$/u.test(batchId)) throw new KnowledgeImportValidationError("批次編號無效，請重新預覽。");
-  const input = await getInputFiles(form);
+  const input = await getKnowledgeImportInputFiles(form);
   const selectedRaw = String(form.get("selected_row_keys") || "[]");
   let selectedRowKeys: string[];
   try {
