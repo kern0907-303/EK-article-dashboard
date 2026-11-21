@@ -212,20 +212,39 @@ export function classifyKnowledgeImportFiles(files, existingRows) {
     const key = knowledgeBookKey(existing.domain, existing.title);
     if (!existingByKey.has(key)) existingByKey.set(key, []);
     existingByKey.get(key).push(existing);
-    if (existing.source_file) existingBySource.set(existing.source_file, existing);
+    if (existing.source_file) {
+      if (!existingBySource.has(existing.source_file)) existingBySource.set(existing.source_file, []);
+      existingBySource.get(existing.source_file).push(existing);
+    }
   }
   for (const row of rows) {
     if (!row.record || row.problems.length) continue;
     const record = row.record;
-    const matches = existingByKey.get(knowledgeBookKey(record.domain, record.title)) || [];
-    if (matches.length > 1) {
+    const titleMatches = existingByKey.get(knowledgeBookKey(record.domain, record.title)) || [];
+    if (titleMatches.length > 1) {
       row.problems.push("資料庫有多筆相同書目，需先人工處理才能避免誤更新。");
       continue;
     }
-    const sourceConflict = existingBySource.get(record.source_file);
-    if (sourceConflict && (!matches[0] || sourceConflict.id !== matches[0].id)) {
-      row.problems.push("source_file 已被資料庫中的其他書目使用。");
+    const sourceMatches = existingBySource.get(record.source_file) || [];
+    if (sourceMatches.some((existing) => existing.domain !== record.domain)) {
+      row.problems.push("source_file 已被資料庫中的其他領域書目使用。");
       continue;
+    }
+    const sameDomainSourceMatches = sourceMatches.filter((existing) => existing.domain === record.domain);
+    if (sameDomainSourceMatches.length > 1) {
+      row.problems.push("資料庫有多筆相同領域與來源檔名，需先人工處理才能避免誤更新。");
+      continue;
+    }
+    let matches = titleMatches;
+    if (sameDomainSourceMatches.length === 1) {
+      const sourceMatch = sameDomainSourceMatches[0];
+      if (titleMatches.length === 1 && titleMatches[0].id !== sourceMatch.id) {
+        row.problems.push("資料庫有多筆可能相同書目，需先人工處理才能避免誤更新。");
+        continue;
+      }
+      matches = sameDomainSourceMatches;
+      if (String(sourceMatch.title || "").trim()) row.preserve_title = true;
+      else row.title_to_fill = record.title_zh?.trim() || record.title;
     }
     if (matches.length === 0) {
       row.classification = "insert";
@@ -313,7 +332,10 @@ export async function commitKnowledgeImportBatch(store, { batchId, files, select
   const insertedIds = [];
   try {
     for (const row of updates) {
-      await store.updateNote(row.matched_id, { ...row.record, import_batch_id: batchId });
+      const record = { ...row.record };
+      if (row.title_to_fill) record.title = row.title_to_fill;
+      else if (row.preserve_title) delete record.title;
+      await store.updateNote(row.matched_id, { ...record, import_batch_id: batchId });
     }
     for (const row of inserts) {
       const inserted = await store.insertNote({ ...row.record, imported_at: now, import_batch_id: batchId });

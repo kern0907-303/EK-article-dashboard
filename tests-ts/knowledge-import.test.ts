@@ -79,6 +79,36 @@ t("既有四個知識領域仍可分類為新增", ["business-strategy", "emotio
 t("兩筆既有書目內容或欄位不同均分類為更新", classified.slice(2, 4).every((row: any) => row.classification === "update"));
 t("兩筆既有書目校驗碼與欄位相同均分類為跳過", classified.slice(4).every((row: any) => row.classification === "skip"));
 
+const blankTitleFile = {
+  filename: "blank-title.md",
+  content: markdown({ domain: "business-strategy", title_en: "Blank Title Match", title_zh: "空白書名補入中文名", source_file: "blank-title.md", zh_source_url: "" }, "新版本正文。"),
+};
+const blankTitleRecord = parseRecord(blankTitleFile.content, blankTitleFile.filename);
+const blankTitleTarget = existing({ ...blankTitleRecord, title: "", content: "舊版正文。", content_md5: contentMd5("舊版正文。") }, "blank-title-target");
+const blankTitleRow: any = classifyKnowledgeImportFiles([blankTitleFile], [blankTitleTarget])[0];
+t("資料庫 title 空白時以完全相同的 domain 與 source_file 配對為更新並補中文書名", blankTitleRow.classification === "update" && blankTitleRow.matched_id === "blank-title-target" && blankTitleRow.title_to_fill === "空白書名補入中文名" && blankTitleRow.problems.length === 0);
+t("confirmed 缺 zh_source_url 仍只警告、不阻擋空白書名更新", blankTitleRow.classification === "update" && blankTitleRow.problems.length === 0 && blankTitleRow.warnings.some((warning: string) => warning.includes("缺少 zh_source_url")));
+
+const nonemptyTitleTarget = existing({ ...blankTitleRecord, title: "資料庫既有的完整書名", content: "舊版正文。", content_md5: contentMd5("舊版正文。") }, "nonempty-title-target");
+const nonemptyTitleRow: any = classifyKnowledgeImportFiles([blankTitleFile], [nonemptyTitleTarget])[0];
+t("title 非空且與匯入書名不同時仍配對更新並標記保留原書名", nonemptyTitleRow.classification === "update" && nonemptyTitleRow.matched_id === "nonempty-title-target" && nonemptyTitleRow.preserve_title === true && nonemptyTitleRow.problems.length === 0);
+
+const englishFallbackFile = {
+  filename: "english-fallback.md",
+  content: markdown({ domain: "life-philosophy", title_en: "English Fallback", title_zh: "", author_zh: "", zh_status: "no_zh_edition", source_file: "english-fallback.md" }),
+};
+const englishFallbackRecord = parseRecord(englishFallbackFile.content, englishFallbackFile.filename);
+const englishFallbackRow: any = classifyKnowledgeImportFiles([englishFallbackFile], [
+  existing({ ...englishFallbackRecord, title: "", content: "舊正文。" }, "english-fallback-target"),
+])[0];
+t("frontmatter 沒有 title_zh 時以 title_en 補回空白書名", englishFallbackRow.classification === "update" && englishFallbackRow.title_to_fill === englishFallbackRecord.title && englishFallbackRow.problems.length === 0);
+
+const crossDomainSourceRow: any = classifyKnowledgeImportFiles([{
+  filename: "cross-domain.md",
+  content: markdown({ domain: "emotions-psychology", title_en: "Cross Domain", source_file: "shared-source.md" }),
+}], [existing({ domain: "business-strategy", title: "", source_file: "shared-source.md" }, "other-domain-target")])[0];
+t("source_file 相同但 domain 不同仍判為衝突", crossDomainSourceRow.classification === "problem" && crossDomainSourceRow.problems.some((problem: string) => problem.includes("source_file")));
+
 const invalidRows = classifyKnowledgeImportFiles([
   { filename: "invalid-domain.md", content: markdown({ title_en: "Invalid", source_file: "bad-domain.md" }).replace("emotions-psychology", "unknown") },
   { filename: "empty-body.md", content: markdown({ title_en: "Empty", source_file: "empty.md" }, "   ") },
@@ -107,7 +137,7 @@ t("批次編號符合台北時間 imp-YYYYMMDD-HHMMSS 格式", /^imp-\d{8}-\d{6}
 async function main() {
 const state: { notes: Record<string, any>[]; batches: any[]; nextId: number } = {
   notes: [
-    existing({ ...updateRecords[0], content: "舊內容", content_md5: contentMd5("舊內容"), import_batch_id: null }, "update-target"),
+    existing({ ...updateRecords[0], title: "", content: "舊內容", content_md5: contentMd5("舊內容"), import_batch_id: null }, "update-target"),
     existing({ ...parsedInserts[1] }, "unrelated-note"),
   ],
   batches: [] as any[],
@@ -129,6 +159,7 @@ const importInputs = [
 ];
 const commit1 = await commitKnowledgeImportBatch(store, { batchId: "imp-20261008-101010", files: importInputs, selectedRowKeys: ["0", "1"], warningsAcknowledged: true, now: "2026-10-08T10:10:10+08:00" });
 const afterFirstCommit = structuredClone(state.notes);
+t("提交更新時會把資料庫原本空白的 title 補成 title_zh", afterFirstCommit.find((row) => row.id === "update-target")?.title === "中文書名");
 const commit2 = await commitKnowledgeImportBatch(store, { batchId: "imp-20261008-101010", files: importInputs, selectedRowKeys: ["0", "1"], warningsAcknowledged: true, now: "2026-10-08T10:10:11+08:00" });
 t("提交會記錄更新前完整快照與新增 ID，重送相同批次不重複寫入", commit1.idempotent === false && commit2.idempotent === true && state.notes.length === 3 && commit1.batch.snapshot.length === 1 && commit1.batch.inserted_ids.length === 1);
 let differentRequestRejected = false;
@@ -137,8 +168,19 @@ try {
 } catch { differentRequestRejected = true; }
 t("相同秒批次 ID 不能被不同內容誤當成重送，也不會重複寫入", differentRequestRejected && state.notes.length === 3);
 const undone = await undoKnowledgeImportBatch(store, "imp-20261008-101010", "2026-10-08T10:20:00+08:00");
-t("撤銷會刪除本批 inserted_ids、還原更新快照且保留批次外筆記", undone.batch.undone_at !== null && state.notes.length === 2 && state.notes.find((row) => row.id === "update-target")?.content === "舊內容" && state.notes.some((row) => row.id === "unrelated-note"));
+t("撤銷會刪除本批 inserted_ids、還原更新快照且保留批次外筆記", undone.batch.undone_at !== null && state.notes.length === 2 && state.notes.find((row) => row.id === "update-target")?.content === "舊內容" && state.notes.find((row) => row.id === "update-target")?.title === "" && state.notes.some((row) => row.id === "unrelated-note"));
 t("撤銷只刪本批新增 ID，與批次外同類資料無關", !state.notes.some((row) => afterFirstCommit.find((saved) => saved.id.startsWith("inserted-"))?.id === row.id) && state.notes.some((row) => row.id === "unrelated-note"));
+
+const preserveTitleState = { notes: [nonemptyTitleTarget], batches: [] as any[] };
+const preserveTitleStore = {
+  async listNotes() { return structuredClone(preserveTitleState.notes); },
+  async getBatch() { return null; },
+  async insertBatch(batch: any) { preserveTitleState.batches.push(structuredClone(batch)); },
+  async updateBatch(_id: string, patch: any) { Object.assign(preserveTitleState.batches[0], structuredClone(patch)); return structuredClone(preserveTitleState.batches[0]); },
+  async updateNote(id: string, patch: any) { const note = preserveTitleState.notes.find((item) => item.id === id); if (!note) throw new Error("missing note"); Object.assign(note, structuredClone(patch)); },
+};
+await commitKnowledgeImportBatch(preserveTitleStore, { batchId: "imp-20261008-101011", files: [blankTitleFile], selectedRowKeys: ["0"], warningsAcknowledged: true, now: "2026-10-08T10:11:00+08:00" });
+t("執行更新時保留資料庫已存在的非空 title", preserveTitleState.notes[0].title === "資料庫既有的完整書名");
 
 const pageSource = readFileSync("src/app/knowledge-import/page.tsx", "utf8");
 const apiSource = readFileSync("src/lib/knowledge-import-server.ts", "utf8");
