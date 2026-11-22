@@ -33,6 +33,15 @@ function existing(record: Record<string, any>, id: string) { return { ...record,
 const quoted = classifyKnowledgeImportFiles([{ filename: "quoted.md", content: markdown({ title_zh: "情緒 \"地圖\"", author_zh: "", zh_status: "unverified", title_zh_subtitle: "" }, "引號與逗號，像這樣。") }], [])[0];
 t("13 欄解析支援引號、逗號及空值，正文與 MD5 由伺服器計算", quoted.record?.title_zh === "情緒 \"地圖\"" && quoted.record?.author_zh === "" && quoted.record?.title_zh_subtitle === "" && quoted.record?.content === "引號與逗號，像這樣。" && quoted.record?.content_md5 === contentMd5("引號與逗號，像這樣。"));
 
+const chineseOriginalSource = markdown({
+  title_zh: "峰值體驗", author_zh: "汪志謙·朱海蓓", source_file: "peak-experience.epub",
+  zh_source_url: "https://bookstore.example/peak-experience", zh_status: "confirmed",
+}).replace('title_en: "Book A"\nauthor_en: "Author"', 'title_en: ""\nauthor_en: ""');
+const chineseOriginalRow: any = classifyKnowledgeImportFiles([
+  { filename: "peak-experience.md", content: chineseOriginalSource },
+], [])[0];
+t("confirmed 中文原著在英文書名／作者空白時以正式中文書名與作者分類新增", chineseOriginalRow.classification === "insert" && chineseOriginalRow.problems.length === 0 && chineseOriginalRow.record.title === "峰值體驗" && chineseOriginalRow.record.author === "汪志謙·朱海蓓");
+
 const legacyText = "---\ndomain: emotions-psychology\ntitle: Legacy Book\nauthor: Legacy Author\ndomain_tags: 情緒,心理\nsubdomain: 舊版\nsource_file: legacy.md\n---\n舊格式正文。";
 const legacy = classifyKnowledgeImportFiles([{ filename: "legacy.md", content: legacyText }], [])[0];
 t("舊格式可讀取，且一律預設 zh_status 為 unverified", legacy.record?.title === "Legacy Book" && legacy.record?.author === "Legacy Author" && legacy.record?.zh_status === "unverified" && legacy.legacy);

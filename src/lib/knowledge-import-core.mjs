@@ -94,10 +94,17 @@ function parseFrontMatter(text) {
   const bodyStart = closingOffset + lineEnding.length;
   const body = source.slice(bodyStart);
   const domainTags = splitCommaList(values.domain_tags || "");
+  const confirmedChineseOriginal = values.zh_status === "confirmed"
+    && !values.title_en?.trim()
+    && !values.author_en?.trim()
+    && Boolean(values.title_zh?.trim())
+    && Boolean(values.author_zh?.trim());
   const record = {
     domain: values.domain || "",
-    title: values.title_en ?? values.title ?? "",
-    author: values.author_en ?? values.author ?? "",
+    title: values.title_en?.trim() ? values.title_en :
+      (confirmedChineseOriginal ? values.title_zh : values.title_en ?? values.title ?? ""),
+    author: values.author_en?.trim() ? values.author_en :
+      (confirmedChineseOriginal ? values.author_zh : values.author_en ?? values.author ?? ""),
     title_zh: legacy ? "" : values.title_zh || "",
     title_zh_subtitle: legacy ? "" : values.title_zh_subtitle || "",
     author_zh: legacy ? "" : values.author_zh || "",
@@ -136,7 +143,11 @@ export function validateKnowledgeImportRecord(record) {
   const problems = [];
   if (!record || typeof record !== "object") return ["資料區無法解析。"];
   if (!KNOWLEDGE_IMPORT_DOMAINS.includes(record.domain)) problems.push("domain 不在允許的領域清單內。");
-  if (!record.title?.trim()) problems.push("title_en 不可空白。");
+  const confirmedChineseOriginal = record.zh_status === "confirmed"
+    && Boolean(record.title_zh?.trim()) && Boolean(record.author_zh?.trim());
+  if (!record.title?.trim() && !confirmedChineseOriginal) {
+    problems.push("title_en 不可空白；confirmed 中文原著可用 title_zh 與 author_zh。");
+  }
   if (!record.source_file?.trim()) problems.push("source_file 不可空白。");
   if (!record.content?.trim()) problems.push("正文不可空白。");
   if (!KNOWLEDGE_ZH_STATUSES.includes(record.zh_status)) problems.push("zh_status 必須是 confirmed、unverified 或 no_zh_edition。");
