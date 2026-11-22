@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, isGateEnabled, isValidToken } from "@/lib/auth";
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
@@ -7,6 +8,7 @@ import {
   commitKnowledgeImportBatch,
   createKnowledgeImportBatchId,
   KnowledgeImportValidationError,
+  deleteKnowledgeNoteWithBackup,
   toKnowledgeImportPreviewRow,
   undoKnowledgeImportBatch,
   classifyKnowledgeImportFiles,
@@ -45,9 +47,12 @@ const NOTE_OVERVIEW_SELECT = "id,domain,title,author,domain_tags,subdomain,sourc
 export async function getKnowledgeImportOverview() {
   const [notes, batches] = await Promise.all([
     supabaseRequest<any[]>("knowledge_notes", "select=" + NOTE_OVERVIEW_SELECT + "&order=domain.asc,title.asc&limit=10000"),
-    supabaseRequest<any[]>("knowledge_import_batches", "select=batch_id,created_at,summary,inserted_ids,undone_at&order=created_at.desc&limit=10"),
+    supabaseRequest<any[]>("knowledge_import_batches", "select=batch_id,created_at,summary,inserted_ids,undone_at&order=created_at.desc&limit=100"),
   ]);
-  return { notes: notes || [], batches: batches || [] };
+  return {
+    notes: notes || [],
+    batches: (batches || []).filter((batch) => batch.summary?.operation !== "single_note_delete").slice(0, 10),
+  };
 }
 
 export async function getKnowledgeImportNoteContent(id: string) {
@@ -206,6 +211,56 @@ function makeKnowledgeImportStore() {
       );
     },
   };
+}
+
+export function postgrestSnapshotFilter(column: string, value: unknown): string {
+  if (value === null || value === undefined) return "is.null";
+  if (column === "domain_tags" && Array.isArray(value)) {
+    const escaped = value.map((item) => `"${String(item).replace(/\\/gu, "\\\\").replace(/"/gu, "\\\"")}"`).join(",");
+    return "eq.{" + escaped + "}";
+  }
+  return "eq." + String(value);
+}
+
+function makeKnowledgeImportDeleteStore() {
+  const guardedColumns = [
+    "id", "domain", "title", "author", "domain_tags", "subdomain", "source_file", "chars", "content_md5", "imported_at",
+    "title_zh", "title_zh_subtitle", "author_zh", "translator_zh", "publisher_zh", "zh_source_url", "zh_status", "import_batch_id",
+  ];
+  return {
+    async getNote(id: string) {
+      const rows = await supabaseRequest<any[]>(
+        "knowledge_notes",
+        "select=" + NOTE_SELECT + "&id=eq." + encodeURIComponent(id) + "&limit=1",
+      );
+      return rows?.[0] || null;
+    },
+    async insertDeletionBackup(row: Record<string, unknown>) {
+      const rows = await supabaseRequest<any[]>("knowledge_import_batches?select=batch_id", "", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(row),
+      });
+      return rows?.[0] || null;
+    },
+    async deleteNote(id: string, snapshot: Record<string, any>) {
+      const filters = new URLSearchParams({ select: "id" });
+      for (const column of guardedColumns) filters.set(column, postgrestSnapshotFilter(column, snapshot[column]));
+      const rows = await supabaseRequest<any[]>("knowledge_notes", filters.toString(), {
+        method: "DELETE",
+        headers: { Prefer: "return=representation" },
+      });
+      return rows?.find((row) => row.id === id) || null;
+    },
+  };
+}
+
+export async function deleteKnowledgeImportNote(id: string, confirmationTitle: string) {
+  return deleteKnowledgeNoteWithBackup(makeKnowledgeImportDeleteStore(), {
+    noteId: id,
+    confirmationTitle,
+    backupId: "del-" + randomUUID(),
+  });
 }
 
 export async function commitKnowledgeImport(form: FormData) {

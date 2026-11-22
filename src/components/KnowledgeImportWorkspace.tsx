@@ -5,6 +5,7 @@ import Link from "next/link";
 import Button from "@/components/ui/Button";
 import KnowledgeNoteReader from "@/components/KnowledgeNoteReader";
 import { knowledgeImportFileSizeError } from "@/lib/knowledge-import-limits";
+import { knowledgeImportDeleteConfirmationTitle } from "@/lib/knowledge-import-core.mjs";
 
 type PreviewRow = {
   row_key: string; file_name: string; title_en: string; author_en: string; title_zh: string;
@@ -49,6 +50,9 @@ export default function KnowledgeImportWorkspace() {
   const [storedErrors, setStoredErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<NoteRow | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/knowledge-import", { cache: "no-store" });
@@ -155,6 +159,36 @@ export default function KnowledgeImportWorkspace() {
     } catch (error) { setNotice(error instanceof Error ? error.message : "儲存失敗。"); }
     finally { setBusy(false); }
   };
+  const openDeleteDialog = (note: NoteRow) => {
+    setDeleteConfirmation(""); setNotice(""); setDeleteTarget(note);
+  };
+  const closeDeleteDialog = () => {
+    if (deletingNoteId) return;
+    setDeleteTarget(null); setDeleteConfirmation("");
+  };
+  const confirmDelete = async () => {
+    if (!deleteTarget || deletingNoteId) return;
+    const target = deleteTarget;
+    const requiredTitle = knowledgeImportDeleteConfirmationTitle(target);
+    if (!requiredTitle || deleteConfirmation.trim() !== requiredTitle) return;
+    setDeletingNoteId(target.id); setNotice("");
+    try {
+      const response = await fetch("/api/knowledge-import/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id, confirmation_title: deleteConfirmation }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "刪除失敗，請稍後重試。");
+      setNotes((current) => current.filter((note) => note.id !== target.id));
+      setEdits((current) => { const next = { ...current }; delete next[target.id]; return next; });
+      setStoredContents((current) => { const next = { ...current }; delete next[target.id]; return next; });
+      setDeleteTarget(null); setDeleteConfirmation("");
+      setNotice("已刪除：" + (data.deleted_title || requiredTitle) + "。備份編號：" + data.backup_id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "刪除失敗，請稍後重試。");
+    } finally { setDeletingNoteId(null); }
+  };
   const categoryOptions = [
     ["all", "全部 " + rows.length], ["insert", "新增 " + rows.filter((r) => r.classification === "insert").length],
     ["update", "更新 " + rows.filter((r) => r.classification === "update").length], ["skip", "跳過 " + rows.filter((r) => r.classification === "skip").length],
@@ -196,13 +230,30 @@ export default function KnowledgeImportWorkspace() {
         <select value={domainFilter} onChange={(event) => setDomainFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">{DOMAINS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">{STATUSES.map((value) => <option key={value} value={value}>{value || "全部狀態"}</option>)}</select>
       </div></div>
-      <div className="mt-4 max-h-[72vh] overflow-auto rounded-xl border border-slate-800"><table className="min-w-[1200px] w-full border-collapse text-left text-xs"><thead className="sticky top-0 bg-slate-950 text-slate-400"><tr>{["書名（中／英）", "作者", "領域", "zh_status", "批次編號", "中文書目欄位編輯"].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr></thead>
+      <div className="mt-4 max-h-[72vh] overflow-auto rounded-xl border border-slate-800"><table className="min-w-[1320px] w-full border-collapse text-left text-xs"><thead className="sticky top-0 bg-slate-950 text-slate-400"><tr>{["書名（中／英）", "作者", "領域", "zh_status", "批次編號", "中文書目欄位編輯", "操作"].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr></thead>
         <tbody>{filteredNotes.map((note) => { const values = { ...note, ...(edits[note.id] || {}) } as NoteRow; return <tr key={note.id} className="border-t border-slate-800 align-top">
           <td className="min-w-56 px-3 py-3"><p className="font-medium text-slate-100">{note.title_zh || "（中文書名空白）"}</p><p className="mt-1 text-slate-500">{note.title}</p><details className="mt-2 min-w-80" onToggle={(event) => { if (event.currentTarget.open) void loadStoredReader(note); }}><summary className="cursor-pointer text-indigo-300">閱讀已匯入全文</summary><div className="mt-2 max-h-[55vh] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3">{storedContents[note.id] !== undefined ? <KnowledgeNoteReader content={storedContents[note.id]} /> : <p className="text-xs text-slate-500">{storedErrors[note.id] || (storedLoading[note.id] ? "讀取中…" : "展開後由伺服器讀取已匯入筆記。")}</p>}</div></details></td>
           <td className="px-3 py-3"><p>{note.author_zh || "（中文作者空白）"}</p><p className="mt-1 text-slate-500">{note.author}</p></td><td className="px-3 py-3 text-slate-300">{DOMAINS.find(([id]) => id === note.domain)?.[1] || note.domain}</td>
           <td className="px-3 py-3">{note.zh_status || "unverified"}</td><td className="px-3 py-3 text-slate-400">{note.import_batch_id || "—"}</td>
           <td className="min-w-[520px] px-3 py-3">{note.zh_status === "unverified" ? <div className="grid grid-cols-2 gap-2">{EDIT_FIELDS.map((field) => field === "zh_status" ? <select key={field} aria-label={field + " " + note.title} value={values.zh_status || "unverified"} onChange={(event) => editNote(note, field, event.target.value)} className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5"><option value="confirmed">confirmed</option><option value="unverified">unverified</option><option value="no_zh_edition">no_zh_edition</option></select> : <input key={field} aria-label={field + " " + note.title} value={String(values[field] || "")} onChange={(event) => editNote(note, field, event.target.value)} placeholder={field} className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5" />)}<Button variant="secondary" size="sm" disabled={busy || !edits[note.id]} onClick={() => void saveNote(note)} className="col-span-2 justify-self-start">儲存中文欄位</Button></div> : <span className="text-slate-600">唯讀</span>}</td>
+          <td className="px-3 py-3"><Button variant="danger" size="sm" disabled={busy || deletingNoteId !== null} onClick={() => openDeleteDialog(note)} className="active:scale-95 transition-transform">刪除</Button></td>
         </tr>; })}</tbody></table>{!filteredNotes.length && <p className="p-5 text-sm text-slate-500">沒有符合條件的筆記。</p>}</div>
     </section>}
+      {deleteTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
+        <section role="dialog" aria-modal="true" aria-labelledby="knowledge-delete-title" className="w-full max-w-xl space-y-4 rounded-2xl border border-rose-500/40 bg-slate-950 p-5 shadow-2xl">
+          <div><h2 id="knowledge-delete-title" className="text-lg font-bold text-rose-200">確認刪除知識筆記</h2><p className="mt-1 text-sm text-slate-300">刪除後無法在此頁復原。刪除前系統會先保存整列備份。</p></div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-xl bg-slate-900 p-3 text-sm">
+            <dt className="text-slate-400">中文書名</dt><dd>{deleteTarget.title_zh || "（空白）"}</dd>
+            <dt className="text-slate-400">英文書名</dt><dd>{deleteTarget.title || "（空白）"}</dd>
+            <dt className="text-slate-400">作者</dt><dd>{[deleteTarget.author_zh, deleteTarget.author].filter(Boolean).join("／") || "（空白）"}</dd>
+            <dt className="text-slate-400">領域</dt><dd>{DOMAINS.find(([id]) => id === deleteTarget.domain)?.[1] || deleteTarget.domain || "（空白）"}</dd>
+            <dt className="text-slate-400">批次編號</dt><dd>{deleteTarget.import_batch_id || "—"}</dd>
+          </dl>
+          <label className="block text-sm">請輸入「{knowledgeImportDeleteConfirmationTitle(deleteTarget)}」以確認
+            <input autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={deletingNoteId !== null} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+          </label>
+          <div className="flex justify-end gap-2"><Button variant="secondary" disabled={deletingNoteId !== null} onClick={closeDeleteDialog}>取消</Button><Button variant="danger" loading={deletingNoteId === deleteTarget.id} disabled={!knowledgeImportDeleteConfirmationTitle(deleteTarget) || deleteConfirmation.trim() !== knowledgeImportDeleteConfirmationTitle(deleteTarget) || deletingNoteId !== null} onClick={() => void confirmDelete()} className="active:scale-95 transition-transform">{deletingNoteId === deleteTarget.id ? "刪除中…" : "確認刪除"}</Button></div>
+        </section>
+      </div>}
   </div></main>;
 }

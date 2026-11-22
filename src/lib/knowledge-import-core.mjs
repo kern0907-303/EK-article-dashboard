@@ -298,6 +298,46 @@ export class KnowledgeImportValidationError extends Error {
   constructor(message, rows = []) { super(message); this.name = "KnowledgeImportValidationError"; this.rows = rows; }
 }
 
+export function knowledgeImportDeleteConfirmationTitle(note) {
+  return String(note?.title_zh || "").trim() || String(note?.title || "").trim();
+}
+
+export async function deleteKnowledgeNoteWithBackup(store, { noteId, confirmationTitle, backupId, now = new Date().toISOString() }) {
+  const note = await store.getNote(noteId);
+  if (!note) return { kind: "missing" };
+  const requiredTitle = knowledgeImportDeleteConfirmationTitle(note);
+  if (!requiredTitle) return { kind: "unconfirmable" };
+  if (typeof confirmationTitle !== "string" || confirmationTitle.trim() !== requiredTitle) {
+    return { kind: "confirmation-mismatch" };
+  }
+
+  const backup = {
+    batch_id: backupId,
+    created_at: now,
+    summary: { operation: "single_note_delete", status: "deleted", original_id: note.id, deleted_at: now },
+    snapshot: [structuredClone(note)],
+    inserted_ids: [],
+    undone_at: null,
+  };
+  const savedBackup = await store.insertDeletionBackup(backup);
+  if (!savedBackup || savedBackup.batch_id !== backupId) {
+    throw new Error("刪除備份未能確認寫入，原資料未刪除。");
+  }
+
+  const deleted = await store.deleteNote(noteId, note);
+  if (!deleted || deleted.id !== note.id) return { kind: "changed", backupId };
+  return { kind: "deleted", note, backupId, deletedAt: now };
+}
+
+// 人工還原單筆刪除備份時，使用 backupId 替換下方的值：
+// INSERT INTO public.knowledge_notes
+// SELECT (jsonb_populate_record(NULL::public.knowledge_notes, item.row_data)).*
+// FROM public.knowledge_import_batches AS backup
+// CROSS JOIN LATERAL jsonb_array_elements(backup.snapshot) AS item(row_data)
+// WHERE backup.batch_id = '<backup_id>'
+//   AND backup.summary->>'operation' = 'single_note_delete'
+//   AND NOT EXISTS (SELECT 1 FROM public.knowledge_notes AS note WHERE note.id = item.row_data->>'id');
+
 function importRequestFingerprint(files, selectedRowKeys) {
   const chosen = new Set(selectedRowKeys.map(String));
   const inputs = files.map((file, index) => chosen.has(String(index)) ? {
@@ -375,6 +415,9 @@ export async function commitKnowledgeImportBatch(store, { batchId, files, select
 export async function undoKnowledgeImportBatch(store, batchId, now = new Date().toISOString()) {
   const batch = await store.getBatch(batchId);
   if (!batch) throw new KnowledgeImportValidationError("找不到這個匯入批次。");
+  if (batch.summary?.operation === "single_note_delete") {
+    throw new KnowledgeImportValidationError("這是單筆刪除備份，請使用備份資料的 SQL 還原，不可用匯入批次撤銷。");
+  }
   if (batch.undone_at) return { batch, idempotent: true };
   await store.deleteInsertedNotes(Array.isArray(batch.inserted_ids) ? batch.inserted_ids : [], batchId);
   for (const snapshot of Array.isArray(batch.snapshot) ? batch.snapshot : []) {
