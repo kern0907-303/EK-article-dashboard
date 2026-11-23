@@ -78,7 +78,14 @@ t("兩筆新書均分類為新增", classified.slice(0, 2).every((row: any) => r
 t("natural-science 領域筆記可分類為新增", classifyKnowledgeImportFiles([
   { filename: "natural-science.md", content: markdown({ domain: "natural-science", title_en: "Natural Science", source_file: "natural-science.md" }) },
 ], [])[0].classification === "insert");
-t("natural-science 在文章引用領域選單顯示為自然科學且排在最後", KNOWLEDGE_DOMAIN_LABELS["natural-science"] === "自然科學" && Object.keys(KNOWLEDGE_DOMAIN_LABELS).at(-1) === "natural-science");
+t("natural-science 領域標籤顯示為自然科學", KNOWLEDGE_DOMAIN_LABELS["natural-science"] === "自然科學");
+t("marketing-writing 領域筆記可分類為新增且沒有問題", (() => {
+  const row = classifyKnowledgeImportFiles([
+    { filename: "marketing-writing.md", content: markdown({ domain: "marketing-writing", title_en: "Marketing Writing", source_file: "marketing-writing.md" }) },
+  ], [])[0];
+  return row.classification === "insert" && row.problems.length === 0;
+})());
+t("marketing-writing 標籤與總覽領域篩選顯示為行銷寫作", KNOWLEDGE_DOMAIN_LABELS["marketing-writing"] === "行銷寫作" && readFileSync("src/components/KnowledgeImportWorkspace.tsx", "utf8").includes('["marketing-writing", "行銷寫作"]'));
 t("既有四個知識領域仍可分類為新增", ["business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning"].every((domain, index) => {
   const row = classifyKnowledgeImportFiles([
     { filename: `existing-domain-${index}.md`, content: markdown({ domain, title_en: `Existing ${index}`, source_file: `existing-domain-${index}.md` }) },
