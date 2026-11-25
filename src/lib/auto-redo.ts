@@ -108,7 +108,7 @@ export async function runAutoRedo(env: { url: string; key: string }): Promise<Re
 
     const queueRows = await pipelineDb<any[]>(
       "publish_queue",
-      `id=eq.${encodeURIComponent(String(job.queue_id))}&select=id,content,image_url,scheduled_at,status,target_pages&limit=1`
+      `id=eq.${encodeURIComponent(String(job.queue_id))}&select=id,content,image_url,scheduled_at,status,target_pages,article_id&limit=1`
     );
     const master = queueRows[0];
     if (!master || !fbStillUsable(master.status, master.scheduled_at)) continue;
@@ -116,16 +116,32 @@ export async function runAutoRedo(env: { url: string; key: string }): Promise<Re
     const brand = BRAND_BY_PAGE[Array.isArray(master.target_pages) ? String(master.target_pages[0] || "") : ""];
     if (!brand) continue;
 
+    // 重做前最後一次確認。planRedo 讀到的狀態到這裡已經隔了一段時間，
+    // 中間可能有別的路徑（補齊、流水線本身）已經把同一個平台補上了。
+    // 2026-11-22 就是這樣在 IG 與 Threads 連發兩篇幾乎一樣的貼文。
+    const fresh = await pipelineDb<any[]>(
+      "social_publish_queue",
+      `job_id=eq.${encodeURIComponent(jobId)}&status=neq.cancelled&select=platform`
+    );
+    const taken = new Set(fresh.map((row) => String(row.platform ?? "").toLowerCase()));
+    const stillNeeded = platforms.filter((platform) => !taken.has(platform));
+    if (!stillNeeded.length) continue;
+
+    // 官網文章編號要一起帶進去，否則重做出來的 IG 與 Threads 沒有 article_id，
+    // 留言與私訊的連結會退回預設值，等於白補。
+    const existingArticleId = String(master.article_id || "");
+
     const multi = await runMultiplatform({
       env, jobId: String(job.id), brandShort: brand, brandName: BRAND_NAME[brand],
       master: String(master.content || ""), fbScheduledAt: master.scheduled_at,
       fbQueueId: String(master.id), coverUrl: master.image_url || null,
       funnel: readFunnelFromPrompt(String(job.prompt || "")),
-      only: platforms,
+      only: stillNeeded,
+      ...(existingArticleId ? { existingArticleId } : {}),
     });
 
     const NAME: Record<RedoPlatform, string> = { instagram: "IG", threads: "Threads" };
-    const problems = platforms.flatMap((platform) => {
+    const problems = stillNeeded.flatMap((platform) => {
       const outcome = (multi as any)[platform];
       if (!outcome?.ok) return [`${NAME[platform]}：${outcome?.error || "失敗"}`];
       return outcome.error ? [`${NAME[platform]}：${outcome.error}`] : [];
@@ -134,8 +150,8 @@ export async function runAutoRedo(env: { url: string; key: string }): Promise<Re
     // 不管成功失敗都記下來，這樣失敗的也不會每個 tick 重試一次
     const merged = {
       ...previous,
-      ...Object.fromEntries(platforms.map((platform) => [platform, (multi as any)[platform]])),
-      auto_redo: [...new Set([...(Array.isArray(previous.auto_redo) ? previous.auto_redo.map(String) : []), ...platforms])],
+      ...Object.fromEntries(stillNeeded.map((platform) => [platform, (multi as any)[platform]])),
+      auto_redo: [...new Set([...(Array.isArray(previous.auto_redo) ? previous.auto_redo.map(String) : []), ...stillNeeded])],
     };
     await pipelineDb("auto_pipeline_jobs", `id=eq.${encodeURIComponent(String(job.id))}`, {
       method: "PATCH",
@@ -143,11 +159,11 @@ export async function runAutoRedo(env: { url: string; key: string }): Promise<Re
         social_results: merged,
         current_step: problems.length
           ? `編輯 AI 退稿後自動重做衍生稿，仍有問題：${problems.join("；")}`
-          : `編輯 AI 退稿後已自動重做 ${platforms.map((platform) => NAME[platform]).join("、")}`,
+          : `編輯 AI 退稿後已自動重做 ${stillNeeded.map((platform) => NAME[platform]).join("、")}`,
       }),
     });
 
-    return { jobId: String(job.id), platforms, problems };
+    return { jobId: String(job.id), platforms: stillNeeded, problems };
   }
   return null;
 }

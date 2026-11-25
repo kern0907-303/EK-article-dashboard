@@ -155,17 +155,51 @@ const authHeaders = (env: SupabaseEnv): Record<string, string> => ({
   "Content-Type": "application/json", apikey: env.key, Authorization: `Bearer ${env.key}`, Prefer: "return=representation",
 });
 
-/** 寫入 Threads / IG 佇列。新欄位（job_id、article_id、image_urls）尚未建立時，退回不帶新欄位的寫入。 */
+/** 同一個任務、同一個平台已經有待發的列了嗎。寫入前最後一道檢查。 */
+async function alreadyQueued(env: SupabaseEnv, jobId: unknown, platform: string): Promise<boolean> {
+  const id = String(jobId || "");
+  if (!id) return false;
+  try {
+    const res = await fetch(
+      `${env.url}/rest/v1/social_publish_queue?job_id=eq.${encodeURIComponent(id)}&platform=eq.${encodeURIComponent(platform)}&status=neq.cancelled&select=id&limit=1`,
+      { headers: authHeaders(env), signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    // 查不到就當作沒有，寧可讓資料庫的唯一索引去擋，也不要因為查詢失敗就不發
+    return false;
+  }
+}
+
+/**
+ * 寫入 Threads / IG 佇列。新欄位（job_id、article_id、image_urls）尚未建立時，退回不帶新欄位的寫入。
+ *
+ * 2026-11-25 加上重複防護。10/22 到 11/25 之間有 21 組同一任務同一平台被寫了兩筆，
+ * 其中 19 組真的連發了兩篇幾乎一樣的貼文。原因是各條路徑都用「先查有沒有、再寫入」，
+ * 中間隔著 30 到 90 秒的 AI 改寫與圖卡生成，兩條路徑可以同時查到「還沒有」。
+ * 這裡做的是最後一道檢查，真正的保證在資料庫的唯一索引
+ * social_publish_queue_one_live_per_job_platform（唯一索引擋下時回 409，這裡當成已存在）。
+ */
 async function enqueueSocial(env: SupabaseEnv, row: Record<string, unknown>): Promise<string> {
+  const platform = String(row.platform || "");
+  if (await alreadyQueued(env, row.job_id, platform)) {
+    throw new Error(`${platform} 已經有待發的排程，這次不重複寫入`);
+  }
   const attempt = async (body: Record<string, unknown>) =>
     fetch(`${env.url}/rest/v1/social_publish_queue`, { method: "POST", headers: authHeaders(env), body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
   let res = await attempt(row);
+  if (res.status === 409) {
+    throw new Error(`${platform} 已經有待發的排程，這次不重複寫入`);
+  }
   if (!res.ok && res.status === 400) {
     const text = await res.clone().text();
     if (/job_id|article_id|image_urls|experiment_json|column/i.test(text)) {
       const { job_id: _job, article_id: _article, experiment_json: _experiment, ...rest } = row;
       void _job; void _article; void _experiment;
       res = await attempt(rest);
+      if (res.status === 409) throw new Error(`${platform} 已經有待發的排程，這次不重複寫入`);
     }
   }
   if (!res.ok) throw new Error(`寫入排程失敗（${res.status}）：${(await res.text()).slice(0, 160)}`);
