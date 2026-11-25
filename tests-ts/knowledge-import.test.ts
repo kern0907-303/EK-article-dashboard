@@ -86,6 +86,13 @@ t("marketing-writing 領域筆記可分類為新增且沒有問題", (() => {
   return row.classification === "insert" && row.problems.length === 0;
 })());
 t("marketing-writing 標籤與總覽領域篩選顯示為行銷寫作", KNOWLEDGE_DOMAIN_LABELS["marketing-writing"] === "行銷寫作" && readFileSync("src/components/KnowledgeImportWorkspace.tsx", "utf8").includes('["marketing-writing", "行銷寫作"]'));
+t("investing 領域筆記可分類為新增且沒有問題", (() => {
+  const row = classifyKnowledgeImportFiles([
+    { filename: "investing.md", content: markdown({ domain: "investing", title_en: "Investing", source_file: "investing.md" }) },
+  ], [])[0];
+  return row.classification === "insert" && row.problems.length === 0;
+})());
+t("investing 標籤與總覽領域篩選顯示為投資", KNOWLEDGE_DOMAIN_LABELS["investing"] === "投資" && readFileSync("src/components/KnowledgeImportWorkspace.tsx", "utf8").includes('["investing", "投資"]'));
 t("既有四個知識領域仍可分類為新增", ["business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning"].every((domain, index) => {
   const row = classifyKnowledgeImportFiles([
     { filename: `existing-domain-${index}.md`, content: markdown({ domain, title_en: `Existing ${index}`, source_file: `existing-domain-${index}.md` }) },

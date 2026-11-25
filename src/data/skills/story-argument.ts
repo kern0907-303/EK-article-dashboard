@@ -108,6 +108,7 @@ export const KNOWLEDGE_DOMAIN_LABELS: Record<string, string> = {
   "business-strategy": "商業策略",
   "natural-science": "自然科學",
   "marketing-writing": "行銷寫作",
+  "investing": "投資",
 };
 
 export const STORY_ARGUMENT_GENRE_NOTICE =

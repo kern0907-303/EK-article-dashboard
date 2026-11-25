@@ -8,7 +8,7 @@ export const KNOWLEDGE_IMPORT_FIELDS = [
 const LEGACY_FIELDS = ["domain", "title_en", "author_en", "domain_tags", "subdomain", "source_file"];
 const LEGACY_ALIASES = ["domain", "title", "author", "domain_tags", "subdomain", "source_file"];
 export const KNOWLEDGE_IMPORT_DOMAINS = [
-  "business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning", "natural-science", "marketing-writing",
+  "business-strategy", "emotions-psychology", "life-philosophy", "shenxinling-planning", "natural-science", "marketing-writing", "investing",
 ];
 export const KNOWLEDGE_ZH_STATUSES = ["confirmed", "unverified", "no_zh_edition"];
 const IMPORT_COMPARE_FIELDS = [
