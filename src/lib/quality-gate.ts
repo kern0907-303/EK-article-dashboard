@@ -20,7 +20,11 @@ const MOJIBAKE = new RegExp(`[ÃÂäåæçèéïâ][${MOJIBAKE_SET}]{2}|Ã[${MOJ
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const AI_PREFIX = /^\s*(以下是|以下為|好的[，,。]\s*(以下|我|這)|當然[，,。]\s*(以下|我|這)|(很)?抱歉[，,]\s*我(無法|不能)(提供|協助|生成|撰寫|完成)|我無法(提供|協助|生成|撰寫|完成)|作為.{0,8}(AI|助理|模型)|Here is|Here's|Sure[,!]|Certainly[,!])/i;
 const AI_ANYWHERE = /(as an ai language model|作為一個?(AI|人工智慧)|我是(AI|人工智慧)|以上是(改寫|重寫|整理)|希望(這|以上)(篇|份|個)?(內容|版本)(對你|能幫))/i;
-const PLACEHOLDER = /【[^】]{0,30}(?:需補|待補|待確認|請補|補上|填入|範例|示例|XX)[^】]{0,30}】|\{\{[^}]*\}\}|\bTODO\b|\blorem ipsum\b|\bundefined\b|\bnull\b|\[待補\]|XXX/i;
+// 預留字樣。原本只認【】、{{}}、[待補] 這幾種包法。
+// 2026-11-25 實例：I8 那篇「你的店被模仿了，然後呢」在正文留下整張空表，
+// 「客人 A，（填入當時狀況），（填入你的判斷），（回購、介紹、留下來）」連著三列，
+// 用的是全形括號，整個漏過去，一路上架到官網才被編輯 AI 擋下來。
+const PLACEHOLDER = /【[^】]{0,30}(?:需補|待補|待確認|請補|補上|填入|範例|示例|XX)[^】]{0,30}】|[（(][^）)]{0,24}(?:填入|請填|待填|自行填|自行補|待補|需補|待確認|請補)[^）)]{0,24}[）)]|\{\{[^}]*\}\}|\bTODO\b|\blorem ipsum\b|\bundefined\b|\bnull\b|\[待補\]|XXX/i;
 const DASHES = /[—–─―]|--/;
 const MARKDOWN = /^\s{0,3}#{1,6}\s|\*\*[^*]+\*\*|^\s*[-*]\s+\S|`{3}/m;
 const TRAILING_BAD = /[，、：；,:;（(「『“]\s*$/;
@@ -47,6 +51,25 @@ export const BRAND_NAMES: readonly string[] = ["平衡空間", "艾伯林量子�
  * 挑書與查證由 chooseKnowledgeSource 負責。
  */
 const BOOK_TITLE = /《([^》]{1,60})》/g;
+// 書名一律只用中文寫法，不要在後面補英文原名。
+// 2026-11-25 查到 5 篇這樣寫，4 篇已經上線：
+// 《創業這條路》（The E-Myth Revisited）、《快思慢想》（Thinking, Fast and Slow）、
+// 《競爭策略》（Competitive Strategy）。這是機械式修正，整段括號直接拿掉就好。
+const BOOK_FOREIGN_NAME = /(《[^》]{1,60}》)\s*[（(]\s*[A-Za-z][^）)]{2,60}[）)]/g;
+// 同一條規則的另一種寫法，直接寫成一個子句：
+// 「本文引用觀點出自麥克·葛伯所著《創業這條路》，原書英文書名為 The E-Myth Revisited。」
+// 括號版用上面那條處理，子句版用這一條，兩種都要拿掉。
+const BOOK_FOREIGN_CLAUSE = /[，,]?\s*(?:原書)?(?:英文)?書名[為是]?\s*[A-Za-z][^。！？\n]*[。]?/g;
+
+// 表格被壓平成逗號串接的指紋。
+// 提示詞禁止 Markdown，模型就把表格自己改寫成一行逗號串接，
+// 留下「？，」「。，」這種句末標點後面緊接分隔號的壞標點，在官網上讀起來是一堆碎片。
+// 2026-11-26 實例：「往前推三個月，當時做了哪些關鍵決定？，找到決定的起點」。
+const FLATTENED_TABLE = /[？。！][，、]/;
+
+// 生成時殘留的結構標記，單獨成行。
+// 2026-11-26 實例：文章接近結尾有一行只寫「結尾」。
+const STRUCTURE_MARKER = /^[ \t　]*(?:結尾|開頭|前言|正文|內文|本文|小標題|標題|段落|過渡句)[ \t　]*$/m;
 
 /** 文章裡出現的所有書名，去重 */
 export function citedBookTitles(text: string): string[] {
@@ -222,6 +245,15 @@ export function applyMechanicalFixes(text: string): { text: string; fixes: strin
     return stay.join("").trim();
   }).join("\n");
   if (teasers) fixes.push(`移除 ${teasers} 句下一篇預告`);
+  let foreignTitles = 0;
+  BOOK_FOREIGN_NAME.lastIndex = 0;
+  out = out.replace(BOOK_FOREIGN_NAME, (_m, title: string) => { foreignTitles++; return title; });
+  BOOK_FOREIGN_CLAUSE.lastIndex = 0;
+  out = out.replace(BOOK_FOREIGN_CLAUSE, (m: string) => {
+    foreignTitles++;
+    return m.trimEnd().endsWith("。") ? "。" : "";
+  });
+  if (foreignTitles) fixes.push(`拿掉書名的英文原名 ${foreignTitles} 處`);
   let abbrev = 0;
   out = out.replace(BRAND_ABBREV, (_m, code: string) => { abbrev++; return BRAND_FULL[code]; });
   if (abbrev) fixes.push(`品牌縮寫改全名 ${abbrev} 處`);
@@ -286,6 +318,13 @@ export function checkFormat(text: string, platform: GatePlatform): GateIssue[] {
   const limit = PLATFORM_LIMITS[platform];
   if (DASHES.test(body)) issues.push({ level: "block", code: "dash", message: "含有破折號，品牌文案一律不可使用" });
   if (DISCLAIMER.test(body)) issues.push({ level: "block", code: "disclaimer", message: "含有免責聲明（例如故事情境為示意），文章裡不放這類聲明" });
+  BOOK_FOREIGN_NAME.lastIndex = 0;
+  BOOK_FOREIGN_CLAUSE.lastIndex = 0;
+  if (BOOK_FOREIGN_NAME.test(body) || BOOK_FOREIGN_CLAUSE.test(body)) issues.push({ level: "block", code: "book_foreign_name", message: "出現書的英文原名，書名只用中文寫法" });
+  BOOK_FOREIGN_NAME.lastIndex = 0;
+  BOOK_FOREIGN_CLAUSE.lastIndex = 0;
+  if (FLATTENED_TABLE.test(body)) issues.push({ level: "block", code: "flattened_table", message: "表格被壓平成逗號串接（句末標點後面緊接逗號），請改成一行一句或標籤加冒號" });
+  if (STRUCTURE_MARKER.test(body)) issues.push({ level: "block", code: "structure_marker", message: "有單獨成行的結構標記（例如結尾、正文），那是生成時的殘留，不是內容" });
   BRAND_ABBREV.lastIndex = 0;
   if (BRAND_ABBREV.test(body)) issues.push({ level: "warn", code: "brand_abbrev", message: "出現品牌縮寫（ABL、NAS、I8），對外請用全名" });
   BRAND_ABBREV.lastIndex = 0;
