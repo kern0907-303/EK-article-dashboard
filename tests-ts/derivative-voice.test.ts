@@ -15,10 +15,10 @@ assert.deepEqual(brandWeSpeak("我們常以為自己在等待一個完美的轉�
 assert.deepEqual(brandWeSpeak("我們都會累。", "nas"), []);
 // 沒指定品牌時三個品牌都查
 assert.equal(brandWeSpeak("初八企業顧問相信，我們可以一起把現金流看清楚。").length, 1);
-// 只提醒不擋稿
+// 2026-11-26 從提醒提升成擋下。待發佇列量過命中 0 筆，不會害已排好的稿子發不出去；
+// 維持提醒的話這種文章會上線，然後編輯 AI 把三個平台一起擋下，損失更大。
 const weIssues = runQualityGate(weSpeakCase, { platform: "website", brandId: "nas" });
-assert.equal(gateBlockers(weIssues).length, 0, "我們替品牌發言不可以擋稿");
-assert.ok(gateWarnings(weIssues).some((issue) => issue.code === "brand_we"));
+assert.ok(gateBlockers(weIssues).some((issue) => issue.code === "brand_we"), "我們替品牌發言要擋稿");
 
 // 二、把虛構人物寫成親身接觸過的真實客戶
 assert.ok(fictionAsRealClient("她跟我說那天其實很平靜。").length, "她跟我說要抓出來");

@@ -151,8 +151,10 @@ export function vagueResearchClaim(text: string): string {
  * 另外放行主題標籤（#平衡空間）與行尾、引號收尾，這些不是在發言。
  * 合法用法本身也有上限：全文最多出現一次（主題標籤不計）。
  */
-const BRAND_OK_BEFORE = /[在到來去找是進]$/;
-const BRAND_OK_AFTER = /^(的|」|』|）|\)|\n|$)/;
+const BRAND_OK_BEFORE = /[在到來去找是進]\s*$/;
+// 後面緊接空白也放行：品牌縮寫展開之後會留下空格（「ABL 信息場調和」→「艾伯林量子調頻 信息場調和」），
+// 那是排版殘留不是發言。2026-11-26 這條規則提升成擋稿之後，不放行會變成實際的誤擋。
+const BRAND_OK_AFTER = /^(的|」|』|）|\)|\n|\s|$)/;
 
 export interface BrandSubjectHit {
   /** 違規片段，用來顯示與回饋給 AI */
@@ -329,7 +331,12 @@ export function checkFormat(text: string, platform: GatePlatform): GateIssue[] {
   if (BRAND_ABBREV.test(body)) issues.push({ level: "warn", code: "brand_abbrev", message: "出現品牌縮寫（ABL、NAS、I8），對外請用全名" });
   BRAND_ABBREV.lastIndex = 0;
   const voice = brandSubjectHits(body);
-  if (voice.length) issues.push({ level: "warn", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0].snippet}」），請改成艾瑞克的第一人稱或客觀陳述` });
+  // 2026-11-26 從警告提升成擋下。
+  // 原本列為警告，是怕既有已排程的舊稿整批發不出去。實際量過：待發的 FB、IG、Threads
+  // 共 256 筆，命中 0 筆，所以沒有這個風險。真正的代價在官網文章，268 篇裡有 18 篇命中。
+  // 但維持警告更糟：這種文章會通過品管上線，然後編輯 AI 把三個平台一起擋下，一篇都發不出去。
+  // 改成擋下之後，官網文章生不出來，FB、IG、Threads 照常發，損失小很多。
+  if (voice.length) issues.push({ level: "block", code: "brand_voice", message: `品牌名稱不可當主詞發言（例如「${voice[0].snippet}」），請改成艾瑞克的第一人稱或客觀陳述` });
   if (MARKDOWN.test(body)) issues.push({ level: "block", code: "markdown", message: "含有 Markdown 符號，社群平台不支援" });
   if (body.length > limit) issues.push({ level: "block", code: "too_long", message: `超過 ${platform} 字數上限 ${limit}（目前 ${body.length}）` });
   return issues;
@@ -448,7 +455,8 @@ export function runQualityGate(text: string, options: GateOptions): GateIssue[] 
     if (titleIssue) issues.push({ level: "warn", code: "title_readability", message: titleIssue });
   }
   const weSpeak = brandWeSpeak(text, options.brandId);
-  if (weSpeak.length) issues.push({ level: "warn", code: "brand_we", message: `用「我們」替品牌發言：${weSpeak.slice(0, 2).join("｜")}` });
+  // 2026-11-26 一起從警告提升成擋下，理由同 brand_voice。
+  if (weSpeak.length) issues.push({ level: "block", code: "brand_we", message: `用「我們」替品牌發言：${weSpeak.slice(0, 2).join("｜")}` });
   const witness = fictionAsRealClient(text);
   if (witness.length) issues.push({ level: "warn", code: "fiction_as_client", message: `把人物寫成親身接觸過的真實個案：${witness.slice(0, 2).join("｜")}。人物可以虛構，但不可以說成真實客戶` });
   if (options.master && options.platform !== "facebook") issues.push(...checkConsistency(options.master, text));
@@ -480,8 +488,8 @@ export interface VoiceReport {
 /**
  * 說話的人專用報告，給編輯 AI（Paperclip）與 n8n 用。
  *
- * 發布閘把 brand_voice 列為 warn，是為了不讓既有已排程的舊稿整批發不出去；
- * 但審稿階段這條是必改項，所以另外給一份獨立報告，審稿端只要看 hits 是不是空的。
+ * 2026-11-26 起發布閘已把 brand_voice 列為 block（量過待發佇列 256 筆命中 0 筆，沒有舊稿風險）。
+ * 審稿階段仍然需要這份獨立報告，審稿端只要看 hits 是不是空的。
  */
 export function voiceReport(text: string, brandId?: string): VoiceReport {
   const body = String(text || "");

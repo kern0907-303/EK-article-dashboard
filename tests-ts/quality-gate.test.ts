@@ -69,21 +69,27 @@ assert.ok(fixed.fixes.length >= 3);
 assert.deepEqual(applyMechanicalFixes(good), { text: good, fixes: [] });
 
 // 單一入口：實例全文一次處理
-const failing = enforceCopyRules("ABL 信息場調和幫你。\n一位女性，我們叫她 Joanna，每天很累。\n\n（故事情境為示意）", "facebook");
+// 品牌名只當地點，不當主詞（當主詞 2026-11-26 起會擋稿，另有測試涵蓋）
+const failing = enforceCopyRules("在 ABL 信息場調和的現場。\n一位女性，我們叫她 Joanna，每天很累。\n\n（故事情境為示意）", "facebook");
 assert.ok(!/故事情境為示意|ABL/.test(failing.text));
 // 故事與人名是允許的寫法，不會被擋
 assert.equal(failing.blockers.length, 0);
 assert.ok(failing.text.includes("Joanna"));
 assert.equal(enforceCopyRules(good, "facebook").blockers.length, 0);
 
-// 次要問題只提醒、不擋稿：品牌當主詞、重複段落、母稿沒有的數字、普通的【】
+// 品牌當主詞 2026-11-26 起是擋稿項（說話的人規範）。
+// 其餘次要問題仍然只提醒：重複段落、母稿沒有的數字、普通的【】
 const levelOf = (issues: { code: string; level: string }[], code: string) => issues.find((issue) => issue.code === code)?.level;
-assert.equal(levelOf(checkFormat("艾伯林量子調頻陪你走過每一天。" + good, "facebook"), "brand_voice"), "warn");
+assert.equal(levelOf(checkFormat("艾伯林量子調頻陪你走過每一天。" + good, "facebook"), "brand_voice"), "block");
 assert.equal(levelOf(checkGarbled(good + "\n" + good), "duplicate_line"), "warn");
 assert.equal(levelOf(checkConsistency(master, "客戶做了28年的生意，每天忙到凌晨。"), "new_numbers"), "warn");
 assert.ok(!codes(checkGarbled(good + "【小提醒】")).includes("placeholder"));
 assert.ok(codes(checkGarbled(good + "【需補：案例】")).includes("placeholder"));
-assert.equal(enforceCopyRules("艾伯林量子調頻陪你走過每一天。" + good, "facebook").blockers.length, 0);
+// 2026-11-26 起品牌當主詞是擋稿項，同一句話在這裡也要被擋
+assert.ok(enforceCopyRules("艾伯林量子調頻陪你走過每一天。" + good, "facebook").blockers.some((i) => i.code === "brand_voice"));
+// 品牌名當地點或服務名稱仍然放行
+assert.equal(enforceCopyRules("我在艾伯林量子調頻帶過一個案子。" + good, "facebook").blockers.length, 0);
+assert.equal(enforceCopyRules("艾伯林量子調頻的做法是先看狀態。" + good, "facebook").blockers.length, 0);
 
 // 2026-10-30 回歸案例：ABL 排到「【長照的兩種放手，承認有限不等於放棄】」，
 // 整個標題被【】包住。那是批次提示詞樣板的格式被模型抄進標題，不是標題的一部分，

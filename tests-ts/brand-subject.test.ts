@@ -56,15 +56,18 @@ assert.equal(rewriteBrandSubject("我在平衡空間帶過一個案子。", "nas
 assert.equal(rewriteBrandSubject("平衡空間的生命數字很準。", "nas").text, "平衡空間的生命數字很準。");
 assert.equal(rewriteBrandSubject("#平衡空間", "nas").text, "#平衡空間");
 
-// 品管仍會回報（維持 warn，不讓既有排程整批發不出去）
+// 2026-11-26 從 warn 提升成 block。
+// 原本維持 warn 是怕既有排程整批發不出去，實際量過待發的 FB、IG、Threads 共 256 筆命中 0 筆。
+// 維持警告的代價更大：文章會通過品管上線，然後編輯 AI 把三個平台一起擋下。
 const reported = checkFormat("平衡空間想在這裡停一下，問一個問題。", "facebook");
 const voice = reported.find((issue) => issue.code === "brand_voice");
 assert.ok(voice, "品管要回報 brand_voice");
-assert.equal(voice!.level, "warn");
+assert.equal(voice!.level, "block");
 
-// 審稿端點（Paperclip）：品牌當主詞要升級成必改項，所以 passed 會是 false
+// 審稿端點（Paperclip）：品牌當主詞是必改項，所以 passed 會是 false
 const bad = enforceCopyRules("平衡空間想在這裡停一下，問一個問題。這一段是為了讓你看清楚自己現在卡在哪裡，而不是急著找方法。", "facebook");
-assert.deepEqual(bad.blockers, [], "不該變成發布閘的 blocker，否則既有排程會整批發不出去");
+// 2026-11-26 起這條同時是發布閘的擋稿項，不再只是審稿端的必改項
+assert.ok(bad.blockers.some((issue) => issue.code === "brand_voice"), "品牌當主詞要擋稿");
 assert.ok(bad.voice.hits.length > 0, "voice.hits 要抓到");
 assert.ok(!bad.voice.suggestion.includes("平衡空間想"), "suggestion 要是修好的版本");
 
