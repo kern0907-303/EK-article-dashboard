@@ -24,6 +24,8 @@ import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { getCitationName } from "@/data/skills/story-argument";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
+import { checkNumerologyText, findFactItem, NUMEROLOGY_GENRE_ID, NUMEROLOGY_STRUCTURES, numerologyNote, pickNumerologyStructure, readNumerologyNote } from "@/data/skills/numerology-compare";
+import { flowBrandFrom } from "@/data/skills/flow-structures";
 import { buildExampleRewritePrompt } from "@/data/skills/example-rewrite-prompt";
 import { allowedCitationFromMaster, brandVoiceSentences } from "@/lib/auto-multiplatform";
 import { pipelineDb } from "@/lib/auto-pipeline-server";
@@ -170,6 +172,21 @@ export async function recentStyleHistory(brandId: string, excludeJobId?: string,
 }
 
 /**
+ * 同品牌這一篇之前最近 9 篇：每篇是不是數字對照、用了事實表哪一項。由近到遠。
+ * 讀不到就當作沒有，不影響生成。
+ */
+export async function recentNumerologyHistory(brandId: string, excludeJobId?: string, aroundIso?: string | null): Promise<{ flags: boolean[]; items: Array<string | null> }> {
+  try {
+    const exclude = excludeJobId ? `&id=neq.${encodeURIComponent(excludeJobId)}` : "";
+    const around = aroundIso && Number.isFinite(new Date(aroundIso).getTime()) ? `&scheduled_at=lte.${encodeURIComponent(new Date(aroundIso).toISOString())}` : "";
+    // 多取一些：比例只看最近兩篇，事實表要避開的是最近 9 篇「數字對照」用過的項目
+    const rows = await pipelineDb<Array<{ warnings: unknown }>>("auto_pipeline_jobs", `brand_id=eq.${encodeURIComponent(brandId)}&draft_content=not.is.null&status=neq.cancelled${exclude}${around}&order=scheduled_at.desc&limit=40&select=warnings`);
+    const notes = rows.map((row) => readNumerologyNote(row.warnings));
+    return { flags: notes.map(Boolean), items: notes.filter((id): id is string => Boolean(id)).slice(0, 9) };
+  } catch { return { flags: [], items: [] }; }
+}
+
+/**
  * 這一篇要不要給書。艾瑞克的規則是「不用每篇都有引用」。
  * 前面最近兩篇只要有一篇引用過，這篇就不給書，大約三篇引用一次。
  * 題目明確寫了【引用】就一定給；寫了【不引用】就一定不給。
@@ -181,7 +198,7 @@ export function shouldOfferCitation(prompt: string, cites: boolean[] | undefined
   return !(cites || []).slice(0, 2).some(Boolean);
 }
 
-export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; structure: string; directive: string }
+export interface StylePlan { titleStyle: TitleStyleId; openingStyle: OpeningStyleId; amplifier: AmplifierId; structure: string; directive: string; genre?: ReturnType<typeof readGenreFromPrompt> }
 
 /** 決定這一篇用哪個標題型與開場型，並組出附加指令。題目階段指定的優先。 */
 export function planStyles(prompt: string, seed: string, history: StyleHistory, brandId = ""): StylePlan {
@@ -192,11 +209,17 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory, 
   const openingStyle = readOpeningStyleFromPrompt(prompt) || pickOpeningStyle(history.openings, seed, hasMaterial);
   // 標題強化手法：Schwartz 的 38 種挑出 14 種，疊在標題型上面加力道，一次只用一個
   const amplifier = readAmplifierFromPrompt(prompt) || pickAmplifier(history.amplifiers, seed, titleStyle);
-  const genre = readGenreFromPrompt(prompt);
+  // 數字對照只開放平衡空間：其他品牌的題目就算寫了也當作沒指定文體
+  const promptGenre = readGenreFromPrompt(prompt);
+  const genre = promptGenre === NUMEROLOGY_GENRE_ID && flowBrandFrom(brandId || prompt) !== "nas" ? null : promptGenre;
   // 流量結構（2026-11-13）：每篇都照 22 型之一寫。題目指定的優先，否則依品牌與文體輪替。
   // 結構本身就規定了開場，所以只有題目明確指定開場型時才保留開場型指令，避免兩套開場互相打架。
   const explicitOpening = Boolean(readOpeningStyleFromPrompt(prompt));
-  const structure = readFlowStructureFromPrompt(prompt) || pickFlowStructure({
+  // 數字對照只在 J3、J4、J5、D1、D5、C5、C7 之間輪替，避開最近 3 篇用過的型
+  // 題目指定的結構不在七型之內時，數字對照不採用
+  const explicitStructure = readFlowStructureFromPrompt(prompt);
+  const usableExplicit = genre === NUMEROLOGY_GENRE_ID && explicitStructure && !(NUMEROLOGY_STRUCTURES as readonly string[]).includes(explicitStructure) ? null : explicitStructure;
+  const structure = usableExplicit || (genre === NUMEROLOGY_GENRE_ID ? pickNumerologyStructure(history.structures || [], seed) : null) || pickFlowStructure({
     brand: brandId || prompt,
     genre,
     recent: history.structures || [],
@@ -204,7 +227,7 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory, 
     hasMaterial,
   });
   return {
-    titleStyle, openingStyle, amplifier, structure,
+    titleStyle, openingStyle, amplifier, structure, genre,
     directive: [
       buildTitleDirective(titleStyle, amplifier),
       explicitOpening ? buildOpeningDirective(openingStyle, titleStyle) : "",
@@ -304,6 +327,11 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
 
   // 案例文本來就是寫真實個案，第一人稱見證句是對的；其他文體的人物是虛構的，不可以這樣寫
   const allowsRealClient = readGenreFromPrompt(prompt) === "case";
+  // 數字對照另外檢查事實表的紅線（命定、外遇、連結、價格、照抄範例）。既有檢查照常全部套用。
+  const isNumerology = plan.genre === NUMEROLOGY_GENRE_ID;
+  const numerologyBlocks = (text: string): string[] => isNumerology
+    ? checkNumerologyText(text).filter((issue) => issue.level === "block").map((issue) => issue.message)
+    : [];
   // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試三次，仍不過才做機械式修正
   for (let attempt = 0; attempt < 3; attempt++) {
     const offending = brandVoiceSentences(draft, brandId);
@@ -314,7 +342,8 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     // 三個短句黏成一串；正文「她對我說，走出大門坐上計程車的那一刻」把虛構人物說成真實個案。
     const titleIssue = hardToReadTitle(draft);
     const witness = allowsRealClient ? [] : fictionAsRealClient(draft);
-    if (!offending.length && !hardHits.length && !badCites.length && !titleIssue && !witness.length) break;
+    const numerologyHits = numerologyBlocks(draft);
+    if (!offending.length && !hardHits.length && !badCites.length && !titleIssue && !witness.length && !numerologyHits.length) break;
     // 修改模式：只送上一版全文與問題清單，不再把整包提示詞與書籍筆記重送一次，
     // 並且跳過 Iris、改用便宜模型。重寫是照指示改句子，不是重新創作。
     const problems = [
@@ -323,6 +352,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
       ...hardHits,
       ...(titleIssue ? [`標題不好讀：${titleIssue}`] : []),
       ...witness.map((line) => `把虛構人物寫成我親身接觸過的真實個案：${line}。改回第三人稱，不要出現她跟我說、她告訴我這類句型`),
+      ...numerologyHits,
     ];
     const revised = await retry(async () => {
       const result = await callErickCOO([], brandName, await getPipelineProvider(), "expert", "maya_iris", {
@@ -390,7 +420,14 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
     : uncited.length
     ? `引用有問題：${uncited.join("、")}。引經據典只能用知識庫裡的書，書名與作者一律用中文，請重新生成`
-    : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`)].join("；");
+    : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`), ...numerologyBlocks(draft).map((message) => `數字對照：${message}`)].join("；");
+  if (isNumerology) {
+    styleNotes.unshift("本篇文體：數字對照（骨子來自事實表，不用每週調研的選題）");
+    // 記下這篇用了事實表哪一項：下一篇輪替（避開最近 9 篇）與成效追蹤都讀這一行
+    const factItem = findFactItem(String(prompt).match(/事實表「([^」]+)」/)?.[1] || "");
+    if (factItem) styleNotes.unshift(numerologyNote(factItem));
+    styleNotes.push(...checkNumerologyText(draft).filter((issue) => issue.level === "warn").map((issue) => `數字對照提醒：${issue.message}`));
+  }
 
   return {
     draft, postReminders, styleNotes,

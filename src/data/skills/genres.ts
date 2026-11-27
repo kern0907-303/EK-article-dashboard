@@ -4,10 +4,11 @@
 
 import { buildEntryBridgePrompt } from "./entry-bridge";
 import { src, type RuleSource } from "./rule-source";
+import { buildNumerologyItemDirective, buildNumerologySkeleton, findFactItem, NUMEROLOGY_FACTS, pickFactItem } from "./numerology-compare";
 
 export const PROMPT_VERSION = "genre-v4";
 
-export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan";
+export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology";
 export type FunnelLevel = "cold" | "warm" | "hot";
 export type BrandKey = "erick" | "nas" | "abl" | "i8";
 
@@ -43,6 +44,10 @@ export interface GenreDef {
   skeleton: string;
   /** 這個文體哪裡來的 */
   source?: RuleSource;
+  /** 只開放給這些品牌；沒寫代表四個品牌都可以用 */
+  brands?: BrandKey[];
+  /** 主張可以留空（由系統依文體自己決定論點） */
+  claimOptional?: boolean;
 }
 
 export const FUNNEL_LABEL: Record<FunnelLevel, string> = {
@@ -448,9 +453,32 @@ export const GENRES: Record<GenreId, GenreDef> = {
 「我剛開始」本身就是最強的誠實揭露，不要掩蓋。
 常見失敗：中段就開始介紹服務，前面的狀態鋪墊太短。`,
   },
+  numerology: {
+    id: "numerology",
+    name: "數字對照",
+    enabled: true,
+    brands: ["nas"],
+    claimOptional: true,
+    lengthRange: [450, 1100],
+    when: "平衡空間專用。讀者看完能當場用生日對照自己或身邊的人。骨子從事實表挑一項，不吃每週調研的選題。",
+    materialLabel: "事實表項目（留空由系統挑）",
+    materialRequired: false,
+    source: src("erickNumerology", "事實表、寫作規則與三篇範例"),
+    materialHint: `可填：${NUMEROLOGY_FACTS.map((item) => item.label).join("、")}。留空由系統挑一項。`,
+    skeleton: buildNumerologySkeleton(),
+  },
 };
 
-export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.response];
+export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.numerology, GENRES.response];
+
+/** 這個品牌可以用的文體（數字對照只有平衡空間） */
+export function genreAllowedForBrand(id: GenreId, brandKey: BrandKey): boolean {
+  const brands = GENRES[id]?.brands;
+  return !brands || brands.includes(brandKey);
+}
+export function genresForBrand(brandKey: BrandKey): GenreDef[] {
+  return GENRE_LIST.filter((g) => genreAllowedForBrand(g.id, brandKey));
+}
 
 /** 從提示詞裡讀出 n8n 指定的文體（【本篇文體】拆解文） */
 export function readGenreFromPrompt(prompt: string): GenreId | null {
@@ -478,6 +506,8 @@ export function buildGenreDirective(id: GenreId): string {
 /** 組出送給 Maya 的完整提示詞（四層串接 + 輸出格式） */
 export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
   const g = GENRES[s.genre];
+  if (!genreAllowedForBrand(s.genre, brandKey)) throw new Error(`${g.name}只開放給平衡空間`);
+  if (s.genre === "numerology") return buildNumerologyGenrePrompt(brandKey, s);
   const lengthLine = s.length.trim() || `${g.lengthRange[0]} 到 ${g.lengthRange[1]} 字（照文體建議）`;
   const variables = [
     "【本篇變數】",
@@ -507,6 +537,35 @@ export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
 {
   "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。本文不可出現【需補】、待補或任何提醒字樣，缺素材的地方用泛稱情境帶過。",
   "post_reminders": ["發文前建議補上的真實素材，每項一句話，說明在第幾段補什麼。不需要補就給空陣列。這些提醒會顯示在文章外面，不會被發出去。"]
+}`,
+  ].join("\n\n");
+}
+
+/**
+ * 數字對照的完整提示詞（主工作區用）。
+ * 不套入口橋接（文章內不放連結、LINE、價格），也不吃選題的主張：論點來自事實表的一項。
+ */
+function buildNumerologyGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
+  const item = findFactItem(s.material) || pickFactItem([], `${s.claim}|${s.material}|${Date.now()}`);
+  const variables = [
+    "【本篇變數】",
+    s.claim.trim() ? `想讓讀者帶走的一句話（可參考，仍以事實表為準）：${s.claim.trim()}` : "主張：由你從本篇骨子自己決定一句話。",
+    buildNumerologyItemDirective(item),
+    s.metaphor.trim() ? `比喻：${s.metaphor.trim()}` : "比喻：使用者未指定，可自行選一個生活比喻。",
+    `長度：${s.length.trim() || "450 到 1100 字"}`,
+    "CTA：全文不放 CTA、不放連結、不放加 LINE、不放價格。",
+  ].join("\n");
+  return [
+    SHARED_PREFIX,
+    BRAND_TONES[brandKey],
+    FUNNEL_RULES[s.funnel],
+    GENRES.numerology.skeleton,
+    variables,
+    `### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
+{
+  "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。本文不可出現【需補】、待補或任何提醒字樣。",
+  "post_reminders": ["發文前建議核對的地方，例如算例的加總。不需要就給空陣列。"]
 }`,
   ].join("\n\n");
 }

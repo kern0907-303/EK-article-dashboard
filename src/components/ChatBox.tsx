@@ -8,7 +8,7 @@ import { ChatMessage, subscribeToChat, saveChatMessage, saveWorkspace, clearChat
 import { COPYWRITING_FRAMEWORKS } from "@/data/skills/frameworks";
 import { getWritingFrameworkOptions, getCitationName, getStoryArgumentSelectionError, isStoryArgumentCitationEligible, resolveStoryArgumentSelection, STORY_ARGUMENT_FRAMEWORK_ID, STORY_ARGUMENT_GENRE_NOTICE, STORY_ARGUMENT_VERSION_OPTIONS, STORY_ARGUMENT_CITATION_OPTIONS, KNOWLEDGE_DOMAIN_LABELS, type StoryArgumentVersion, type StoryArgumentCitationMode, type StoryArgumentSelection } from "@/data/skills/story-argument";
 import type { KnowledgeNoteDirectoryEntry } from "@/lib/knowledge-note-utils";
-import { GENRE_LIST, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
+import { genreAllowedForBrand, genresForBrand, GENRES, FUNNEL_LABEL, brandKeyFromId, type GenreId, type FunnelLevel, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { parsePastedTopics, materialFor, type PastedBundle, type PastedTopic } from "@/lib/topic-parse";
 import Button from "@/components/ui/Button";
 import { findTextMismatch, describeMismatch, GUARD_BRAND_LABEL, type BrandMismatch } from "@/lib/brand-guard";
@@ -66,6 +66,10 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   const brandOverrideRef = useRef(false);
   const currentBrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
   const guardBody = () => ({ brandKey: currentBrandKey, confirmBrandMismatch: brandOverrideRef.current });
+  // 數字對照只開放平衡空間：切到別的品牌時文體退回案例文，選單裡也不會出現
+  useEffect(() => {
+    if (!genreAllowedForBrand(genreId, currentBrandKey)) setGenreId("case");
+  }, [currentBrandKey, genreId]);
   const validateStoryArgumentSelection = () => {
     const selection = resolveStoryArgumentSelection(activeFramework, storyArgumentVersion, storyArgumentThesis, storyCitationMode, selectedKnowledgeNoteId);
     let error = getStoryArgumentSelectionError(selection);
@@ -473,7 +477,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
   // 把一個選題填進文體生成表單
   const applyPastedTopic = (t: PastedTopic, bundle: PastedBundle) => {
     const notes: string[] = [];
-    const g: GenreId = t.genre && GENRES[t.genre].enabled ? t.genre : genreId;
+    const g: GenreId = t.genre && GENRES[t.genre].enabled && genreAllowedForBrand(t.genre, currentBrandKey) ? t.genre : genreId;
     if (!t.genre) notes.push("沒有看到建議文體，文體維持你原本的選擇。");
     setGenreId(g);
     if (t.funnel) setFunnel(t.funnel);
@@ -521,7 +525,11 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       setGenreError(`${def.name}${def.disabledReason ? "：" + def.disabledReason : "尚未開放"}`);
       return;
     }
-    if (!gClaim.trim()) {
+    if (!genreAllowedForBrand(genreId, currentBrandKey)) {
+      setGenreError(`${def.name}只開放給平衡空間，請先切換品牌。`);
+      return;
+    }
+    if (!gClaim.trim() && !def.claimOptional) {
       setGenreError("請填「主張」：這篇文章要讓讀者接受的那一件事，一句話。");
       return;
     }
@@ -562,11 +570,12 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       cta: gCta,
     };
     const brandKey: BrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
+    const claimText = gClaim.trim() || (genreId === "numerology" ? `數字對照：${gMaterial.trim() || "由系統從事實表挑一項"}` : "");
     const subPrompts = {
-      maya: gClaim.trim(),
-      iris: `這篇文章的主張是：${gClaim.trim()}。請據此規劃關鍵字與問答，不得編造文章沒有的事實。`,
-      leon: `為這篇文章設計對應的網頁結構。主張：${gClaim.trim()}`,
-      jack: `為這篇文章估算廣告素材方向與指標。主張：${gClaim.trim()}`,
+      maya: claimText,
+      iris: `這篇文章的主張是：${claimText}。請據此規劃關鍵字與問答，不得編造文章沒有的事實。`,
+      leon: `為這篇文章設計對應的網頁結構。主張：${claimText}`,
+      jack: `為這篇文章估算廣告素材方向與指標。主張：${claimText}`,
     };
 
     abortControllerRef.current = new AbortController();
@@ -579,7 +588,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
 
     await saveChatMessage(activeBrandId, {
       role: "user",
-      content: `【文體生成】${def.name}｜${FUNNEL_LABEL[funnel]}｜主張：${gClaim.trim()}`,
+      content: `【文體生成】${def.name}｜${FUNNEL_LABEL[funnel]}｜主張：${claimText}`,
     });
     await saveChatMessage(activeBrandId, {
       role: "assistant",
@@ -1090,7 +1099,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                   onChange={(e) => { const next = e.target.value as GenreId; setGenreId(next); setGenreError(""); if (next === "fan") setFunnel("hot"); }}
                   className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
-                  {GENRE_LIST.map((g) => (
+                  {genresForBrand(currentBrandKey).map((g) => (
                     <option key={g.id} value={g.id} disabled={!g.enabled}>
                       {g.name}{g.enabled ? "" : "（未啟用）"}
                     </option>
@@ -1112,7 +1121,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             </div>
             <div className="text-[10px] text-slate-500 leading-relaxed">{GENRES[genreId].when}</div>
             <label className="block text-xs sm:text-[10px] text-slate-400">
-              主張（必填）：這篇要讓讀者接受的那一件事，一句話
+              {GENRES[genreId].claimOptional ? "主張（選填，留空由系統依事實表決定）" : "主張（必填）"}：這篇要讓讀者接受的那一件事，一句話
               <input
                 value={gClaim}
                 onChange={(e) => setGClaim(e.target.value)}

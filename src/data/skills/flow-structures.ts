@@ -14,7 +14,7 @@ export const FLOW_STRUCTURE_VERSION = "flow-v1";
 export type FlowFamily = "jemmy" | "domy" | "chiukaun";
 export type FlowBrand = "nas" | "abl" | "i8" | "erick";
 /** 與 genres.ts 的 GenreId 相同，這裡不 import 以免循環相依 */
-export type FlowGenre = "case" | "breakdown" | "response" | "invite" | "fan";
+export type FlowGenre = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology";
 
 export const FAMILY_LABEL: Record<FlowFamily, string> = {
   jemmy: "Jemmy 系（快、爆、人物故事）",
@@ -94,7 +94,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J3: {
     id: "J3", family: "jemmy", name: "反常識宣言",
     use: "推翻讀者習以為常的說法。",
-    brands: ["nas", "abl", "i8", "erick"], genres: ["breakdown"], length: [900, 1800],
+    brands: ["nas", "abl", "i8", "erick"], genres: ["breakdown", "numerology"], length: [900, 1800],
     sourceMove: "標題直接下宣言；第一句把宣言說得更狠；拆掉原本的定義；一個小故事；一個極端例子；最後一句幾乎重複第一句。",
     erickTwist: "平衡空間與艾伯林量子調頻不說「你沒資格」，改成「你不是 A，你只是還沒 B」；初八企業顧問可以直接一點。",
     checkpoints: [
@@ -109,7 +109,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J4: {
     id: "J4", family: "jemmy", name: "讀者提問直接回答",
     use: "回應一個常被問的問題，給明確答案。",
-    brands: ["nas", "abl", "i8"], genres: ["invite", "breakdown"], length: [800, 1600],
+    brands: ["nas", "abl", "i8"], genres: ["invite", "breakdown", "numerology"], length: [800, 1600],
     sourceMove: "先引用提問，下一行用極短的一句直接回答，再講原則、給比喻，最後把核心句連寫三行。",
     erickTwist: "提問用常見的問題型態（不寫成真實某人的原話），平衡空間最好用；艾伯林量子調頻回答時照頻率的對外定調。",
     checkpoints: [
@@ -123,7 +123,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J5: {
     id: "J5", family: "jemmy", name: "等級階梯",
     use: "把一件事分成幾個等級，讓讀者對號入座。",
-    brands: ["nas", "i8", "abl"], genres: ["breakdown"], length: [1200, 2200],
+    brands: ["nas", "i8", "abl"], genres: ["breakdown", "numerology"], length: [1200, 2200],
     sourceMove: "標題寫「X 的 N 種等級」，開頭先列出全部等級（含一個最底的等級 0），每一級用小標配一個小故事，最後回頭點破等級 0。",
     erickTwist: "等級用艾瑞克領域的事：看懂自己數字的等級、面對卡點的等級、老闆看報表的等級。",
     checkpoints: [
@@ -179,7 +179,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   D1: {
     id: "D1", family: "domy", name: "概念拆分",
     use: "兩個大家混在一起講的概念，把它們分開。",
-    brands: ["nas", "i8"], genres: ["breakdown"], length: [1400, 2500],
+    brands: ["nas", "i8"], genres: ["breakdown", "numerology"], length: [1400, 2500],
     sourceMove: "用一個想通的洞察開場，接自己的困惑（一組短問句）；先講 A 並用日常類比，戳破「整理得很漂亮但一問就答不出來」；再講 B 是另一回事；給四步骨架；寫做到後會變怎樣；一句對照句收尾。",
     erickTwist: "開場用「我最近想通一件事」這類自己的說法；例子用艾瑞克的領域，例如「知道自己的數字」不等於「看懂自己的數字」。",
     checkpoints: [
@@ -239,7 +239,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   D5: {
     id: "D5", family: "domy", name: "比喻分層",
     use: "用一個大家熟的比喻，把一件事分成兩層。",
-    brands: ["nas", "abl"], genres: ["breakdown"], length: [1200, 2200],
+    brands: ["nas", "abl"], genres: ["breakdown", "numerology"], length: [1200, 2200],
     sourceMove: "生活、武俠或遊戲比喻開場，接「那這件事是否也這樣？有。答案是…」；兩個世界（第二層是多數人沒踏進去的）；自己以前很笨的小故事；一個心理或學習原理；最後列高手會問的幾個問題。",
     erickTwist: "比喻用艾瑞克自己會用的（見診斷方法與慣用比喻），不用源頭的武俠越級例子。",
     checkpoints: [
@@ -344,7 +344,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   C5: {
     id: "C5", family: "chiukaun", name: "循環剖析",
     use: "發現一個重複發生的模式，把它拆成一個循環。",
-    brands: ["i8", "abl", "nas"], genres: ["breakdown"], length: [900, 1800],
+    brands: ["i8", "abl", "nas"], genres: ["breakdown", "numerology"], length: [900, 1800],
     sourceMove: "「我發現 A 跟之前的 B 有一個共同模式」開場，用 ⇨ 寫出五步循環，問「怎麼解」並給一個反直覺的解法，用三個不同領域各一行說明，借一個外來概念加強，延伸一層新理解。",
     erickTwist: "循環用艾瑞克領域的：老闆的停滯循環、數字的功課循環、越努力越累的循環。",
     checkpoints: [
@@ -373,7 +373,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   C7: {
     id: "C7", family: "chiukaun", name: "哲理短章",
     use: "一句話加一個動作比喻，寫一段快速轉念。300 到 600 字。",
-    brands: ["abl", "nas"], genres: ["fan"], length: [300, 600],
+    brands: ["abl", "nas"], genres: ["fan", "numerology"], length: [300, 600],
     sourceMove: "第一行是一句用引號包起來的話，接一個動作比喻並說明為什麼會輸，停下來會發生什麼，一個用詞的轉換（從「我想要」到「我願意」），最後一行只有幾個字。",
     erickTwist: "比喻換成艾瑞克的；用詞轉換可以用平衡空間或艾伯林量子調頻的核心語言。",
     checkpoints: [

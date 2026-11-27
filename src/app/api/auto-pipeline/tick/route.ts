@@ -9,7 +9,9 @@ import { runAutoRedo } from "@/lib/auto-redo";
 import { isMultiplatformEnabled, runMultiplatform, summarize } from "@/lib/auto-multiplatform";
 import { resolveExperimentArm, type ExperimentAssignment } from "@/lib/experiment-server";
 import { getProjectGuidelines } from "@/lib/projects-server";
-import { amplifierNote, structureNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
+import { amplifierNote, structureNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentNumerologyHistory, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
+import { buildNumerologyJobPrompt, explicitNumerology, pickFactItem, pickNumerologyStructure, shouldUseNumerology } from "@/data/skills/numerology-compare";
+import { cancelDuplicateSocialRows } from "@/lib/social-dedupe-server";
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.AUTO_PIPELINE_CRON_SECRET || "";
@@ -75,6 +77,14 @@ export async function POST(req: NextRequest) {
   // 包在 try 裡面是故意的：復原失敗絕對不可以害主流程停掉，寧可這次沒補到，
   // 待處理中心的「有平台還沒補草稿」仍然會把它撈出來讓人看到。
   let redo: Awaited<ReturnType<typeof runAutoRedo>> = null;
+  // 同一篇母文章在同一個 Threads 或 IG 帳號只能有一則：還沒發出的重複排程先取消，只留和母文章綁定的那一版。
+  // 一樣包在 try 裡，清理失敗不影響主流程（資料庫的唯一索引仍會擋新的重複寫入）。
+  try {
+    const dedupe = await cancelDuplicateSocialRows(env);
+    if (dedupe.cancelled.length) console.info("[auto-pipeline] cancelled duplicate social rows", JSON.stringify(dedupe));
+  } catch (e) {
+    console.warn("[auto-pipeline] duplicate social cleanup failed", e instanceof Error ? e.message : e);
+  }
   try {
     redo = await runAutoRedo(env);
     if (redo) console.info("[auto-pipeline] auto redo", JSON.stringify(redo));
@@ -98,10 +108,27 @@ export async function POST(req: NextRequest) {
     const history = await recentStyleHistory(String(job.brand_id), String(job.id), job.scheduled_at ? String(job.scheduled_at) : null);
     // 屬於階段專案的題目，附上雲端的專案事實表（查不到就照原流程）
     const projectGuidelines = await getProjectGuidelines(job.project_id ? String(job.project_id) : "");
+    // 數字對照（平衡空間，到 NUMEROLOGY_SCHEDULE.until 為止）：每三篇排一篇。
+    // 排到的那一篇不用每週調研的選題，改從事實表輪替挑一項當骨子。
+    let prompt = String(job.prompt);
+    let numerologyNotes: string[] = [];
+    if (String(job.brand_id) === "nas") {
+      const numerologyHistory = await recentNumerologyHistory("nas", String(job.id), job.scheduled_at ? String(job.scheduled_at) : null);
+      if (!explicitNumerology(prompt) && shouldUseNumerology({ brandId: "nas", prompt, projectId: job.project_id ? String(job.project_id) : null, scheduledAt: job.scheduled_at ? String(job.scheduled_at) : null, recentFlags: numerologyHistory.flags })) {
+        const item = pickFactItem(numerologyHistory.items, String(job.id));
+        const structure = pickNumerologyStructure(history.structures || [], String(job.id));
+        numerologyNotes = [`本篇改排數字對照，原本的題目沒有用：${prompt.replace(/\s+/g, " ").slice(0, 80)}`];
+        prompt = buildNumerologyJobPrompt(item, structure);
+        // 題目存回任務，之後「重新優化」才會照數字對照重寫，不會又變回原本的選題
+        await updateJob(job.id, { prompt }, "generating");
+      }
+    }
+    const isNumerologyJob = explicitNumerology(prompt) && String(job.brand_id) === "nas";
     try {
-      experiment = await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
+      // 數字對照不進成效實驗：實驗一次只改一個變數，換了文體與題目就不是同一組對照
+      experiment = isNumerologyJob ? null : await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await generateFacebookDraft({
-        brandId: String(job.brand_id), prompt: String(job.prompt), seed: String(job.id), history, retry: retryOnce,
+        brandId: String(job.brand_id), prompt, seed: String(job.id), history, retry: retryOnce,
         ...(projectGuidelines ? { projectGuidelines } : {}),
         ...(experiment ? { experimentDirective: experiment.directive } : {}),
         onFirstDraft: (first) => updateJob(job.id, { status: "optimizing", current_step: "自動健檢與 SEO 優化", draft_content: first }, "generating"),
@@ -113,7 +140,7 @@ export async function POST(req: NextRequest) {
       if (negatedHits.length) {
         console.info("[auto-pipeline] guardrail negation pass", JSON.stringify(negatedHits.map(({ word, sentence, category }) => ({ word, sentence, category }))));
       }
-      const warnings = [rulesVersionNote(), amplifierNote(generated.amplifier), structureNote(generated.structure), ...generated.styleNotes, ...postReminders, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`)];
+      const warnings = [rulesVersionNote(), amplifierNote(generated.amplifier), structureNote(generated.structure), ...generated.styleNotes, ...numerologyNotes, ...postReminders, ...generated.warnNotes, ...generated.fixes.map((fix) => `自動修正：${fix}`)];
       const blockedReason = generated.blockedReason;
       if (!await updateJob(job.id, { draft_content: draft, warnings, current_step: blockedReason ? "待人工處理" : "生成與優化完成", ...(blockedReason ? { status: "manual", error_reason: blockedReason } : {}) }, "optimizing")) {
         return NextResponse.json({ success: true, processed: true, status: "cancelled" });

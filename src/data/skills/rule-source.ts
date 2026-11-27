@@ -24,6 +24,7 @@ export const BOOKS = {
   nngroup: { book: "層蛋糕掃描模式研究", author: "Nielsen Norman Group" },
   aeo: { book: "AEO 問句小標規則", author: "業界實務整理" },
   inHouse: { book: "儀表板內部規則", author: "艾瑞克與 Claude" },
+  erickNumerology: { book: "數字對照事實表與寫作規則（2026-11-27）", author: "艾瑞克" },
 } as const satisfies Record<string, { book: string; author: string }>;
 
 export type BookKey = keyof typeof BOOKS;

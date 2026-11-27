@@ -20,6 +20,7 @@ import { pointIgLinkToDm } from "@/lib/derivatives-core.mjs";
 import { robustJSONParse } from "@/lib/ai-provider";
 import { renderCardJpeg } from "@/lib/card-render-server";
 import { completeText, uploadPublicJpeg } from "@/lib/social-image-server";
+import { hasLiveDuplicate } from "@/lib/social-dedupe";
 import { applyMechanicalFixes, brandSubjectHits, brandSubjectSentences, citedBookTitles, gateBlockers, gateMessage, rewriteBrandSubject, runQualityGate, unverifiedCitations } from "@/lib/quality-gate";
 
 export const THREADS_MAX = 500;
@@ -155,18 +156,23 @@ const authHeaders = (env: SupabaseEnv): Record<string, string> => ({
   "Content-Type": "application/json", apikey: env.key, Authorization: `Bearer ${env.key}`, Prefer: "return=representation",
 });
 
-/** 同一個任務、同一個平台已經有待發的列了嗎。寫入前最後一道檢查。 */
-async function alreadyQueued(env: SupabaseEnv, jobId: unknown, platform: string): Promise<boolean> {
+/**
+ * 同一個任務或同一篇官網文章（同一篇母文章）、同一個平台已經有活著的列了嗎。寫入前最後一道檢查。
+ * 2026-11-27 起連 article_id 一起比對：不同任務共用同一篇官網文章時，也算同一篇母文章。
+ */
+async function alreadyQueued(env: SupabaseEnv, jobId: unknown, platform: string, articleId?: unknown, brand?: unknown): Promise<boolean> {
   const id = String(jobId || "");
-  if (!id) return false;
+  const article = String(articleId || "");
+  if (!id && !article) return false;
   try {
+    const or = [id ? `job_id.eq.${id}` : "", article ? `article_id.eq.${article}` : ""].filter(Boolean).join(",");
     const res = await fetch(
-      `${env.url}/rest/v1/social_publish_queue?job_id=eq.${encodeURIComponent(id)}&platform=eq.${encodeURIComponent(platform)}&status=neq.cancelled&select=id&limit=1`,
+      `${env.url}/rest/v1/social_publish_queue?or=(${encodeURIComponent(or)})&platform=eq.${encodeURIComponent(platform)}&status=neq.cancelled&select=id,platform,brand,status,job_id,article_id&limit=20`,
       { headers: authHeaders(env), signal: AbortSignal.timeout(15_000) }
     );
     if (!res.ok) return false;
     const rows = await res.json();
-    return Array.isArray(rows) && rows.length > 0;
+    return Array.isArray(rows) && hasLiveDuplicate(rows, { platform, brand: brand ? String(brand) : null, job_id: id || null, article_id: article || null });
   } catch {
     // 查不到就當作沒有，寧可讓資料庫的唯一索引去擋，也不要因為查詢失敗就不發
     return false;
@@ -184,7 +190,7 @@ async function alreadyQueued(env: SupabaseEnv, jobId: unknown, platform: string)
  */
 async function enqueueSocial(env: SupabaseEnv, row: Record<string, unknown>): Promise<string> {
   const platform = String(row.platform || "");
-  if (await alreadyQueued(env, row.job_id, platform)) {
+  if (await alreadyQueued(env, row.job_id, platform, row.article_id, row.brand)) {
     throw new Error(`${platform} 已經有待發的排程，這次不重複寫入`);
   }
   const attempt = async (body: Record<string, unknown>) =>
