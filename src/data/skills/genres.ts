@@ -5,10 +5,14 @@
 import { buildEntryBridgePrompt } from "./entry-bridge";
 import { src, type RuleSource } from "./rule-source";
 import { buildNumerologyItemDirective, buildNumerologySkeleton, findFactItem, NUMEROLOGY_FACTS, pickFactItem } from "./numerology-compare";
+import {
+  BODY_ENTRY_LAYERS, BODY_ENTRY_SEEDS, buildBodyEntryItemDirective, buildBodyEntrySkeleton, buildFollowThroughSkeleton,
+  findBodyEntrySeed, FOLLOW_THROUGH_ENTRY, FOLLOW_THROUGH_SCENES, pickBodyEntrySeed, rotate,
+} from "./recipe-genres";
 
 export const PROMPT_VERSION = "genre-v4";
 
-export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology";
+export type GenreId = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology" | "bodyEntry" | "followThrough";
 export type FunnelLevel = "cold" | "warm" | "hot";
 export type BrandKey = "erick" | "nas" | "abl" | "i8";
 
@@ -467,11 +471,39 @@ export const GENRES: Record<GenreId, GenreDef> = {
     materialHint: `可填：${NUMEROLOGY_FACTS.map((item) => item.label).join("、")}。留空由系統挑一項。`,
     skeleton: buildNumerologySkeleton(),
   },
+  bodyEntry: {
+    id: "bodyEntry",
+    name: "身體入口",
+    enabled: true,
+    brands: ["abl"],
+    claimOptional: true,
+    lengthRange: [450, 1100],
+    when: "艾伯林量子調頻專用。從一個身體部位的日常不舒服進場，列兩到三種內在對應讓讀者自己對照。每篇只站在七層裡的一層。",
+    materialLabel: "身體部位（留空由系統挑）",
+    materialRequired: false,
+    source: src("erickBodyEntry", "寫作規則、七層與題目種子"),
+    materialHint: `可填：${BODY_ENTRY_SEEDS.map((item) => item.part).join("、")}。留空由系統挑一個。`,
+    skeleton: buildBodyEntrySkeleton(),
+  },
+  followThrough: {
+    id: "followThrough",
+    name: "貫徹",
+    enabled: true,
+    brands: ["i8"],
+    claimOptional: true,
+    lengthRange: [600, 1300],
+    when: "初八企業顧問專用。從公司裡看得到的場面進場，站在老闆這一邊寫貫徹有多難。",
+    materialLabel: "公司場面（留空由系統挑）",
+    materialRequired: false,
+    source: src("erickFollowThrough", "寫作規則與入口句"),
+    materialHint: `可填：${FOLLOW_THROUGH_SCENES.map((item) => item.scene).join("、")}。留空由系統挑一個。`,
+    skeleton: buildFollowThroughSkeleton(),
+  },
 };
 
-export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.numerology, GENRES.response];
+export const GENRE_LIST: GenreDef[] = [GENRES.case, GENRES.breakdown, GENRES.invite, GENRES.fan, GENRES.numerology, GENRES.bodyEntry, GENRES.followThrough, GENRES.response];
 
-/** 這個品牌可以用的文體（數字對照只有平衡空間） */
+/** 這個品牌可以用的文體（數字對照只有平衡空間、身體入口只有艾伯林、貫徹只有初八） */
 export function genreAllowedForBrand(id: GenreId, brandKey: BrandKey): boolean {
   const brands = GENRES[id]?.brands;
   return !brands || brands.includes(brandKey);
@@ -506,8 +538,9 @@ export function buildGenreDirective(id: GenreId): string {
 /** 組出送給 Maya 的完整提示詞（四層串接 + 輸出格式） */
 export function buildGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
   const g = GENRES[s.genre];
-  if (!genreAllowedForBrand(s.genre, brandKey)) throw new Error(`${g.name}只開放給平衡空間`);
+  if (!genreAllowedForBrand(s.genre, brandKey)) throw new Error(`${g.name}只開放給${({ nas: "平衡空間", abl: "艾伯林量子調頻", i8: "初八企業顧問", erick: "艾瑞克" } as Record<BrandKey, string>)[(g.brands || ["nas"])[0]]}`);
   if (s.genre === "numerology") return buildNumerologyGenrePrompt(brandKey, s);
+  if (s.genre === "bodyEntry" || s.genre === "followThrough") return buildRecipeGenrePrompt(brandKey, s);
   const lengthLine = s.length.trim() || `${g.lengthRange[0]} 到 ${g.lengthRange[1]} 字（照文體建議）`;
   const variables = [
     "【本篇變數】",
@@ -558,7 +591,8 @@ function buildNumerologyGenrePrompt(brandKey: BrandKey, s: GenreSettings): strin
   return [
     SHARED_PREFIX,
     BRAND_TONES[brandKey],
-    FUNNEL_RULES[s.funnel],
+    // 新配方一律冷流量（2026-11-28）
+    FUNNEL_RULES.cold,
     GENRES.numerology.skeleton,
     variables,
     `### 輸出 JSON 格式要求：
@@ -566,6 +600,46 @@ function buildNumerologyGenrePrompt(brandKey: BrandKey, s: GenreSettings): strin
 {
   "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。本文不可出現【需補】、待補或任何提醒字樣。",
   "post_reminders": ["發文前建議核對的地方，例如算例的加總。不需要就給空陣列。"]
+}`,
+  ].join("\n\n");
+}
+
+/**
+ * 身體入口、貫徹的完整提示詞（主工作區用）。
+ * 新配方一律冷流量，不套入口橋接（文章內不放連結、LINE、價格、行動呼籲）。
+ */
+function buildRecipeGenrePrompt(brandKey: BrandKey, s: GenreSettings): string {
+  const g = GENRES[s.genre];
+  const seedText = `${s.claim}|${s.material}|${Date.now()}`;
+  const itemDirective = s.genre === "bodyEntry"
+    ? (() => {
+      const seed = findBodyEntrySeed(s.material) || pickBodyEntrySeed([], seedText);
+      const layer = rotate(BODY_ENTRY_LAYERS, seedText.length);
+      return buildBodyEntryItemDirective(seed, layer, seedText.length);
+    })()
+    : (() => {
+      const scene = FOLLOW_THROUGH_SCENES.find((item) => s.material.trim() && (item.scene.includes(s.material.trim()) || s.material.includes(item.scene))) || rotate(FOLLOW_THROUGH_SCENES, seedText.length);
+      return [`【本篇場面】${s.material.trim() || scene.scene}`, `入口句可用可不用，要用就逐字照用：${FOLLOW_THROUGH_ENTRY}`].join("\n");
+    })();
+  const variables = [
+    "【本篇變數】",
+    s.claim.trim() ? `想讓讀者帶走的一句話（可參考）：${s.claim.trim()}` : "主張：由你從本篇場面自己決定一句話。",
+    itemDirective,
+    s.metaphor.trim() ? `比喻：${s.metaphor.trim()}` : "比喻：使用者未指定，可自行選一個生活比喻。",
+    `長度：${s.length.trim() || `${g.lengthRange[0]} 到 ${g.lengthRange[1]} 字`}`,
+    "CTA：全文不放行動呼籲、不放連結、不放加 LINE、不放價格。",
+  ].join("\n");
+  return [
+    SHARED_PREFIX,
+    BRAND_TONES[brandKey],
+    FUNNEL_RULES.cold,
+    g.skeleton,
+    variables,
+    `### 輸出 JSON 格式要求：
+你必須且僅能輸出如下 JSON 代碼區塊（以 \`\`\`json 開始，以 \`\`\` 結束）：
+{
+  "social_copy": "完整文章，純文字，第一行是【標題】，禁止任何 Markdown 符號。本文不可出現【需補】、待補或任何提醒字樣。",
+  "post_reminders": ["發文前建議核對的地方。不需要就給空陣列。"]
 }`,
   ].join("\n\n");
 }

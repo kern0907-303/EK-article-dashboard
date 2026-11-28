@@ -6,6 +6,8 @@
 //
 // 純資料與純函式，前後端都可以用（主工作區選單、自動流水線、測試都讀這裡）。
 
+import { RECIPE_COMMON_RULES, RECIPE_GROUP_NEW } from "./recipe-genres";
+
 /** 文體代號（與 genres.ts 的 GenreId 相同） */
 export const NUMEROLOGY_GENRE_ID = "numerology" as const;
 export const NUMEROLOGY_GENRE_NAME = "數字對照";
@@ -271,6 +273,9 @@ export function buildNumerologySkeleton(): string {
     ...NUMEROLOGY_RULES.map((rule, i) => `${i + 1}. ${rule}`),
     "",
     "【範例】只供對齊語感。不可照抄範例的句子、人名與場面，人物、生日、互動場景都要自己換。",
+    "【新配方共用規矩】",
+    ...RECIPE_COMMON_RULES.map((rule, i) => `${i + 1}. ${rule}`),
+    "",
     ...NUMEROLOGY_EXAMPLES.flatMap((ex, i) => [`範例${"一二三"[i]}（${ex.structure}，骨子是${ex.skeleton}）：`, ex.text, ""]),
     "長度：450 到 1100 字。一段一到兩句，段與段空一行。",
   ].join("\n");
@@ -291,10 +296,13 @@ export function buildNumerologyItemDirective(item: NumerologyFactItem): string {
  */
 export function buildNumerologyJobPrompt(item: NumerologyFactItem, structure: string): string {
   return [
+    `【本篇結構型】${structure}`,
+    `【本篇組別】${RECIPE_GROUP_NEW}`,
     "【本篇文體】數字對照",
     `【本篇流量結構】${structure}`,
     "【不引用】",
     "品牌：平衡空間",
+    "漏斗層：冷流量，讀者是第一次看到這個品牌的人。",
     `題目：從事實表「${item.label}」這一項出發，寫一篇讓讀者能當場用生日對照自己或身邊一個人的文章。`,
     buildNumerologyItemDirective(item),
   ].join("\n");

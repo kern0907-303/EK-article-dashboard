@@ -12,6 +12,7 @@ import { getProjectGuidelines } from "@/lib/projects-server";
 import { amplifierNote, structureNote, brandNameOf, generateFacebookDraft, makeCardUrl, recentNumerologyHistory, recentStyleHistory, rulesVersionNote } from "@/lib/auto-generate";
 import { buildNumerologyJobPrompt, explicitNumerology, pickFactItem, pickNumerologyStructure, shouldUseNumerology } from "@/data/skills/numerology-compare";
 import { cancelDuplicateSocialRows } from "@/lib/social-dedupe-server";
+import { readRecipeGroup, RECIPE_GROUP_NEW } from "@/data/skills/recipe-genres";
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.AUTO_PIPELINE_CRON_SECRET || "";
@@ -124,9 +125,11 @@ export async function POST(req: NextRequest) {
       }
     }
     const isNumerologyJob = explicitNumerology(prompt) && String(job.brand_id) === "nas";
+    // 新配方（數字對照、身體入口、貫徹）本身就是這一輪要比較的變數，不再疊加成效實驗
+    const isNewRecipeJob = isNumerologyJob || readRecipeGroup(prompt) === RECIPE_GROUP_NEW;
     try {
       // 數字對照不進成效實驗：實驗一次只改一個變數，換了文體與題目就不是同一組對照
-      experiment = isNumerologyJob ? null : await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
+      experiment = isNewRecipeJob ? null : await resolveExperimentArm(String(job.brand_id), String(job.scheduled_at || ""));
       const generated = await generateFacebookDraft({
         brandId: String(job.brand_id), prompt, seed: String(job.id), history, retry: retryOnce,
         ...(projectGuidelines ? { projectGuidelines } : {}),

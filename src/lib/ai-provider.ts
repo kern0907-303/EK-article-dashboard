@@ -1,6 +1,8 @@
 import { ChatMessage, TheoAnalysis, ReachKillerItem } from "./storage";
 import { stripMarkdown, stripDashes } from "@/lib/plain-text";
 import { splitPostReminders } from "@/lib/post-reminders";
+import { checkSocialDrift, driftFeedback } from "@/lib/social-drift";
+import { GENRE_STRUCTURES, structureAllowedForGenre } from "@/data/skills/genre-structures";
 import { friendlyLeonError, hasUsableSocialCopy, LEON_GENERATION_OPTIONS } from "@/lib/expert-routing";
 import { buildGenrePrompt, PROMPT_VERSION, type GenreSettings, type BrandKey } from "@/data/skills/genres";
 import { buildEntryBridgePrompt, resolveEntryBridgeBrand, resolveEntryBridgeFunnel } from "@/data/skills/entry-bridge";
@@ -808,6 +810,20 @@ export async function callErickCOO(
 5. 結尾 Hashtags 只能從標準標籤庫中挑選 3-5 個。`;
     }
 
+    // 從已寫好的長文改寫成 Threads、IG（2026-11-28）：只改格式與長度，不加原文沒有的東西。
+    // 2026-11-27 牙齒那篇就是被原本的 IG 規則（引導 Link in Bio、私訊、5 到 15 個標籤）改走樣。
+    // 從關鍵字全新生成（沒有原文）時照舊用上面的平台規則。
+    if (currentCopy && (targetPlatform === "threads" || targetPlatform === "instagram")) {
+      platformInstructions = `${targetPlatform === "threads"
+        ? "1. 完全使用繁體中文(台灣)，總字數 500 字以內，建議 400 到 460 字。這是濃縮，不是改寫觀點。"
+        : "1. 完全使用繁體中文(台灣)，總字數 2200 字以內。IG 沒有字數壓力，原文的段落與故事盡量全部保留，只調整斷行。"}
+2. 【最嚴格限制】：絕對禁止任何 Markdown 符號（**粗體**、#標題、---分隔線、清單符號），只用換行排版。
+3. 同一個觀點、同一組事實、同一個說話的人。不可新增原文沒有的觀點、數字、案例、症狀、承諾。
+4. 不可加入原文沒有的行動呼籲：不要寫私訊我們、Link in Bio、首頁連結、個人簡介、預約、報名、了解更多、加 LINE；原文沒有主題標籤就一個都不要加。
+5. 不可加入原文沒有的字：卡住、撐、扛、療癒、療效、改善、保證、頻率、能量、調頻、調和、示意聲明、下一篇預告。原文用的詞（例如「承擔」）照原文用，不要換成這些字。
+6. 原文的關鍵句（➤ ❝ ❞ 那一行）、「這幾天留意」那一段、最後一段，要保留原句或幾乎原句。${targetPlatform === "threads" ? "其他段落可以濃縮，但故事的轉折（例如做了什麼、過了多久、後來才明白什麼）要留下來。" : ""}
+7. 第一行可以是吸引人的開頭句，但意思要來自原文。`;
+    }
     platformInstructions += "\n" + NO_DASH_LAYOUT_RULE;
 
     let adaptPrompt = "";
@@ -863,6 +879,14 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
     };
     // 改寫結果一律清成純文字（AI 偶爾仍會帶出 ** ## 等符號，Facebook / Threads / IG 都不吃）
     let best = await runAdapt("");
+    // 走樣檢查：加了原文沒有的行動呼籲或禁用字、刪掉關鍵段落，就帶著問題重寫，最多再兩次
+    const socialTarget = targetPlatform === "threads" || targetPlatform === "instagram" ? targetPlatform : null;
+    let driftIssues = currentCopy && socialTarget ? checkSocialDrift(currentCopy, best, socialTarget) : [];
+    for (let attempt = 0; attempt < 2 && driftIssues.length && socialTarget; attempt++) {
+      const retry = await runAdapt(`\n\n${driftFeedback(driftIssues)}\n上一版：\n"""\n${best}\n"""`);
+      const retryIssues = checkSocialDrift(currentCopy, retry, socialTarget);
+      if (retry && retryIssues.length < driftIssues.length) { best = retry; driftIssues = retryIssues; }
+    }
     if (limit > 0) {
       const target = Math.floor(limit * 0.85);
       for (let attempt = 0; attempt < 3 && best.length > limit; attempt++) {
@@ -876,10 +900,13 @@ ${keywords || "根據品牌核心定位自由發揮撰寫一個吸引人的主�
         best = idx > limit * 0.6 ? cut.slice(0, idx + 1).trim() : cut.trim();
       }
     }
+    if (currentCopy && socialTarget && limit > 0) driftIssues = checkSocialDrift(currentCopy, best, socialTarget);
     return {
       content: "",
       dispatchData: {
-        social_copy: best
+        social_copy: best,
+        // 重寫後仍走樣的地方，看板會提醒（不擋，排程時的品管關卡照常檢查）
+        ...(driftIssues.length ? { drift_warnings: driftIssues.map((issue) => issue.message) } : {}),
       }
     };
   }
@@ -1285,9 +1312,14 @@ ${brandContext}`;
       if (choice) {
         const userText = history.filter((message) => message.role === "user").map((message) => message.content).join("\n");
         const explicit = readFlowStructureFromPrompt(`${assignedMayaText}\n${userText}`);
-        flowStructureId = choice !== "auto"
-          ? choice
-          : explicit || pickFlowStructure({
+        // 文體限定結構（數字對照、身體入口、貫徹）：手動選或題目指定的型不在範圍內就不採用，改由系統在範圍內挑
+        const genreId = genre?.settings?.genre || null;
+        const limitedTo = genreId ? GENRE_STRUCTURES[genreId] : undefined;
+        const usable = (id: string | null) => (id && structureAllowedForGenre(genreId, id) ? id : null);
+        flowStructureId = (choice !== "auto" ? usable(choice) : null)
+          || usable(explicit)
+          || (limitedTo ? limitedTo[Math.floor(Math.random() * limitedTo.length)] : null)
+          || pickFlowStructure({
               brand: brandName,
               genre: genre?.settings?.genre || null,
               seed: `${brandName}-${Date.now()}`,

@@ -7,6 +7,7 @@
 // 只給伺服器端使用。
 
 import { callSeoOptimizer, callWebArticle } from "@/lib/ai-provider";
+import { checkSocialDrift, driftFeedback } from "@/lib/social-drift";
 import { checkText, inspectForPublish, resolveBrandContext } from "@/lib/brand-guardrail";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 import { buildFaqJsonLd, faqToPlainText } from "@/lib/seo-optimizer";
@@ -68,6 +69,8 @@ const SYSTEM_DERIVE =
   "IG 的連結不能點，所以 IG 版不要寫網址，也不要叫讀者去看個人簡介或留言區。原文若寫「連結在留言區第一則」，IG 版一律改成「在下面留言「連結」兩個字，我私訊給你」。邀請讀者留言互動的句子不受影響，照原意保留。" +
   "Threads 版的連結指路維持留言區第一則，不要改。" +
   "輪播圖卡：5 到 7 張，第 1 張是封面鉤子（改寫，不要只複製標題），中間每張只講一個重點，最後一張是溫和收尾或一個問題。每張不超過 40 字，一到兩句，口語。" +
+  "不可加入原文沒有的行動呼籲（私訊我們、Link in Bio、首頁連結、預約、報名、了解更多）與主題標籤；不可加入原文沒有的字：卡住、撐、扛、療癒、療效、改善、保證、頻率、能量、調頻、調和。原文用的詞照原文用。" +
+  "原文的關鍵句（➤ ❝ ❞ 那一行）、「這幾天留意」那一段、最後一段，在 Threads 與 IG 版都要保留原句或幾乎原句。" +
   "說話的人：只能是艾瑞克的第一人稱，或不指名的客觀陳述，品牌名稱不可以當主詞去認為、相信、陪伴、提供、協助，也不可以用「我們」替品牌發言，原文若有這類句子要改寫掉。" +
   "全部文字：不可出現任何破折號（——、—、─、-），不可出現 Markdown 符號（# * 等），不可出現【】標記或括號註記，不要加主題標籤，停頓用逗號或句號。不可用立刻、保證、一定會這類催促或絕對說法。" +
   '只輸出 JSON：{"threads":"...","instagram":"...","slides":["...","..."]}，不要其他說明。';
@@ -98,9 +101,12 @@ function parseDerived(raw: string): { threads: string; instagram: string; slides
 /** 從母稿改寫 Threads、IG 與輪播文字。AI 失敗時退回機械式截斷與切段，仍然來自同一份母稿。 */
 export async function deriveVersions(master: string, avoidWords: string[] = []): Promise<DerivedVersions> {
   let lastError = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // 走樣（加了行動呼籲或禁用字、刪掉關鍵段落）就帶著問題重寫，最多三次
+  let driftNote = "";
+  let bestDrifted: { issues: number; note: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const note = avoidWords.length ? `\n\n【修改要求，不是原文】上一版出現了不可使用的詞：${avoidWords.slice(0, 8).join("、")}。三個版本都不可出現這些詞，也不可用同義的說法硬帶過，請換個角度表達同一個意思。` : "";
+      const note = (avoidWords.length ? `\n\n【修改要求，不是原文】上一版出現了不可使用的詞：${avoidWords.slice(0, 8).join("、")}。三個版本都不可出現這些詞，也不可用同義的說法硬帶過，請換個角度表達同一個意思。` : "") + (driftNote ? `\n\n${driftNote}` : "");
       // 2026-10-31：這裡原本給 3000，OpenAI 與 Gemini 都回報被輸出上限切斷，
       // 半截的 JSON 解析必定失敗，於是退回機械式截斷，IG 直接貼了整篇 FB 原文。
       // 規格要求的輸出是 Threads 400 到 460 字、IG 900 到 1500 字、輪播 5 到 7 張各 40 字，
@@ -125,11 +131,24 @@ export async function deriveVersions(master: string, avoidWords: string[] = []):
         console.warn("[deriveVersions]", lastError);
         continue;
       }
+      const drift = [...checkSocialDrift(master, threads, "threads").map((issue) => ({ ...issue, message: `Threads ${issue.message}` })), ...checkSocialDrift(master, instagram, "instagram").map((issue) => ({ ...issue, message: `IG ${issue.message}` }))];
+      if (drift.length) {
+        lastError = `改寫和原文走樣：${drift.map((issue) => issue.message).join("；").slice(0, 200)}`;
+        console.warn("[deriveVersions]", lastError);
+        if (drift.every((issue) => issue.kind === "dropped") && (!bestDrifted || drift.length < bestDrifted.issues)) {
+          bestDrifted = { issues: drift.length, note: lastError };
+        }
+        driftNote = driftFeedback(drift);
+        continue;
+      }
       return { threads, instagram, slides, source: "ai", note: "" };
     } catch (error) {
       lastError = error instanceof Error ? error.message.slice(0, 120) : "改寫失敗";
     }
   }
+  // 三次都走樣（加了東西或刪了關鍵段落）就不排程：回報 fallback，由呼叫端擋下並通知，待處理中心可人工補做。
+  // 走樣的版本與機械截斷都不可以照排程自動發出去。
+  if (bestDrifted) lastError = `改寫三次仍有關鍵段落沒保留：${bestDrifted.note}`;
   const base = clean(master);
   return {
     threads: trimAtBoundary(base, THREADS_TARGET),
@@ -388,6 +407,8 @@ export async function rewriteSocialPost(input: {
     const retried = await deriveVersions(master, blocked);
     if (retried.source === "ai") derived = retried;
   }
+  // 改寫沒成功（含三次都和原文走樣）時，derived 是母稿的機械截斷，不可以寫進排程列
+  if (derived.source === "fallback") throw new Error(`改寫沒有成功，不更新排程：${derived.note || "原因未記錄"}`);
   const content = pick();
   if (!content.trim()) throw new Error("改寫沒有回傳內容");
   if (content.length > max) throw new Error(`超過 ${platform === "instagram" ? "Instagram" : "Threads"} 上限 ${max} 字`);

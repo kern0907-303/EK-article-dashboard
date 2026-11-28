@@ -1,4 +1,7 @@
 import { getSupabaseEnv, supabaseHeaders } from "@/lib/publish-queue";
+import { withRecipeTags } from "@/data/skills/recipe-genres";
+import { readFlowStructureFromPrompt } from "@/data/skills/flow-structures";
+import { readGenreFromPrompt } from "@/data/skills/genres";
 import type { BatchSource, PipelineEntry } from "@/lib/auto-pipeline";
 
 export interface PipelineJobRow {
@@ -49,12 +52,22 @@ export function makeBatchRow(source: BatchSource) {
   return { source, status: "pending", test_run: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 }
 
+/**
+ * 任務提示詞開頭補上配方標籤（2026-11-28 自然流量測試）：
+ * 【本篇結構型】題目有指定流量結構就填代號，沒有就填「未指定」；
+ * 【本篇組別】三個新文體（數字對照、身體入口、貫徹）是「新配方」，其他是「對照組」。
+ * 已經寫了的不重複加。之後每一則發出去的貼文都能用這兩行分組比較成效。
+ */
+export function tagJobPrompt(prompt: string): string {
+  return withRecipeTags(prompt, { structure: readFlowStructureFromPrompt(prompt), genre: readGenreFromPrompt(prompt) });
+}
+
 export function makeJobRow(batchId: string, entry: PipelineEntry, projectId: string | null) {
   return {
     batch_id: batchId,
     brand_id: entry.brandId,
     project_id: projectId,
-    prompt: entry.prompt,
+    prompt: tagJobPrompt(entry.prompt),
     scheduled_at: entry.scheduledAt,
     status: "pending",
     current_step: "等待執行",

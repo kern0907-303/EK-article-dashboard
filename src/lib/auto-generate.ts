@@ -6,7 +6,9 @@ import { callErickCOO, callSeoOptimizer } from "@/lib/ai-provider";
 import { stripDashes, stripDiagramBlocks, stripMarkdown } from "@/lib/plain-text";
 import { splitPostReminders } from "@/lib/post-reminders";
 import { blockingIssues, checkGenreText } from "@/lib/genre-check";
-import { PROMPT_VERSION, buildGenreDirective, readGenreFromPrompt } from "@/data/skills/genres";
+import { PROMPT_VERSION, buildGenreDirective, genreAllowedForBrand, readGenreFromPrompt, type BrandKey } from "@/data/skills/genres";
+import { BODY_ENTRY_GENRE_ID, findBodyEntrySeed, FOLLOW_THROUGH_GENRE_ID, pickRecipeStructure, readRecipeGroup, recipeChecksFor } from "@/data/skills/recipe-genres";
+import { GENRE_STRUCTURES } from "@/data/skills/genre-structures";
 import {
   buildTitleDirective, detectTitleStyle, pickTitleStyle, readTitleStyleFromPrompt,
   repeatedStyleWarning, TITLE_STYLES, type TitleStyleId,
@@ -24,7 +26,7 @@ import { chooseKnowledgeSource } from "@/lib/derivatives-ai";
 import { buildCitationDirective, type VerifiedCitation } from "@/data/skills/citation-rules";
 import { getCitationName } from "@/data/skills/story-argument";
 import { buildRevisePrompt } from "@/data/skills/revise-prompt";
-import { checkNumerologyText, findFactItem, NUMEROLOGY_GENRE_ID, NUMEROLOGY_STRUCTURES, numerologyNote, pickNumerologyStructure, readNumerologyNote } from "@/data/skills/numerology-compare";
+import { checkNumerologyText, findFactItem, NUMEROLOGY_GENRE_ID, numerologyNote, pickNumerologyStructure, readNumerologyNote } from "@/data/skills/numerology-compare";
 import { flowBrandFrom } from "@/data/skills/flow-structures";
 import { buildExampleRewritePrompt } from "@/data/skills/example-rewrite-prompt";
 import { allowedCitationFromMaster, brandVoiceSentences } from "@/lib/auto-multiplatform";
@@ -209,17 +211,22 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory, 
   const openingStyle = readOpeningStyleFromPrompt(prompt) || pickOpeningStyle(history.openings, seed, hasMaterial);
   // 標題強化手法：Schwartz 的 38 種挑出 14 種，疊在標題型上面加力道，一次只用一個
   const amplifier = readAmplifierFromPrompt(prompt) || pickAmplifier(history.amplifiers, seed, titleStyle);
-  // 數字對照只開放平衡空間：其他品牌的題目就算寫了也當作沒指定文體
+  // 品牌專用文體（數字對照只給平衡空間、身體入口只給艾伯林、貫徹只給初八）：別的品牌的題目就算寫了也當作沒指定文體
   const promptGenre = readGenreFromPrompt(prompt);
-  const genre = promptGenre === NUMEROLOGY_GENRE_ID && flowBrandFrom(brandId || prompt) !== "nas" ? null : promptGenre;
+  const genre = promptGenre && !genreAllowedForBrand(promptGenre, flowBrandFrom(brandId || prompt) as BrandKey) ? null : promptGenre;
   // 流量結構（2026-11-13）：每篇都照 22 型之一寫。題目指定的優先，否則依品牌與文體輪替。
   // 結構本身就規定了開場，所以只有題目明確指定開場型時才保留開場型指令，避免兩套開場互相打架。
   const explicitOpening = Boolean(readOpeningStyleFromPrompt(prompt));
   // 數字對照只在 J3、J4、J5、D1、D5、C5、C7 之間輪替，避開最近 3 篇用過的型
   // 題目指定的結構不在七型之內時，數字對照不採用
+  // 身體入口限 J2、J4、C7；貫徹限 D6、J6。題目指定的結構不在範圍內一樣不採用
   const explicitStructure = readFlowStructureFromPrompt(prompt);
-  const usableExplicit = genre === NUMEROLOGY_GENRE_ID && explicitStructure && !(NUMEROLOGY_STRUCTURES as readonly string[]).includes(explicitStructure) ? null : explicitStructure;
-  const structure = usableExplicit || (genre === NUMEROLOGY_GENRE_ID ? pickNumerologyStructure(history.structures || [], seed) : null) || pickFlowStructure({
+  const limited = genre ? GENRE_STRUCTURES[genre] : undefined;
+  const usableExplicit = limited && explicitStructure && !limited.includes(explicitStructure) ? null : explicitStructure;
+  const limitedPick = genre === NUMEROLOGY_GENRE_ID
+    ? pickNumerologyStructure(history.structures || [], seed)
+    : limited ? pickRecipeStructure(limited, history.structures || [], seed) : null;
+  const structure = usableExplicit || limitedPick || pickFlowStructure({
     brand: brandId || prompt,
     genre,
     recent: history.structures || [],
@@ -240,6 +247,8 @@ export function planStyles(prompt: string, seed: string, history: StyleHistory, 
 
 /** 寫進任務 warnings，下一篇輪替用，對照檢視也靠它知道這篇用哪一型 */
 export const structureNote = (id: string): string => flowStructureNote(id);
+export const BODY_ENTRY_NOTE_PREFIX = "身體入口部位：";
+export const FOLLOW_THROUGH_NOTE_PREFIX = "貫徹場面：";
 
 export interface GenerateInput {
   brandId: string;
@@ -329,9 +338,13 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
   const allowsRealClient = readGenreFromPrompt(prompt) === "case";
   // 數字對照另外檢查事實表的紅線（命定、外遇、連結、價格、照抄範例）。既有檢查照常全部套用。
   const isNumerology = plan.genre === NUMEROLOGY_GENRE_ID;
-  const numerologyBlocks = (text: string): string[] => isNumerology
-    ? checkNumerologyText(text).filter((issue) => issue.level === "block").map((issue) => issue.message)
-    : [];
+  // 新配方（數字對照、身體入口、貫徹）另外套用新規矩：純文字、不用破折號、少用卡住撐扛、不放示意聲明、不寫跨篇預告、冷流量
+  const recipeCheck = recipeChecksFor(plan.genre);
+  const recipeLabel = plan.genre === NUMEROLOGY_GENRE_ID ? "數字對照" : plan.genre === BODY_ENTRY_GENRE_ID ? "身體入口" : plan.genre === FOLLOW_THROUGH_GENRE_ID ? "貫徹" : "";
+  const numerologyBlocks = (text: string): string[] => [
+    ...(isNumerology ? checkNumerologyText(text).filter((issue) => issue.level === "block").map((issue) => issue.message) : []),
+    ...(recipeCheck ? recipeCheck(text).filter((issue) => issue.level === "block").map((issue) => issue.message) : []),
+  ].filter((message, i, all) => all.indexOf(message) === i);
   // 品牌名稱當主詞或出現禁用詞：帶著問題句子重寫，最多再試三次，仍不過才做機械式修正
   for (let attempt = 0; attempt < 3; attempt++) {
     const offending = brandVoiceSentences(draft, brandId);
@@ -420,7 +433,7 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     ? `文案含未補的標記 ${[...new Set(leftover)].join("、")}，請補上依據或刪除後再發`
     : uncited.length
     ? `引用有問題：${uncited.join("、")}。引經據典只能用知識庫裡的書，書名與作者一律用中文，請重新生成`
-    : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`), ...numerologyBlocks(draft).map((message) => `數字對照：${message}`)].join("；");
+    : [...blocks.map((issue) => issue.message), ...gateBlocks.map((issue) => `品管：${issue.message}`), ...numerologyBlocks(draft).map((message) => `${recipeLabel}：${message}`)].join("；");
   if (isNumerology) {
     styleNotes.unshift("本篇文體：數字對照（骨子來自事實表，不用每週調研的選題）");
     // 記下這篇用了事實表哪一項：下一篇輪替（避開最近 9 篇）與成效追蹤都讀這一行
@@ -428,6 +441,15 @@ export async function generateFacebookDraft(input: GenerateInput): Promise<Gener
     if (factItem) styleNotes.unshift(numerologyNote(factItem));
     styleNotes.push(...checkNumerologyText(draft).filter((issue) => issue.level === "warn").map((issue) => `數字對照提醒：${issue.message}`));
   }
+  if (plan.genre === BODY_ENTRY_GENRE_ID) {
+    const seed = findBodyEntrySeed(String(prompt).match(/【本篇部位】\s*([^\n]+)/)?.[1] || "");
+    const layer = String(prompt).match(/【本篇層次】\s*([^：:\n]+)/)?.[1]?.trim();
+    styleNotes.unshift(`${BODY_ENTRY_NOTE_PREFIX}${seed?.id || "未記錄"} ${seed?.part || ""}｜${layer || "未記錄"}`);
+    if (/我/.test(draft.split("\n").slice(0, 4).join(""))) postReminders.push("發文前提醒（不在文章裡）：本篇用第一人稱寫日常身體感受，請確認符合你的實際經驗，不符合就改成「有個朋友」或「你」。");
+  }
+  if (plan.genre === FOLLOW_THROUGH_GENRE_ID) styleNotes.unshift(`${FOLLOW_THROUGH_NOTE_PREFIX}${String(prompt).match(/【本篇場面】\s*([^\n]+)/)?.[1]?.trim() || "未記錄"}`);
+  if (recipeCheck) styleNotes.push(...recipeCheck(draft).filter((issue) => issue.level === "warn").map((issue) => `${recipeLabel}提醒：${issue.message}`));
+  styleNotes.push(`本篇組別：${readRecipeGroup(prompt)}`);
 
   return {
     draft, postReminders, styleNotes,

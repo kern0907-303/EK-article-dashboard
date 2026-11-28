@@ -3,6 +3,7 @@
 // 只提醒（warn）：Markdown 符號、冷／溫流量的謹慎詞、段落過長、字數不在建議區間。
 
 import { GENRES, type GenreMeta } from "@/data/skills/genres";
+import { recipeChecksFor } from "@/data/skills/recipe-genres";
 import {
   evaluateGuardrails,
   formatGuardrailBlock,
@@ -116,7 +117,13 @@ export function checkGenreText(
     }
   }
 
-  // 6. Threads、IG 的平台規則（提醒；沒指定平台時不檢查，Facebook 規則不受影響）
+  // 6. 新配方（數字對照、身體入口、貫徹）的專用規矩：主工作區與自動流水線用同一份
+  const recipeCheck = recipeChecksFor(meta.genre);
+  if (recipeCheck) {
+    for (const issue of recipeCheck(body)) issues.push({ level: issue.level, code: "recipe", message: `${def?.name || "新配方"}：${issue.message}` });
+  }
+
+  // 7. Threads、IG 的平台規則（提醒；沒指定平台時不檢查，Facebook 規則不受影響）
   if (platform === "threads" || platform === "instagram") {
     issues.push(...checkShortPlatformRules(body, platform));
   }

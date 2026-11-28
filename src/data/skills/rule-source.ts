@@ -25,6 +25,8 @@ export const BOOKS = {
   aeo: { book: "AEO 問句小標規則", author: "業界實務整理" },
   inHouse: { book: "儀表板內部規則", author: "艾瑞克與 Claude" },
   erickNumerology: { book: "數字對照事實表與寫作規則（2026-11-27）", author: "艾瑞克" },
+  erickBodyEntry: { book: "身體入口寫作規則與題目種子（2026-11-28）", author: "艾瑞克" },
+  erickFollowThrough: { book: "貫徹寫作規則與入口句（2026-11-28）", author: "艾瑞克" },
 } as const satisfies Record<string, { book: string; author: string }>;
 
 export type BookKey = keyof typeof BOOKS;

@@ -855,6 +855,11 @@ const SocialTabContent = memo(function SocialTabContent({
         const newCopy = responseData.dispatchData.social_copy;
         setVal(newCopy);
         await saveWorkspace(brandId, { social_copy: newCopy }, { generated: true });
+        // 改寫重試後仍和原文走樣（加了行動呼籲或禁用字、刪了關鍵段落）：提醒，不擋
+        const drift = responseData.dispatchData.drift_warnings;
+        if (Array.isArray(drift) && drift.length) {
+          alert(`⚠️ 這版改寫和原文有出入，排程前請先看過：\n${drift.map((item: string) => "・" + item).join("\n")}`);
+        }
       } else {
         throw new Error("轉化資料格式不正確");
       }

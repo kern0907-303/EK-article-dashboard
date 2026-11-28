@@ -562,7 +562,8 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
     const def = GENRES[genreId];
     const settings: GenreSettings = {
       genre: genreId,
-      funnel,
+      // 新配方一律冷流量（提示詞與發文前檢查用同一個值）
+      funnel: genreId === "numerology" || genreId === "bodyEntry" || genreId === "followThrough" ? "cold" : funnel,
       claim: gClaim,
       material: gMaterial,
       metaphor: gMetaphor,
@@ -570,7 +571,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
       cta: gCta,
     };
     const brandKey: BrandKey = brandKeyFromId(resolveEffectiveBrandId(activeBrandId) || activeBrandId);
-    const claimText = gClaim.trim() || (genreId === "numerology" ? `數字對照：${gMaterial.trim() || "由系統從事實表挑一項"}` : "");
+    const claimText = gClaim.trim() || (genreId === "numerology" ? `數字對照：${gMaterial.trim() || "由系統從事實表挑一項"}` : genreId === "bodyEntry" ? `身體入口：${gMaterial.trim() || "由系統挑一個部位"}` : genreId === "followThrough" ? `貫徹：${gMaterial.trim() || "由系統挑一個公司場面"}` : "");
     const subPrompts = {
       maya: claimText,
       iris: `這篇文章的主張是：${claimText}。請據此規劃關鍵字與問答，不得編造文章沒有的事實。`,
@@ -1096,7 +1097,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
                 文體
                 <select
                   value={genreId}
-                  onChange={(e) => { const next = e.target.value as GenreId; setGenreId(next); setGenreError(""); if (next === "fan") setFunnel("hot"); }}
+                  onChange={(e) => { const next = e.target.value as GenreId; setGenreId(next); setGenreError(""); if (next === "fan") setFunnel("hot"); if (next === "numerology" || next === "bodyEntry" || next === "followThrough") setFunnel("cold"); }}
                   className="mt-2 sm:mt-0.5 w-full text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 cursor-pointer"
                 >
                   {genresForBrand(currentBrandKey).map((g) => (
@@ -1121,7 +1122,7 @@ export default function ChatBox({ activeBrandId, activeBrandName, aiProvider }: 
             </div>
             <div className="text-[10px] text-slate-500 leading-relaxed">{GENRES[genreId].when}</div>
             <label className="block text-xs sm:text-[10px] text-slate-400">
-              {GENRES[genreId].claimOptional ? "主張（選填，留空由系統依事實表決定）" : "主張（必填）"}：這篇要讓讀者接受的那一件事，一句話
+              {GENRES[genreId].claimOptional ? (genreId === "numerology" ? "主張（選填，留空由系統依事實表決定）" : "主張（選填，留空由系統依場面決定）") : "主張（必填）"}：這篇要讓讀者接受的那一件事，一句話
               <input
                 value={gClaim}
                 onChange={(e) => setGClaim(e.target.value)}

@@ -14,7 +14,7 @@ export const FLOW_STRUCTURE_VERSION = "flow-v1";
 export type FlowFamily = "jemmy" | "domy" | "chiukaun";
 export type FlowBrand = "nas" | "abl" | "i8" | "erick";
 /** 與 genres.ts 的 GenreId 相同，這裡不 import 以免循環相依 */
-export type FlowGenre = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology";
+export type FlowGenre = "case" | "breakdown" | "response" | "invite" | "fan" | "numerology" | "bodyEntry" | "followThrough";
 
 export const FAMILY_LABEL: Record<FlowFamily, string> = {
   jemmy: "Jemmy 系（快、爆、人物故事）",
@@ -80,7 +80,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J2: {
     id: "J2", family: "jemmy", name: "親身經歷",
     use: "用艾瑞克自己的經歷，帶出後來才懂的觀念。",
-    brands: ["erick", "nas", "abl"], genres: ["case", "invite"], length: [1000, 2000], firstPersonReal: true,
+    brands: ["erick", "nas", "abl"], genres: ["case", "invite", "bodyEntry"], length: [1000, 2000], firstPersonReal: true,
     sourceMove: "時間點開場，細節一段一個畫面地推進，順的地方寫順，壞的地方寫痛，出事之後才講觀念，最後用一句時間回收句收尾。",
     erickTwist: "只用艾瑞克說過的真實經歷（故事庫或他的口述），觀念用生活比喻講白。",
     checkpoints: [
@@ -109,7 +109,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J4: {
     id: "J4", family: "jemmy", name: "讀者提問直接回答",
     use: "回應一個常被問的問題，給明確答案。",
-    brands: ["nas", "abl", "i8"], genres: ["invite", "breakdown", "numerology"], length: [800, 1600],
+    brands: ["nas", "abl", "i8"], genres: ["invite", "breakdown", "numerology", "bodyEntry"], length: [800, 1600],
     sourceMove: "先引用提問，下一行用極短的一句直接回答，再講原則、給比喻，最後把核心句連寫三行。",
     erickTwist: "提問用常見的問題型態（不寫成真實某人的原話），平衡空間最好用；艾伯林量子調頻回答時照頻率的對外定調。",
     checkpoints: [
@@ -136,7 +136,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   J6: {
     id: "J6", family: "jemmy", name: "迷思清單",
     use: "一次破好幾個錯誤觀念。",
-    brands: ["i8", "nas"], genres: ["breakdown"], length: [1200, 2400],
+    brands: ["i8", "nas"], genres: ["breakdown", "followThrough"], length: [1200, 2400],
     sourceMove: "一兩句交代看過多少案例，接著每點寫「迷思原句」，下一行一個字否定，再兩三行反駁加一個例子，最後一句收斂。",
     erickTwist: "資歷只寫艾瑞克真實的（例如教生命數字十多年），不編案例數字。",
     checkpoints: [
@@ -253,7 +253,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   D6: {
     id: "D6", family: "domy", name: "情境推演揭秘",
     use: "描繪讀者的日常，指出哪一步一開始就錯了。",
-    brands: ["i8", "abl"], genres: ["breakdown"], length: [1200, 2200],
+    brands: ["i8", "abl"], genres: ["breakdown", "followThrough"], length: [1200, 2200],
     sourceMove: "「你先想一下，你每天…」開場，寫一段很像讀者本人的日常，接一句乾脆的否定，說明為什麼錯，揭示正確流程（第一步、第二步…），回扣標題。",
     erickTwist: "否定不用連寫「錯錯錯」，改成「但問題就出在這裡」；流程用艾瑞克真的在用的做法。",
     checkpoints: [
@@ -373,7 +373,7 @@ export const FLOW_STRUCTURES: Record<string, FlowStructure> = {
   C7: {
     id: "C7", family: "chiukaun", name: "哲理短章",
     use: "一句話加一個動作比喻，寫一段快速轉念。300 到 600 字。",
-    brands: ["abl", "nas"], genres: ["fan", "numerology"], length: [300, 600],
+    brands: ["abl", "nas"], genres: ["fan", "numerology", "bodyEntry"], length: [300, 600],
     sourceMove: "第一行是一句用引號包起來的話，接一個動作比喻並說明為什麼會輸，停下來會發生什麼，一個用詞的轉換（從「我想要」到「我願意」），最後一行只有幾個字。",
     erickTwist: "比喻換成艾瑞克的；用詞轉換可以用平衡空間或艾伯林量子調頻的核心語言。",
     checkpoints: [
@@ -463,7 +463,10 @@ export function flowStructureFromText(value: string): string | null {
 /** 提示詞裡用「【流量結構】J3」或「【本篇流量結構】反常識宣言」指定 */
 export function readFlowStructureFromPrompt(prompt: string): string | null {
   const match = String(prompt || "").match(/【(?:本篇)?流量結構[^】]*】\s*([^\n]{1,24})/);
-  return match ? flowStructureFromText(match[1]) : null;
+  if (match) return flowStructureFromText(match[1]);
+  // 2026-11-28 配方標籤：【本篇結構型】J3（寫「未指定」就當沒指定）
+  const tag = String(prompt || "").match(/【本篇結構型】\s*([^\n]{1,12})/);
+  return tag ? flowStructureFromText(tag[1]) : null;
 }
 
 /** 生成提示詞裡用來辨認「已經帶了結構指令」的記號 */
