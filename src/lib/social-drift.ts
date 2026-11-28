@@ -87,8 +87,10 @@ export function checkSocialDrift(original: string, adapted: string, platform: "t
   if (added.length) issues.push({ kind: "word", message: `加了原文沒有的字：${added.join("、")}` });
 
   // 三、關鍵段落
-  const dropped = keyParagraphs(source).filter((p) => retention(p, out) < KEY_RETENTION_MIN);
-  if (dropped.length) issues.push({ kind: "dropped", message: `刪掉或改掉了原文的關鍵段落：${dropped.map((p) => `「${p.replace(/\s+/g, " ").slice(0, 30)}」`).join("、")}` });
+  // 「這幾天留意」那一段：改寫可以換說法，但讀者回生活要做的那件事要還在（2026-11-28 實測，Threads 濃縮時常改寫這一句的用字）
+  const LOOK_AGAIN = /這幾天(?:留意|試|觀察|看看|注意)/;
+  const dropped = keyParagraphs(source).filter((p) => (LOOK_AGAIN.test(p) ? !LOOK_AGAIN.test(out) : retention(p, out) < KEY_RETENTION_MIN));
+  if (dropped.length) issues.push({ kind: "dropped", message: `刪掉或改掉了原文的關鍵段落：${dropped.map((p) => `「${p.replace(/\s+/g, " ").slice(0, 30)}」（保留 ${Math.round(retention(p, out) * 100)}%）`).join("、")}` });
   if (platform === "instagram") {
     const paras = paragraphsOf(source).filter((p) => normalize(p).length >= 10 && !isPointerParagraph(p));
     if (paras.length >= 3) {

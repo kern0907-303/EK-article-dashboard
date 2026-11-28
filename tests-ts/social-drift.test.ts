@@ -172,6 +172,14 @@ assert.deepEqual(checkSocialDrift(ORIGINAL, ORIGINAL, "threads"), []);
   assert.ok(!checkSocialDrift(master, ORIGINAL, "threads").some((i) => i.kind === "dropped"), "Threads 不帶連結指路不算刪段落");
 }
 
+// 9. 「這幾天留意」那一段換說法可以，整個拿掉不行
+{
+  const reworded = ORIGINAL.replace("這幾天留意一下。\n你身上有沒有哪個地方，一直小小聲地在提醒你，而你還沒理它。", "這幾天試試看，留意身上哪裡一直在小聲提醒你。");
+  assert.ok(!checkSocialDrift(ORIGINAL, reworded, "threads").some((i) => i.kind === "dropped"), JSON.stringify(checkSocialDrift(ORIGINAL, reworded, "threads")));
+  const removed = ORIGINAL.replace("這幾天留意一下。\n你身上有沒有哪個地方，一直小小聲地在提醒你，而你還沒理它。", "");
+  assert.ok(checkSocialDrift(ORIGINAL, removed, "threads").some((i) => i.kind === "dropped"));
+}
+
 // 7. 給模型的修改要求有寫出問題
 assert.ok(driftFeedback(checkSocialDrift(ORIGINAL, THREADS_DRIFTED, "threads")).includes("修改要求"));
 assert.ok(retention("很多時候不是沒有提醒", "很多時候不是沒有提醒，是我們") === 1);
