@@ -7,7 +7,7 @@
 // 只給伺服器端使用。
 
 import { callSeoOptimizer, callWebArticle } from "@/lib/ai-provider";
-import { checkSocialDrift, driftFeedback } from "@/lib/social-drift";
+import { checkSocialDrift, driftFeedback, keyParagraphs } from "@/lib/social-drift";
 import { checkText, inspectForPublish, resolveBrandContext } from "@/lib/brand-guardrail";
 import { stripDashes, stripMarkdown } from "@/lib/plain-text";
 import { buildFaqJsonLd, faqToPlainText } from "@/lib/seo-optimizer";
@@ -64,7 +64,7 @@ const clean = (text: string): string => applyMechanicalFixes(stripDashes(stripMa
 const SYSTEM_DERIVE =
   "你是社群編輯。下面是一篇已定稿的 Facebook 貼文（繁體中文），請把同一份內容改寫成 Threads、Instagram 說明文字和 Instagram 輪播圖卡文字。" +
   "原則：三個版本必須和原文是同一個觀點、同一組事實，只改格式與長度，不可新增原文沒有的觀點、數字、案例或承諾，不可改變原文立場。" +
-  "Threads 版：約 400 到 460 字，第一句就是鉤子，口語，一口氣讀完，結尾留一句讓人想回覆的話。" +
+  "Threads 版：約 400 到 460 字，第一句就是鉤子，口語，一口氣讀完。結尾用原文的收尾句，不要另外改寫成新的問句或結語。" +
   "Instagram 說明版：約 900 到 1500 字，第一行是鉤子（會被截斷預覽，要在前面就吸引人），段落短，保留原文的故事與論點。" +
   "IG 的連結不能點，所以 IG 版不要寫網址，也不要叫讀者去看個人簡介或留言區。原文若寫「連結在留言區第一則」，IG 版一律改成「在下面留言「連結」兩個字，我私訊給你」。邀請讀者留言互動的句子不受影響，照原意保留。" +
   "Threads 版的連結指路維持留言區第一則，不要改。" +
@@ -111,7 +111,10 @@ export async function deriveVersions(master: string, avoidWords: string[] = []):
       // 半截的 JSON 解析必定失敗，於是退回機械式截斷，IG 直接貼了整篇 FB 原文。
       // 規格要求的輸出是 Threads 400 到 460 字、IG 900 到 1500 字、輪播 5 到 7 張各 40 字，
       // 合計約 1500 到 2240 個中文字，中文換算成 token 往往一字超過一個，3000 根本不夠。
-      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + note, 8000);
+      // 原文的關鍵句、「這幾天留意」那一段、收尾句：直接列給模型，要求兩個版本都原句保留（走樣檢查也是看這幾段）
+      const keep = keyParagraphs(master);
+      const keepNote = keep.length ? `\n\n【必須原句保留，不是原文的一部分】以下段落在 Threads 版與 IG 版都要原句出現（可以調整斷行，不可改字）：\n${keep.map((item, i) => `${i + 1}. ${item.replace(/\n+/g, " ")}`).join("\n")}` : "";
+      const raw = await completeText(SYSTEM_DERIVE, master.slice(0, 6000) + keepNote + note, 8000);
       const parsed = parseDerived(raw);
       if (!parsed) {
         // 2026-11-02：又出現一次「格式無法解析」，但失敗當下沒有留下模型究竟回了什麼，
