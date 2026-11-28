@@ -163,6 +163,15 @@ assert.deepEqual(checkSocialDrift(ORIGINAL, ORIGINAL, "threads"), []);
   assert.ok(checkSocialDrift(withCta, `${withCta}\n\n想了解可以預約。`, "instagram").some((i) => i.kind === "cta"));
 }
 
+// 8. 2026-11-28 實例：流水線在 FB 母稿最後加了「連結在留言區第一則」與主題標籤，那一行不算收尾段落
+{
+  const master = `${ORIGINAL}\n\n詳細資訊與連結放在留言區第一則。\n生命數字 #自我探索 #關係說明書`;
+  const keys = keyParagraphs(master);
+  assert.ok(!keys.some((p) => p.includes("留言區第一則")), "連結指路不是關鍵段落");
+  assert.ok(keys.some((p) => p.includes("等我真的聽懂這顆牙的時候")), "收尾改看前一段");
+  assert.ok(!checkSocialDrift(master, ORIGINAL, "threads").some((i) => i.kind === "dropped"), "Threads 不帶連結指路不算刪段落");
+}
+
 // 7. 給模型的修改要求有寫出問題
 assert.ok(driftFeedback(checkSocialDrift(ORIGINAL, THREADS_DRIFTED, "threads")).includes("修改要求"));
 assert.ok(retention("很多時候不是沒有提醒", "很多時候不是沒有提醒，是我們") === 1);

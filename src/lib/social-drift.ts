@@ -45,8 +45,14 @@ export function retention(paragraph: string, adapted: string): number {
 const paragraphsOf = (text: string): string[] => String(text || "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 
 /** 原文的關鍵段落：關鍵句（➤ ❝ ❞）、「這幾天留意」那一段、最後一段 */
+/** 只有連結指路或主題標籤的段落（流水線在 FB 母稿最後加的「連結在留言區第一則」與標籤）不算內容段落 */
+export function isPointerParagraph(paragraph: string): boolean {
+  const lines = String(paragraph || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((line) => /#[^\s#]+/.test(line) || findCtas(line).length > 0);
+}
+
 export function keyParagraphs(original: string): string[] {
-  const paras = paragraphsOf(original).filter((p) => normalize(p).length >= 6);
+  const paras = paragraphsOf(original).filter((p) => normalize(p).length >= 6 && !isPointerParagraph(p));
   const keys = new Set<string>();
   for (const p of paras) {
     if (/❝|➤/.test(p)) keys.add(p);
@@ -84,7 +90,7 @@ export function checkSocialDrift(original: string, adapted: string, platform: "t
   const dropped = keyParagraphs(source).filter((p) => retention(p, out) < KEY_RETENTION_MIN);
   if (dropped.length) issues.push({ kind: "dropped", message: `刪掉或改掉了原文的關鍵段落：${dropped.map((p) => `「${p.replace(/\s+/g, " ").slice(0, 30)}」`).join("、")}` });
   if (platform === "instagram") {
-    const paras = paragraphsOf(source).filter((p) => normalize(p).length >= 10);
+    const paras = paragraphsOf(source).filter((p) => normalize(p).length >= 10 && !isPointerParagraph(p));
     if (paras.length >= 3) {
       const kept = paras.filter((p) => retention(p, out) >= KEY_RETENTION_MIN).length;
       const ratio = kept / paras.length;
